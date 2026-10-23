@@ -90,6 +90,14 @@ installed the release binary, and that binary ran `setup` and the shim.
 [`tests/live/2026-10-23-v0.1.0.txt`](../tests/live/2026-10-23-v0.1.0.txt)
 is its output.
 
+### On GitHub's runners
+
+[`.github/workflows/live.yml`](../.github/workflows/live.yml), started by
+hand, runs setup twice and these tests on an `ubuntu-24.04` and an
+`ubuntu-24.04-arm` runner: real hosts with systemd as PID 1 and cgroup v2,
+where setup takes Incus's stable line. A CONNECT proxy on the runner's
+loopback is the host's only way out, as on the build host.
+
 ### What the live tests do not cover
 
 - WSL2, and a real aarch64 machine: the `cross` step runs the unit and

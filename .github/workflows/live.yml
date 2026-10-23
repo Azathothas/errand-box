@@ -1,0 +1,65 @@
+# The live tests on GitHub runners, one per architecture a release ships:
+# real hosts with systemd as PID 1 and cgroup v2, which the build host and
+# the nested hosts do not cover. On cgroup v2 setup takes Incus's stable
+# line, not 6.0 LTS. The aarch64 runner is the aarch64 host of T-013.
+#
+# Started by hand: each runner installs Incus and builds the guest image,
+# about 15 minutes. The runner's egress is direct, so a CONNECT proxy on
+# loopback stands in for the proxy of a host whose only way out is one, and
+# live.sh's relay, which stands in for errand's broker, forwards to it.
+name: live
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: probe the runner
+        run: sh scripts/doctor/doctor.sh --fast
+      - name: build and run the static binary
+        run: sh scripts/ci-local.sh --step musl
+      - name: a CONNECT proxy on loopback, and the test tools
+        run: |
+          sudo apt-get -qq update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y tinyproxy socat
+          printf 'Port 8888\nListen 127.0.0.1\nAllow 127.0.0.1\nTimeout 600\nMaxClients 200\nConnectPort 443\n' \
+            | sudo tee /etc/tinyproxy/tinyproxy.conf >/dev/null
+          sudo systemctl restart tinyproxy
+          curl -fsS -o /dev/null -x http://127.0.0.1:8888 https://images.linuxcontainers.org/
+      - name: setup
+        run: |
+          bin="target/$(uname -m)-unknown-linux-musl/release/errand-box"
+          sudo env HTTPS_PROXY=http://127.0.0.1:8888 "$bin" setup \
+            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env
+      - name: a second setup changes nothing
+        run: |
+          out=$(sudo env HTTPS_PROXY=http://127.0.0.1:8888 /usr/local/bin/errand-box setup \
+            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env 2>/dev/null)
+          sum=$(printf '%s\n' "$out" | grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' | tail -n 1)
+          echo "$sum"
+          case $sum in "0 changed, "*) ;; *) exit 1 ;; esac
+      - name: the live tests
+        run: sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh tests/live/live.sh
+      - name: the daemons' logs, when a step failed
+        if: failure()
+        run: |
+          sudo /usr/local/bin/errand-box status || true
+          sudo journalctl --no-pager -n 200 -u incus.service -u 'errand-box-*' || true
