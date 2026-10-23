@@ -44,18 +44,30 @@ jobs:
             | sudo tee /etc/tinyproxy/tinyproxy.conf >/dev/null
           sudo systemctl restart tinyproxy
           curl -fsS -o /dev/null -x http://127.0.0.1:8888 https://images.linuxcontainers.org/
+      # The test credentials are not real, so errand's daemon fails at the chat
+      # connection (T-015): the one row allowed to fail, as in tests/hosts/host.sh.
       - name: setup
         run: |
           bin="target/$(uname -m)-unknown-linux-musl/release/errand-box"
+          rc=0
+          # shellcheck disable=SC2024 # the log is the runner user's; only setup needs root
           sudo env HTTPS_PROXY=http://127.0.0.1:8888 "$bin" setup \
-            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env
+            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env \
+            > "$RUNNER_TEMP/setup1.log" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/setup1.log"
+          if grep -E '  FAILED ' "$RUNNER_TEMP/setup1.log" | grep -qvE '^(errand|errand-box-errand|bailey doctor as errand)  +FAILED '; then exit 1; fi
+          echo "setup exit $rc; no FAILED row but errand's"
       - name: a second setup changes nothing
         run: |
-          out=$(sudo env HTTPS_PROXY=http://127.0.0.1:8888 /usr/local/bin/errand-box setup \
-            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env 2>/dev/null)
-          sum=$(printf '%s\n' "$out" | grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' | tail -n 1)
-          echo "$sum"
-          case $sum in "0 changed, "*) ;; *) exit 1 ;; esac
+          rc=0
+          # shellcheck disable=SC2024 # the log is the runner user's; only setup needs root
+          sudo env HTTPS_PROXY=http://127.0.0.1:8888 /usr/local/bin/errand-box setup \
+            --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env \
+            > "$RUNNER_TEMP/setup2.log" 2>&1 || rc=$?
+          if grep -E '  FAILED ' "$RUNNER_TEMP/setup2.log" | grep -qvE '^(errand|errand-box-errand|bailey doctor as errand)  +FAILED '; then cat "$RUNNER_TEMP/setup2.log"; exit 1; fi
+          sum=$(grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' "$RUNNER_TEMP/setup2.log" | tail -n 1)
+          echo "setup exit $rc: $sum"
+          case $sum in "0 changed, "*) ;; *) cat "$RUNNER_TEMP/setup2.log"; exit 1 ;; esac
       - name: the live tests
         run: sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh tests/live/live.sh
       - name: the daemons' logs, when a step failed
