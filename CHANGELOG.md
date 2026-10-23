@@ -23,6 +23,10 @@ program does not change; the scripts and the gate do.
   SC2319 findings, and one was a defect: the `bootstrap` step of
   `tests/hosts/host.sh` passed "errand-box is on PATH" on any output,
   a "not found" included. It now reads the exit code.
+- **The `errand-config` step** runs errand with the environment errand-box
+  gives it: cleared, then `HOME` and `PATH`. errand reads `XDG_CONFIG_HOME`
+  before `HOME`, and a GitHub runner sets it, so on GitHub errand looked for
+  its config in the runner's home and refused to start.
 - **The `cross` step** exits 2, not 0, when it runs less than every test.
   Without a `binfmt_misc` handler it runs the unit tests and names the
   integration tests it left out, which start the shim as a child.

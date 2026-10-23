@@ -43,7 +43,10 @@ errand=$(find "$t/x" -type f -name errand -perm -u+x | head -n 1)
 
 "$eb" errand-config --env "$root/tests/data/errand.env" --creds "$root/tests/data/creds.env" \
   --home "$t/errand-home" --out "$t/h/.config/errand/config.json" || exit 1
-out=$(cd "$t" && HOME="$t/h" PATH=/usr/bin:/bin timeout 20 "$errand" run 2>&1)
+# errand gets the environment errand-box gives it (procs::exec_as): cleared,
+# then HOME and PATH. errand reads XDG_CONFIG_HOME before HOME, and a GitHub
+# runner sets it, so an inherited environment hides the config from errand.
+out=$(cd "$t" && env -i HOME="$t/h" PATH=/usr/bin:/bin timeout 20 "$errand" run 2>&1)
 case $out in
   *ConfigError* | *"configuration rejected"*)
     printf 'FAIL errand %s refuses the config errand-box writes:\n%s\n' "$v" "$(printf '%s\n' "$out" | grep -m 3 -i 'config')"
