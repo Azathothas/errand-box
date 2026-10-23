@@ -45,7 +45,7 @@ jobs:
           sudo systemctl restart tinyproxy
           curl -fsS -o /dev/null -x http://127.0.0.1:8888 https://images.linuxcontainers.org/
       # The test credentials are not real, so errand's daemon fails at the chat
-      # connection (T-015): the one row allowed to fail, as in tests/hosts/host.sh.
+      # connection (T-015): tests/setup-failed-only-errand.sh allows that row only.
       - name: setup
         run: |
           bin="target/$(uname -m)-unknown-linux-musl/release/errand-box"
@@ -55,7 +55,7 @@ jobs:
             --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env \
             > "$RUNNER_TEMP/setup1.log" 2>&1 || rc=$?
           cat "$RUNNER_TEMP/setup1.log"
-          if grep -E '  FAILED ' "$RUNNER_TEMP/setup1.log" | grep -qvE '^(errand|errand-box-errand|bailey doctor as errand)  +FAILED '; then exit 1; fi
+          sh tests/setup-failed-only-errand.sh "$RUNNER_TEMP/setup1.log"
           echo "setup exit $rc; no FAILED row but errand's"
       - name: a second setup changes nothing
         run: |
@@ -64,7 +64,7 @@ jobs:
           sudo env HTTPS_PROXY=http://127.0.0.1:8888 /usr/local/bin/errand-box setup \
             --config examples/errand-box.toml --env tests/data/errand.env --creds tests/data/creds.env \
             > "$RUNNER_TEMP/setup2.log" 2>&1 || rc=$?
-          if grep -E '  FAILED ' "$RUNNER_TEMP/setup2.log" | grep -qvE '^(errand|errand-box-errand|bailey doctor as errand)  +FAILED '; then cat "$RUNNER_TEMP/setup2.log"; exit 1; fi
+          sh tests/setup-failed-only-errand.sh "$RUNNER_TEMP/setup2.log" || { cat "$RUNNER_TEMP/setup2.log"; exit 1; }
           sum=$(grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' "$RUNNER_TEMP/setup2.log" | tail -n 1)
           echo "setup exit $rc: $sum"
           case $sum in "0 changed, "*) ;; *) cat "$RUNNER_TEMP/setup2.log"; exit 1 ;; esac

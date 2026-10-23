@@ -1388,7 +1388,7 @@ mod tests {
     }
 
     #[test]
-    fn a_packaging_without_incus_user_is_a_failure_not_a_missing_service() {
+    fn a_packaging_without_incus_user_has_a_cause_and_no_incus_user_service() {
         // Measured 2026-10-23 on Alpine 3.22: the incus package has no
         // incus-user, `up` ran none, and errand's project never appeared.
         assert_eq!(incus_user_missing(&lay()), None);

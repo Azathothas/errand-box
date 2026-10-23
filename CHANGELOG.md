@@ -9,6 +9,20 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T14:42Z: live tests on GitHub's runners, x86_64 and aarch64
+
+**Record:** T-013 in [TODO/setup.md](TODO/setup.md); E-69 and E-70 in
+[docs/edge-cases.md](docs/edge-cases.md). Not deployed and not released.
+
+- `.github/workflows/live.yml`, started by hand, runs setup twice and the
+  live tests on an `ubuntu-24.04` and an `ubuntu-24.04-arm` runner: hosts
+  with systemd and cgroup v2, where setup takes Incus 7.5.1 from the stable
+  line. Setup passes but for errand's daemon (test credentials), and the
+  live tests pass 40 of 41 on x86_64 and 39 of 41 on aarch64.
+- Found, not fixed: rootless podman fails on those hosts. AppArmor denies
+  the agent's user namespace (E-69), and with that off, podman on cgroup v2
+  needs a user session the agent does not have (E-70).
+
 ### 2026-10-23T14:07Z: Debian 13, a late incusd, and podman's mirror
 
 **Record:** T-011 in [TODO/setup.md](TODO/setup.md); E-16 and E-68 in

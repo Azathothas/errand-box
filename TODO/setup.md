@@ -340,9 +340,32 @@ All PASS.
 
 The `cross` step of [scripts/ci-local.sh](../scripts/ci-local.sh) builds the
 static binary for aarch64 with `rust-lld` and runs every unit and
-integration test there under `qemu-aarch64-static` (106 + 6 pass). That
-proves the code on aarch64, not a host: no aarch64 machine has run setup or
-the live tests, which is what stays open.
+integration test there under `qemu-aarch64-static` (110 + 6 pass, with a
+`binfmt_misc` handler for the integration tests).
+
+2026-10-23T14:24Z, a real aarch64 host:
+[.github/workflows/live.yml](../.github/workflows/live.yml) on GitHub's
+`ubuntu-24.04-arm` runner, beside `ubuntu-24.04` for x86_64 (run
+39968392861). Both are systemd hosts with cgroup v2, so setup took Incus
+7.5.1 from the stable line, the first live run of that line. Setup passed
+but for errand's daemon, which the test credentials stop (T-015), and the
+second run changed nothing. The live tests: x86_64 40 of 41, aarch64 39 of
+41.
+[tests/live/2026-10-23-github-runners.txt](../tests/live/2026-10-23-github-runners.txt)
+is the output.
+
+Open, on both architectures: rootless podman as the agent fails with
+"cannot re-exec process". Measured in run 39970746432, two causes, one
+behind the other. AppArmor denies the agent's user namespace
+(`operation="userns_create"`, with `kernel.apparmor_restrict_unprivileged_userns
+= 1` on the runners; E-69). With the restriction off on the runner,
+podman gets past it and stops at "dbus: couldn't determine address of
+session bus": on cgroup v2 it asks systemd for a cgroup, and the agent has
+no user session (E-70). On cgroup v1 the guest runs podman without cgroups
+(E-04), which is why every cgroup v1 host passes. Also open, on aarch64:
+`errand: service errand` read `activating`, because systemd restarts the
+daemon the test credentials stop, so that check depends on timing until
+T-015 gives real credentials.
 
 ## Prove
 

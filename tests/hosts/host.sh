@@ -208,13 +208,8 @@ s_setup() {
   check setup "$r" "second setup changes nothing but errand: $(summary "$out/setup2.log")"
 }
 
-# Exit 0 when the only FAILED rows of a setup log name the errand daemon (its
-# dummy creds), or the row $2 names; 1 when any other row failed. The name is
-# followed by the padding and FAILED: "errand " alone is also the start of
-# "errand project" and "errand config", which must not fail.
-other_fail() {
-  ! grep -E '  FAILED ' "$1" | grep -qvE "^(errand|errand-box-errand|bailey doctor as errand${2:+|$2})  +FAILED "
-}
+# Exit 0 when the only FAILED rows of a setup log are errand's, or $2's.
+other_fail() { sh "$root/tests/setup-failed-only-errand.sh" "$@" >/dev/null; }
 
 # The summary line of a report, found by its shape: a progress line on
 # stderr can land after it, so the last line is not always the summary.

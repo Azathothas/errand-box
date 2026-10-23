@@ -43,12 +43,13 @@ The P0 entries are what errand-box is: one command that sets a host up, a
 session that is a whole system, and daemons that come back after a restart.
 They are done and shown live on one host.
 
-The open P1 entries are the hosts the operator named and no run has
-covered (systemd, musl, WSL2), the first release that `bootstrap.sh`
-needs, the scheduled workflows that have not run on GitHub, and a session
-with a real chat service. Each is a capability the documents state and no
-measurement backs yet; a host type is P1 rather than P0 because the code
-paths exist and the failure, if any, is at setup, before errand runs.
+The open P1 entries are a broker link that does not need proxy devices,
+which closes the path from the errand account to the admin socket, a
+session with a real chat service, WSL2 of the hosts the operator named, and
+the one path of the scheduled workflows that has not run: a pull request.
+systemd and musl are shown live, the first release is out, and every
+workflow has run on GitHub. A host type is P1 rather than P0 because the
+code paths exist and the failure, if any, is at setup, before errand runs.
 
 P2 and P3 make errand-box cheaper or clearer: rootless setup, a published
 image, a pool size that fits the disk, errand's wording, a docs check, and a

@@ -100,9 +100,9 @@ loopback is the host's only way out, as on the build host.
 
 ### What the live tests do not cover
 
-- WSL2, and a real aarch64 machine: the `cross` step runs the unit and
-  integration tests for aarch64 under qemu-user, which proves the code, not
-  a host. Each is an open entry in [`TODO/INDEX.md`](../TODO/INDEX.md).
+- WSL2. It is an open entry in [`TODO/INDEX.md`](../TODO/INDEX.md).
+- Rootless podman on a host with AppArmor's restriction on user namespaces,
+  or with cgroup v2: it fails there, E-69 and E-70, and passes on cgroup v1.
 - errand with a real chat service and a real model gateway. That needs a
   bot token, a channel, a user id, and a gateway key and URL; the operator
   supplies them as described in [`SECURITY.md`](../SECURITY.md).
