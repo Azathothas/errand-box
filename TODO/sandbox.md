@@ -159,10 +159,27 @@ import` records so setup takes the image as current (E-31). A unit test
 proves the shell and the Rust compute the same digest
 (`image::tests::the_distrobuilder_build_records_the_same_inputs`). Built
 and imported on the build host 2026-10-23 (a 395 MiB rootfs; `image import`
-checked its SHA256SUMS, recorded the inputs and moved the alias). Open:
-building it in a GitHub workflow and publishing it with its digest in
-`pins.toml`, so a host imports a release instead of building (waits on
-Actions, T-009).
+checked its SHA256SUMS, recorded the inputs and moved the alias).
+
+The digest that build wrote was not errand-box's. The script's check for a
+single quote in a setting reused the variable that held the kage version,
+so `OUT_DIR/inputs` hashed the proxy URL, and setup took every imported
+image as stale and rebuilt it (E-31). The unit test ran `--print-inputs`,
+which exited before that check. Fixed 2026-10-23T13:23Z: the script takes
+the digest once, and `--print-inputs` prints that value. Measured: the build
+writes `d2d5988b7438`, the digest setup records for the image it builds.
+
+distrobuilder has no Ubuntu 24.04 package. Measured 2026-10-23: the Go
+module at commit `232e78c93721` (distrobuilder 3.3) builds in its own module
+tree with `github.com/cyphar/filepath-securejoin` replaced by v0.5.2 and the
+build tags `exclude_graphdriver_btrfs exclude_graphdriver_devicemapper
+containers_image_openpgp`. Without the replace, `go.podman.io/storage`
+v1.62.0 calls a function that filepath-securejoin v0.6.1 moved to
+`pathrs-lite`. A build took 3 min 38 s on the build host.
+
+Open: building it in a GitHub workflow and publishing it with its digest in
+`pins.toml`, so a host imports a release instead of building. Actions runs
+now (T-009 is done).
 
 ## Prove
 

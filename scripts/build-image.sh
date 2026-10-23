@@ -39,9 +39,12 @@ inputs_digest() { # kage-version
     printf '%s\000' "$1" "${EB_REGISTRY_MIRROR-https://mirror.gcr.io}" "${EB_GUEST_PROXY_PORT:-3128}"
   } | sha256sum | cut -d' ' -f1
 }
+# The digest is taken once, here: --print-inputs prints the value the build
+# writes to OUT_DIR/inputs, so the unit test that checks one checks both.
+v=${KAGE_VERSION:-$(PINS_FILE="$root/pins.toml" sh "$root/scripts/pins.sh" pinned kage)} || exit 2
+inputs=$(inputs_digest "$v") || exit 2
 if [ "$out" = --print-inputs ]; then
-  v=${KAGE_VERSION:-$(PINS_FILE="$root/pins.toml" sh "$root/scripts/pins.sh" pinned kage)} || exit 2
-  inputs_digest "$v"
+  printf '%s\n' "$inputs"
   exit 0
 fi
 [ "$(id -u)" = 0 ] || die "run as root: debootstrap needs it" 2
@@ -58,7 +61,6 @@ case $(uname -m) in
 esac
 
 # kage, from pins.toml, digest checked.
-v=${KAGE_VERSION:-$(PINS_FILE="$root/pins.toml" sh "$root/scripts/pins.sh" pinned kage)} || exit 2
 field() {
   awk -v t="[kage.versions.\"$v\".$arch]" -v k="$1" '$0 == t { s = 1; next } /^\[/ { s = 0 } s && $1 == k { gsub(/"/, "", $3); print $3; exit }' "$root/pins.toml"
 }
@@ -79,8 +81,8 @@ if [ -n "${PROXY_CA:-}" ]; then
   cp "$PROXY_CA" "$stage/proxy-ca.crt" || die "cannot read PROXY_CA $PROXY_CA" 2
 fi
 # Single-quoted, as `errand-box image build` writes it (E-46).
-for v in "${EB_GUEST_PROXY_PORT:-}" "${EB_REGISTRY_MIRROR:-}" "${HTTPS_PROXY:-}"; do
-  case $v in *"'"*) die "a setting (proxy, mirror or port) has a single quote" 2 ;; esac
+for s in "${EB_GUEST_PROXY_PORT:-}" "${EB_REGISTRY_MIRROR:-}" "${HTTPS_PROXY:-}"; do
+  case $s in *"'"*) die "a setting (proxy, mirror or port) has a single quote" 2 ;; esac
 done
 {
   printf "EB_GUEST_PROXY_PORT='%s'\n" "${EB_GUEST_PROXY_PORT:-3128}"
@@ -96,6 +98,6 @@ out=$(cd "$out" && pwd)
 (cd "$work" && "$db" build-incus "$root/image/distrobuilder.yaml" "$out" \
   -o "image.architecture=$arch" -o "source.url=https://deb.debian.org/debian") || die "distrobuilder failed"
 (cd "$out" && sha256sum incus.tar.xz rootfs.squashfs > SHA256SUMS) || die "cannot write SHA256SUMS"
-inputs_digest "$v" > "$out/inputs" || die "cannot write $out/inputs"
+printf '%s\n' "$inputs" > "$out/inputs" || die "cannot write $out/inputs"
 printf 'build-image: %s\n' "$out"
 cat "$out/SHA256SUMS"

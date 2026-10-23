@@ -29,6 +29,10 @@
 #   EB_HOSTS_CA     a CA file the container must trust for that proxy.
 #   EB_HOSTS_BIN    the errand-box binary to install (default: the static
 #                   build of this checkout for this machine).
+#   EB_HOSTS_IMAGE  a directory scripts/build-image.sh wrote. The setup step
+#                   then imports it with `errand-box image import` instead of
+#                   building the image in the container, which a nested host
+#                   cannot do: the build is a third level of containers.
 # Output: one PASS or FAIL line per check, and the logs under
 #   tests/hosts/out/<name>/ (ignored by git).
 # Exit codes: 0 every check passed, 1 a check failed, 2 could not run.
@@ -36,7 +40,7 @@
 set -u
 
 [ "$(id -u)" = 0 ] || { echo "host.sh: run as root" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,34p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,38p' "$0"; exit 2; }
 name=$1
 image=$2
 shift 2
@@ -183,6 +187,7 @@ EOF
 s_setup() {
   link_proxy
   write_inputs
+  [ -z "${EB_HOSTS_IMAGE:-}" ] || import_image
   t0=$(date +%s)
   in_c errand-box setup --config /root/errand-box.toml --env /root/errand-box.env --creds /root/creds.env >"$out/setup1.log" 2>&1
   rc=$?
@@ -206,8 +211,22 @@ s_setup() {
 
 # Exit 0 when the only FAILED rows name the errand daemon (its dummy creds),
 # 1 when any other row failed.
+# True when a setup log has no FAILED row but errand's, or the row $2 names.
 other_fail() {
-  ! grep -E '  FAILED ' "$1" | grep -qvE '^(errand|errand-box-errand|bailey doctor as errand) '
+  ! grep -E '  FAILED ' "$1" | grep -qvE "^(errand|errand-box-errand|bailey doctor as errand${2:+|$2}) "
+}
+
+# A first setup with --skip-image starts Incus and stops at the missing
+# image; then `errand-box image import` takes the build EB_HOSTS_IMAGE names.
+import_image() {
+  in_c errand-box setup --config /root/errand-box.toml --env /root/errand-box.env --creds /root/creds.env --skip-image >"$out/setup0.log" 2>&1
+  other_fail "$out/setup0.log" 'guest image'
+  check setup "$?" "setup --skip-image starts Incus: $(grep -m 1 '^guest image ' "$out/setup0.log")"
+  for f in incus.tar.xz rootfs.squashfs SHA256SUMS inputs; do
+    inc file push -p "$EB_HOSTS_IMAGE/$f" "$c/root/eb-image/$f" >/dev/null || { fail setup "cannot push $f into $c"; return; }
+  done
+  in_c errand-box image import /root/eb-image >"$out/import.log" 2>&1
+  check setup "$?" "errand-box image import: $(tail -n 1 "$out/import.log")"
 }
 
 s_live() {

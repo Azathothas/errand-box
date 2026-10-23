@@ -9,6 +9,17 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T13:23Z: a distrobuilder build imports as current
+
+**Record:** T-014 in [TODO/sandbox.md](TODO/sandbox.md). Not deployed and
+not released.
+
+- `scripts/build-image.sh` wrote an inputs digest of the proxy URL, not of
+  the kage version: a check for a single quote reused the variable. Setup
+  took every imported image as stale and rebuilt it. The script now takes
+  the digest once, and `--print-inputs`, which the unit test runs, prints
+  the value the build writes.
+
 ### 2026-10-23T13:07Z: the run that makes the pool reports E-32
 
 **Record:** E-32 in [docs/edge-cases.md](docs/edge-cases.md). Not deployed
