@@ -9,6 +9,16 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T13:07Z: the run that makes the pool reports E-32
+
+**Record:** E-32 in [docs/edge-cases.md](docs/edge-cases.md). Not deployed
+and not released.
+
+- setup made a 60 GiB pool on a host with 27 GiB free and reported
+  "changed"; only the next run reported the pool degraded. The run that
+  makes a loop-file pool now applies the same check, so the first setup on
+  a small disk says so. Seen with v0.1.0 on the build host.
+
 ## 0.1.0
 
 ### 2026-10-23T12:44Z: the release v0.1.0

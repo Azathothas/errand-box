@@ -889,6 +889,33 @@ fn loop_outgrows_host(total: u64, used: u64, host_free: u64) -> bool {
     total.saturating_sub(used) > host_free
 }
 
+/// The report line of a pool setup has just made. A new loop file uses
+/// almost nothing, so all of its size can still grow: the run that makes it
+/// reports E-32 as the runs after it do.
+fn new_pool_line(name: &str, driver: &str, size: &str, host_free: Option<u64>) -> (St, String) {
+    if driver == "dir" {
+        return (
+            St::Degraded,
+            format!("{name} is a dir pool: box.disk is accepted but not enforced (E-05)"),
+        );
+    }
+    let total = crate::config::incus_bytes(size).ok();
+    match (total, host_free) {
+        (Some(total), Some(free)) if loop_outgrows_host(total, 0, free) => (
+            St::Degraded,
+            format!(
+                "{name}: {driver} on a loop file of {size}, which can still grow {} GiB, and the host has {} GiB free; guests get I/O errors when the host disk fills (E-32)",
+                total >> 30,
+                free >> 30
+            ),
+        ),
+        _ => (
+            St::Changed,
+            format!("{name}: {driver} on a loop file of {size}; thin, trimmed by maint (E-25)"),
+        ),
+    }
+}
+
 fn pool(cfg: &Config, inc: &Incus, r: &mut Report) -> bool {
     let name = &cfg.engine.pool;
     if let Ok(v) = inc.query(&format!("/1.0/storage-pools/{name}")) {
@@ -927,31 +954,23 @@ fn pool(cfg: &Config, inc: &Incus, r: &mut Report) -> bool {
         name.clone(),
         cfg.engine.pool_driver.clone(),
     ];
+    let size = pool_size(cfg);
     if cfg.engine.pool_driver != "dir" {
-        args.push(format!("size={}", pool_size(cfg)));
+        args.push(format!("size={size}"));
     }
     let out = inc.run(args);
     if !out.ok() {
         r.add("storage pool", St::Failed, out.why());
         return false;
     }
-    if cfg.engine.pool_driver == "dir" {
-        r.add(
-            "storage pool",
-            St::Degraded,
-            format!("{name} is a dir pool: box.disk is accepted but not enforced (E-05)"),
-        );
-    } else {
-        r.add(
-            "storage pool",
-            St::Changed,
-            format!(
-                "{name}: {} on a loop file of {}; thin, trimmed by maint (E-25)",
-                cfg.engine.pool_driver,
-                pool_size(cfg)
-            ),
-        );
-    }
+    // Incus keeps a loop file under /var/lib/incus/disks, the disk pool_size read.
+    let (st, line) = new_pool_line(
+        name,
+        &cfg.engine.pool_driver,
+        &size,
+        statvfs_free("/var/lib/incus"),
+    );
+    r.add("storage pool", st, line);
     true
 }
 
@@ -1576,6 +1595,25 @@ mod tests {
         assert!(loop_outgrows_host(20 * g, 3 * g, 14 * g));
         assert!(!loop_outgrows_host(20 * g, 3 * g, 17 * g));
         assert!(!loop_outgrows_host(20 * g, 25 * g, 0));
+    }
+
+    #[test]
+    fn the_run_that_makes_a_loop_pool_reports_it_outgrowing_the_disk() {
+        let g = 1u64 << 30;
+        // Measured 2026-10-23: a 60 GiB pool made on a host with 27 GiB free
+        // said "changed"; only the next run said E-32.
+        let (st, line) = new_pool_line("p", "btrfs", "60GiB", Some(27 * g));
+        assert_eq!(st, St::Degraded);
+        assert!(
+            line.contains("grow 60 GiB, and the host has 27 GiB free"),
+            "{line}"
+        );
+        assert!(line.contains("(E-32)"), "{line}");
+        let (st, line) = new_pool_line("p", "btrfs", "60GiB", Some(200 * g));
+        assert_eq!(st, St::Changed);
+        assert!(line.contains("loop file of 60GiB"), "{line}");
+        assert_eq!(new_pool_line("p", "btrfs", "60GiB", None).0, St::Changed);
+        assert_eq!(new_pool_line("p", "dir", "", Some(0)).0, St::Degraded);
     }
 
     #[test]
