@@ -130,7 +130,7 @@ pub struct Image {
     /// images.linuxcontainers.org; `release`: fetch the published image
     /// named in pins.toml and check its digest.
     pub source: String,
-    /// Docker Hub mirror for Docker inside the guest (E-16). Empty: none.
+    /// Docker Hub mirror for Docker and podman inside the guest (E-16). Empty: none.
     pub registry_mirror: String,
 }
 

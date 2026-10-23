@@ -28,7 +28,7 @@ version = "latest"
 [image]
 alias = "errand-box/debian-13"
 source = "build"
-registry_mirror = "https://mirror.gcr.io"   # Docker Hub mirror inside guests; "" for none
+registry_mirror = "https://mirror.gcr.io"   # Docker Hub mirror for Docker and podman in guests; "" for none
 
 [network]
 proxy = "auto"           # auto (from HTTPS_PROXY), none, or a URL

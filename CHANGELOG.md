@@ -9,6 +9,23 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T14:07Z: Debian 13, a late incusd, and podman's mirror
+
+**Record:** T-011 in [TODO/setup.md](TODO/setup.md); E-16 and E-68 in
+[docs/edge-cases.md](docs/edge-cases.md). Not deployed and not released.
+The guest image changes, so every host rebuilds it (E-31).
+
+- **E-68.** On a systemd host whose network nothing reports online, incusd's
+  first start waits 2 minutes for network-online.target. The first setup's
+  `incus version` hit its 120 s deadline and reported Incus as not
+  installed. It now has 300 s, and a wait of a minute or more is reported
+  as degraded, because each boot waits as long.
+- **E-16, podman.** podman in a guest, root and rootless, now uses
+  `image.registry_mirror` as Docker does. On Debian 13 it got Docker Hub's
+  `toomanyrequests` while Docker, on the mirror, passed.
+- **The host tests** select a report's summary line by its shape, not as
+  the last line: a progress line on stderr can come after it.
+
 ### 2026-10-23T13:36Z: Alpine passes the live tests
 
 **Record:** T-012 in [TODO/setup.md](TODO/setup.md); E-66 and E-67 in

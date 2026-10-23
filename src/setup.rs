@@ -91,6 +91,22 @@ pub fn client_version(out: &str) -> Option<String> {
         .map(|v| v.trim().to_owned())
 }
 
+/// The report line of an Incus that answered after `waited`. A wait of a
+/// minute or more is the start systemd holds for network-online.target,
+/// and it comes back at every boot (E-68).
+fn version_line(ver: &str, waited: Duration) -> (St, String) {
+    if waited < Duration::from_secs(60) {
+        return (St::Ok, ver.to_owned());
+    }
+    (
+        St::Degraded,
+        format!(
+            "{ver}; incusd answered after {} s, as when systemd holds its start for network-online.target, which a host whose network nothing reports online reaches only when systemd-networkd-wait-online times out; each boot waits as long (E-68)",
+            waited.as_secs()
+        ),
+    )
+}
+
 /// True for Incus 6.0.0, which never uses idmapped mounts and rewrites every
 /// new isolated instance (E-20).
 pub fn lacks_idmap_fix(version: &str) -> bool {
@@ -170,7 +186,17 @@ fn packages(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report) {
             }
         }
     }
-    let v = runner.run(&Cmd::new("incus").arg("version"));
+    // The first call can start incusd, and systemd holds that start for
+    // network-online.target: on a host whose network nothing reports online,
+    // until systemd-networkd-wait-online times out, 2 minutes (E-68). The
+    // default deadline of a command is shorter than that.
+    let t0 = std::time::Instant::now();
+    let v = runner.run(
+        &Cmd::new("incus")
+            .arg("version")
+            .timeout(Duration::from_secs(300)),
+    );
+    let waited = t0.elapsed();
     // Incus 7 and later refuse cgroup v1 (E-04): an installed one cannot run
     // here, whatever installed it.
     for (what, ver) in [
@@ -197,7 +223,10 @@ fn packages(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report) {
     }
     match client_version(&v.stdout) {
         Some(ver) if lacks_idmap_fix(&ver) => r.add("incus version", St::Degraded, format!("{ver}: never uses idmapped mounts, so each new isolated instance rewrites its rootfs (about 2-3 s, E-20); 6.0.1 and later fix it")),
-        Some(ver) => r.add("incus version", St::Ok, ver),
+        Some(ver) => {
+            let (st, line) = version_line(&ver, waited);
+            r.add("incus version", st, line);
+        }
         None => r.add("incus version", St::Failed, "incus is not installed or does not run"),
     }
 }
@@ -1610,6 +1639,20 @@ mod tests {
         assert!(loop_outgrows_host(20 * g, 3 * g, 14 * g));
         assert!(!loop_outgrows_host(20 * g, 3 * g, 17 * g));
         assert!(!loop_outgrows_host(20 * g, 25 * g, 0));
+    }
+
+    #[test]
+    fn an_incus_that_answers_late_is_reported_with_the_wait() {
+        // Measured 2026-10-23 on Debian 13 with no network device: incusd
+        // answered after about 123 s, and the 120 s deadline had killed the call.
+        assert_eq!(
+            version_line("6.0.6", Duration::from_secs(2)),
+            (St::Ok, "6.0.6".to_owned())
+        );
+        let (st, line) = version_line("6.0.6", Duration::from_secs(123));
+        assert_eq!(st, St::Degraded);
+        assert!(line.contains("after 123 s"), "{line}");
+        assert!(line.contains("(E-68)"), "{line}");
     }
 
     #[test]

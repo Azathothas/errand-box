@@ -195,28 +195,30 @@ s_setup() {
   # the one service allowed to fail (T-015 needs real credentials). Every
   # other FAILED row is a real defect.
   other_fail "$out/setup1.log"
-  check setup "$?" "first setup exit $rc in $(($(date +%s) - t0)) s: $(tail -n 1 "$out/setup1.log")"
+  check setup "$?" "first setup exit $rc in $(($(date +%s) - t0)) s: $(summary "$out/setup1.log")"
   grep -E 'FAILED' "$out/setup1.log" | sed 's/^/  /'
   in_c errand-box setup --config /root/errand-box.toml --env /root/errand-box.env --creds /root/creds.env >"$out/setup2.log" 2>&1
   # Idempotent but for errand's own crash: nothing else changed or failed.
   other_fail "$out/setup2.log"
   of=$?
-  case $(tail -n 1 "$out/setup2.log") in
-    0\ changed*) r=$of ;;
-    *\ changed*) r=$([ "$(sed -n 's/^\([0-9]*\) changed.*/\1/p' "$out/setup2.log" | tail -n1)" = 0 ] && echo "$of" || echo 1) ;;
+  case $(summary "$out/setup2.log") in
+    "0 changed, "*) r=$of ;;
     *) r=1 ;;
   esac
-  check setup "$r" "second setup changes nothing but errand: $(tail -n 1 "$out/setup2.log")"
+  check setup "$r" "second setup changes nothing but errand: $(summary "$out/setup2.log")"
 }
 
-# Exit 0 when the only FAILED rows name the errand daemon (its dummy creds),
-# 1 when any other row failed.
-# True when a setup log has no FAILED row but errand's, or the row $2 names.
-# The name is followed by the padding and FAILED: "errand " alone is also the
-# start of "errand project" and "errand config", which must not fail.
+# Exit 0 when the only FAILED rows of a setup log name the errand daemon (its
+# dummy creds), or the row $2 names; 1 when any other row failed. The name is
+# followed by the padding and FAILED: "errand " alone is also the start of
+# "errand project" and "errand config", which must not fail.
 other_fail() {
   ! grep -E '  FAILED ' "$1" | grep -qvE "^(errand|errand-box-errand|bailey doctor as errand${2:+|$2})  +FAILED "
 }
+
+# The summary line of a report, found by its shape: a progress line on
+# stderr can land after it, so the last line is not always the summary.
+summary() { grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' "$1" | tail -n 1; }
 
 # A first setup with --skip-image starts Incus and stops at the missing
 # image; then `errand-box image import` takes the build EB_HOSTS_IMAGE names.
@@ -228,7 +230,7 @@ import_image() {
     inc file push -p "$EB_HOSTS_IMAGE/$f" "$c/root/eb-image/$f" >/dev/null || { fail setup "cannot push $f into $c"; return; }
   done
   in_c errand-box image import /root/eb-image >"$out/import.log" 2>&1
-  check setup "$?" "errand-box image import: $(tail -n 1 "$out/import.log")"
+  check setup "$?" "errand-box image import: $(summary "$out/import.log")"
 }
 
 s_live() {
@@ -260,7 +262,7 @@ s_restart() {
   fi
   in_c errand-box up >"$out/up.log" 2>&1
   rc=$?
-  check restart "$rc" "errand-box up after the restart: $(tail -n 1 "$out/up.log")"
+  check restart "$rc" "errand-box up after the restart: $(summary "$out/up.log")"
   grep -E 'FAILED' "$out/up.log" | sed 's/^/  /'
   in_c env EB_LIVE_PROXY=127.0.0.1:3128 sh /root/live.sh probe session >"$out/live-after-restart.log" 2>&1
   check restart $? "probe and a session after the restart: $(grep -c '^PASS' "$out/live-after-restart.log") PASS, $(grep -c '^FAIL' "$out/live-after-restart.log") FAIL"

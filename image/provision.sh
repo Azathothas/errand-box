@@ -121,6 +121,11 @@ done
 if [ -n "${EB_REGISTRY_MIRROR:-}" ]; then
   mkdir -p /etc/docker
   printf '{\n  "registry-mirrors": ["%s"]\n}\n' "$EB_REGISTRY_MIRROR" > /etc/docker/daemon.json
+  # podman, root and rootless, reads the same mirror from registries.conf,
+  # written as a host with no scheme (E-16).
+  mkdir -p /etc/containers/registries.conf.d
+  printf '[[registry]]\nprefix = "docker.io"\nlocation = "docker.io"\n\n[[registry.mirror]]\nlocation = "%s"\n' \
+    "${EB_REGISTRY_MIRROR#*://}" > /etc/containers/registries.conf.d/40-errand-box-mirror.conf
 fi
 
 say "units that wait for a network the guest does not have"

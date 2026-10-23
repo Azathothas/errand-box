@@ -345,8 +345,10 @@ t_up() {
   done
   out=$("$eb" up 2>&1)
   rc=$?
-  case $(printf '%s\n' "$out" | tail -n 1) in "0 changed"*) r=$rc ;; *) r=1 ;; esac
-  check up "$r" "a second up changes nothing: $(printf '%s' "$out" | tail -n 1)"
+  # The summary by its shape: a progress line on stderr can land after it.
+  sum=$(printf '%s\n' "$out" | grep -E '^[0-9]+ changed, [0-9]+ unchanged, ' | tail -n 1)
+  case $sum in "0 changed, "*) r=$rc ;; *) r=1 ;; esac
+  check up "$r" "a second up changes nothing: $sum"
   t_probe
 }
 

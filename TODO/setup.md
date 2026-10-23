@@ -257,6 +257,17 @@ packaged lxcfs unit skipped in a container, and stopping it stopping
 incusd), E-13 (incusd's proxy through `core.proxy_*`), and the unit settle
 check.
 
+2026-10-23T13:59Z, Debian 13 as a nested host with systemd, importing a
+distrobuilder build (`EB_HOSTS_IMAGE`): setup twice, the second changing
+nothing; the live tests 37 PASS, 2 FAIL, 1 SKIP; a restart with systemd
+bringing the sandbox back; a probe and a session after it, 17 of 17. The two
+FAIL lines were podman pulls refused by Docker Hub's rate limit, which drove
+out the podman half of E-16; with the fix, the build host passes the live
+tests, 52 of 52. The first setup drove out E-68: incusd's first start waited
+2 minutes for network-online.target, past the deadline of `incus version`.
+[tests/live/2026-10-23-debian-13.txt](../tests/live/2026-10-23-debian-13.txt)
+is the output.
+
 ## Prove
 
 ```sh
