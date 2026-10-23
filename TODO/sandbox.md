@@ -186,16 +186,162 @@ sh tests/live/live.sh
 The live tests stop where errand needs a real chat service: a fake token
 passes errand's probe and fails at the chat connection.
 
+## Premise
+
+Read at errand v0.3.1 (commit `97cea7de0265`):
+
+- Discord is the only chat service. `src/chat/gateway.rs:243-247` asks for
+  `GUILDS`, `GUILD_MESSAGES` and `MESSAGE_CONTENT`, and `Cargo.toml:31`
+  depends on serenity.
+- A message authored by a bot is ignored (`src/chat/inbound.rs:187`), so the
+  trigger must come from a person.
+- There is no chat endpoint override. `src/serve.rs` builds the client with
+  no base URL, and serenity and reqwest validate TLS against roots compiled
+  into the binary, so a local certificate in `/etc/ssl/certs` is not read.
+- The broker refuses a host-local model gateway unless `allowInternal` is
+  true. The default is false (`src/config/schema.rs:600`), and errand-box
+  writes neither `allowInternal` nor a `models` list
+  (`src/errandcfg.rs:90-155`).
+- errand-box writes `"forwardToolOutput": false` (`src/errandcfg.rs:150`),
+  so a thread shows the diff and the tool line, not the tool's output body.
+
+One fact is inferred, not measured: errand's WebSocket client
+(`tokio-tungstenite`) has no proxy support, so a host without direct TCP 443
+to `gateway.discord.gg` should fail at `wait_ready` whatever the credentials.
+The preflight below decides it in seconds. That is a second blocker, not
+recorded before this research.
+
+## Decision
+
+| route | verdict | evidence |
+| --- | --- | --- |
+| A. A dedicated Discord application in a private test server, plus a hosted model key with a hard limit | recommended | The only route that needs no patch, no fork and no hand-edited errand config. |
+| B. A real Discord bot plus a local OpenAI-compatible gateway | possible, unsupported | `kind: openai` forwards to `http://`, but the broker needs `allowInternal` and a gateway kage does not know needs a `models` list. errand-box writes neither; the workaround is a hand edit of errand's `config.json`, which this repository does not support. |
+| C. A fully local Discord stand-in | refuted | No endpoint override, and the TLS roots are compiled in, so it needs a patched serenity or a patched errand. |
+| D. A cheaper route in the existing config | refuted | Discord is the only transport. The web interface starts a session but still needs a token and does not exercise the message path. |
+
+Take A. It costs a test application and a capped key, and it uses the
+configuration errand-box already writes.
+
+## Plan
+
+Run on the build host, as root, after `setup` has finished. Values in
+`$VARIABLE` form are the operator's. They go in files, never on a command
+line.
+
+1. **Preflight, before creating a credential.**
+
+```sh
+curl -sS -o /dev/null -w 'rest %{http_code}\n' https://discord.com/api/v10/gateway
+timeout 5 bash -c 'exec 3<>/dev/tcp/gateway.discord.gg/443' && echo 'gateway ok'
+```
+
+Any HTTP status from the first line proves REST reachability. If the second
+line prints nothing, stop: routes A and B both fail, and the host needs
+direct egress or a transparent redirect before this entry can move.
+
+2. **Create the Discord application.** New Application. Bot, Reset Token,
+copy the token once into `creds.env`. Bot, Privileged Gateway Intents, enable
+Message Content Intent and save. Public Bot off. OAuth2 URL Generator:
+scopes `bot` and `applications.commands`; permissions View Channel, Send
+Messages, Read Message History, Add Reactions, Attach Files, Create Public
+Threads, Send Messages in Threads, Manage Threads. Open the URL, choose the
+private test server, authorize. Create a text channel `errand-test`; a forum
+or announcement channel does not work. Confirm the bot's role holds the
+eight permissions in that channel. Enable Developer Mode and copy the
+channel id and the user id.
+
+3. **Create the model key.** Pick a provider id from errand's known list in
+`src/sandbox/agent_config.rs:38-59`. Create a key for this test only, with a
+hard limit, and note the model id. Leave the base URL empty for a known
+provider.
+
+4. **Write two files under `/root/t015`, mode 0600.**
+
+| variable | file | value |
+| --- | --- | --- |
+| `ERRAND_CHAT_TOKEN` | `creds.env` | the bot token |
+| `ERRAND_PROVIDER_CREDENTIAL` | `creds.env` | the model key |
+| `ERRAND_CHANNEL_ID` | `errand-box.env` | the text channel id |
+| `ERRAND_ALLOWED_USER_IDS` | `errand-box.env` | the operator's user id |
+| `ERRAND_OPERATOR_USER_IDS` | `errand-box.env` | the same user id |
+| `ERRAND_PROVIDER` | `errand-box.env` | a known provider id |
+| `ERRAND_PROVIDER_BASE_URL` | `errand-box.env` | empty for a known provider |
+| `ERRAND_PROVIDER_KIND` | `errand-box.env` | `openai` or `anthropic` |
+| `ERRAND_PROVIDER_CREDENTIAL_NAME` | `errand-box.env` | the variable kage reads |
+| `ERRAND_MODEL` | `errand-box.env` | the model id |
+
+Do not set `ERRAND_GITHUB_TOKEN`. It enters every session as `GH_TOKEN`.
+Leave `ERRAND_START_ON_MENTION` unset so a plain message starts a session.
+
+5. **Configure and restart.**
+
+```sh
+errand-box setup --env /root/t015/errand-box.env --creds /root/t015/creds.env
+errand-box up
+errand-box status
+errand-box logs errand -n 100
+```
+
+The log must show `[info] connected`. A rejected token and an unreachable
+gateway give different messages, so read that line before the thread.
+
+6. **Prove the bot, then the message path.** Set `ERRAND_CHAT_TOKEN` and
+`ERRAND_CHANNEL_ID` in the current shell from the two files. Write the
+authorization header to a file mode 0600, so the token is not in the process
+list:
+
+```sh
+install -m 600 /dev/null /root/t015/auth
+printf 'Authorization: Bot %s\n' "$ERRAND_CHAT_TOKEN" > /root/t015/auth
+curl -sS -H @/root/t015/auth https://discord.com/api/v10/users/@me
+curl -sS -H @/root/t015/auth "https://discord.com/api/v10/channels/$ERRAND_CHANNEL_ID"
+```
+
+The first answers `"bot": true`; the second answers `"type": 0` with the
+guild. Post `!model` and fix `ERRAND_MODEL` if the model is absent. Then post
+from the operator's own account, because bot messages are ignored:
+
+> Create a file `hello.txt` in the workspace containing the single line
+> `hello from errand`. Then run `docker run hello-world` and quote its
+> output. Report both.
+
+7. **Record the evidence.** Save the live output, the redacted API answers
+and the thread transcript in `tests/live/YYYY-MM-DD-t015.txt`; replace the
+user, channel and thread ids. Update `## Prove` below with the run, then
+`sh scripts/check-todo.sh --set T-015 done`, update `TODO/PROGRESS.md` and
+`docs/tests.md` section 3, and run `sh scripts/ci-local.sh` and
+`sh tests/live/live.sh`.
+
+8. **Clean up.** Post `!stop`. Run `errand-box gc --dry-run`, then
+`errand-box gc`. Remove `/root/t015`. Reset the bot token or delete the
+application, delete the test server, and revoke the model key.
+
 ## Blocker
 
 The operator's credentials: a Discord bot token, a channel id and a user id,
 and a model gateway key and base URL. [SECURITY.md](../SECURITY.md) lists the
 permissions each needs. They go in the environment's secrets, not in a chat.
+The preflight adds a second condition: direct TCP 443 to
+`gateway.discord.gg`. The message path also needs a person to post the
+trigger, because bot messages are ignored.
 
 ## Prove
 
 A message in the channel starts a session; the agent edits a file in the
-workspace and runs `docker run hello-world`; the thread shows both.
+workspace and runs `docker run hello-world`; the thread shows the diff and
+the tool line. The expected lines:
+
+```text
+PASS chat: errand connected to the chat service
+PASS chat: a message started a session
+PASS chat: the thread shows the file and the docker run
+PASS chat: hello.txt is in the host workspace
+```
+
+The raw tool output body is not posted unless `forwardToolOutput` becomes
+true. Either accept the diff and the tool line as "both", or add that key as
+its own entry.
 
 ---
 
@@ -250,35 +396,124 @@ errand then describes the sandbox with bailey's words, which are wrong here
 
 ## Premise
 
-Read, at errand v0.3.1: errand's `Backend` has `probe`, `launch`,
-`list_orphans` and `remove_orphans`, and the podman backend implements them
-with a child process and labels (`src/sandbox/mod.rs`,
-`src/sandbox/podman.rs`). An `incus` backend fits the same shape. Measured:
-each behaviour the specification asks for runs in errand-box and passed its
-live tests (`tests/live/2026-10-23.txt`).
+Read at errand v0.3.1 (commit `97cea7de0265`) and on `main`
+(`715e9b0b777a`):
 
-## Approach
+- `SandboxBackend` is a closed enum of two values, `Podman` and `Bailey`
+  (`src/config/schema.rs:17-22`).
+- `Backend` is an enum, not a trait (`src/sandbox/mod.rs:245-250`), and the
+  module says "It is not a plugin system" (`src/sandbox/backend.rs:5`).
+- The backend string is parsed in two arms
+  (`src/config/validate.rs:1527-1533`).
+- `incus` does not appear in `src/`, `docs/` or `README.md`, and no upstream
+  issue or pull request mentions it. The author has not been asked and has
+  not ruled.
+- errand's configuration already holds `memory`, `cpus` and `pids`
+  (`src/config/schema.rs:411-416`).
+- The policy writer drops them: it writes only `file_max`, `tmp_size` and
+  `shm_size` (`src/sandbox/policy.rs:292-311`).
+- `bailey` already accepts and enforces them: `RawResources` at
+  `bailey/crates/bailey/src/config.rs:342-353`, and the cgroup writes at
+  `bailey/crates/bailey/src/backend/enforce.rs:2136-2143`.
 
-The work is in errand, which this repository does not change.
-[docs/incus-backend.md](../docs/incus-backend.md) specifies the backend:
-configuration, the instance, the guest image, the lifecycle, the settings,
-the host prerequisites, and the acceptance tests. When errand ships it,
-errand-box keeps `setup`, `up` and `maint`, writes `sandbox.backend =
-"incus"` into errand's config, and stops installing the `bailey` link for
-that errand version and later.
+The four `Backend` operations still fit a child process and HTTP, so the
+backend is plausible. It is errand's change, and the closed enum is why it is
+not errand-box's.
+
+The limits are the part that is wrong today: `sandbox.memory`, `sandbox.cpus`
+and `sandbox.pids` are read from errand's configuration, never named in the
+policy, and never reported as inert. A session runs on the backend default
+while the configuration says otherwise.
 
 ## Decision
 
-D1 to D4 in section 10 of the specification are errand's author's.
+| route | verdict | evidence |
+| --- | --- | --- |
+| A. A full incus backend in errand | plausible, blocked | The four operations fit, but the closed enum and "not a plugin system" make it errand's change. No upstream work exists and the author has not ruled. |
+| B. A smaller generic seam | refuted | errand's own `AGENTS.md` forbids an abstraction for a second implementation that does not exist. |
+| C. Keep the bailey stand-in and fix the limits | recommended now | The stand-in works, and the limits can be carried without the backend. |
+| D. Implement the podman command surface | refuted | The podman backend refuses a non-rootless runtime and asserts `--read-only`, `--cap-drop=ALL` and `--userns=keep-id`; a system container cannot honour those. |
+
+Take C now. Leave A blocked on the author. Record B and D as refused.
+
+## Approach
+
+Two parts, in this order.
+
+### Part 1: the limits errand already holds
+
+errand-box's policy parser rejects an unknown `resources` key
+(`src/policy.rs:271-283`), so errand-box must accept the three keys before
+errand writes them. The order is fixed.
+
+1. In errand-box, add `memory: Option<u64>`, `pids: Option<u32>` and
+   `cpu_percent: Option<u32>` to `Policy`, and accept `memory`, `pids_max`
+   and `cpu_percent` in `resources`.
+2. In errand, add `memory`, `cpus` and `pids` to `PolicyOptions`
+   (`src/sandbox/policy.rs`), write `memory`, `pids_max` and
+   `cpu_percent = round(cpus * 100).max(1)` in `policy_contents`, and pass
+   the three at the session and probe sites in `src/sandbox/bailey.rs`.
+   Add two policy tests: `6g`, `1.5` and `768` must produce
+   `memory = "6g"`, `pids_max = 768` and `cpu_percent = 150`; a value below
+   one percent must produce `1`.
+3. In errand-box, apply the parsed values in `src/session.rs`:
+   `limits.memory`, `limits.processes`, and `limits.cpu` for whole cores or
+   `limits.cpu.allowance` as `<n>ms/100ms` for a fraction. The allowance
+   spelling is inferred, not measured; the live test confirms it.
+4. In `src/shim.rs`, report which limit came from errand's policy and which
+   from the profile, so a mismatch is visible.
+5. Add parser tests, a `tests/fake-incus` case for the three `incus config
+   set` calls, and live checks that compare against errand's values and add
+   `limits.processes`.
+
+The errand half is 145 lines in four files and applies cleanly to v0.3.1 and
+`main` (`git apply --check` exits 0 on both). It is not compiled here: this
+host is Windows and the crate is Linux-only. Do not pin an errand version
+that writes the keys until errand-box's parser has shipped.
+
+### Part 2: the backend, if the author accepts
+
+Add `SandboxBackend::Incus` and `IncusConfig { golden, guest_uid, root_size }`
+to `src/config/schema.rs`; parse `"incus"` in `src/config/validate.rs`; add
+`src/sandbox/incus.rs` with `probe`, `launch`, `list_orphans` and
+`remove_orphans`, an `incus exec` child process (`-T`, `--cwd /workspace`,
+no `--user`), environment through `incus file push`, and orphan listing
+through `/1.0/instances?recursion=1`; add `Backend::Incus` and
+`SandboxHandle::Incus` in `src/sandbox/mod.rs`; gate on the exact errand
+versions that carry it. Add `sha2` only if the instance-name suffix is
+hashed. Regenerate the config schema and the reference page. Port the
+section 11 acceptance checks, and start the session through errand: today
+`tests/live/live.sh` writes the policy and runs the shim itself, so it
+proves errand-box, not errand.
+
+## Decisions for errand's author
+
+| decision | recommendation | who decides |
+| --- | --- | --- |
+| D1, who performs the host prerequisites | an installer outside errand, so errand never needs root; report what the probe cannot verify as a gap | the author, in part: whether errand may name a root-run daemon as a prerequisite |
+| D2, one instance per session or one per launch | per session; drop `keepDays`, because `sweep_orphans` must not treat a kept instance as an orphan | the implementer |
+| D3, a rootless incusd | later, after T-020, which is the unix-socket relay it needs | not the author, until D1 settles the root daemon |
+| D4, the client for the exec | the `incus` client as a child process, so errand owns its pipes as it does `podman run`; the REST API for the rest | the implementer |
 
 ## Blocker
 
 errand's author: whether errand takes an `incus` backend, and the decisions
 D1 to D4. Unblock: an errand release with the backend, or a ruling against
 it, in which case this entry records the ruling and errand-box keeps the
-stand-in.
+stand-in. Part 1 is blocked on nobody.
 
 ## Prove
+
+Part 1:
+
+```sh
+sh tests/live/live.sh session
+```
+
+The session reads the memory and process limits from errand's configuration,
+not from the profile.
+
+Part 2, the entry's acceptance:
 
 ```sh
 sh tests/live/live.sh   # with sandbox.backend = "incus" and no `bailey` on errand's PATH
