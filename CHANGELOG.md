@@ -9,6 +9,16 @@ errand.
 
 ## Unreleased
 
+## 0.1.0
+
+### 2026-10-23T12:44Z: the tag v0.1.0
+
+**Record:** T-009 in [TODO/upkeep.md](TODO/upkeep.md). The tag `v0.1.0`
+starts `.github/workflows/release.yml`, which builds the static binary on
+x86_64 and aarch64 and publishes it with `SHA256SUMS`; `bootstrap.sh` reads
+that release. Not deployed to a host by this entry. Version 0.1.0 is every
+entry below.
+
 ### 2026-10-23T12:36Z: CI passes on GitHub
 
 **Record:** [TODO/PROGRESS.md](TODO/PROGRESS.md) and
