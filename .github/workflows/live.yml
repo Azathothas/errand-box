@@ -75,3 +75,7 @@ jobs:
         run: |
           sudo /usr/local/bin/errand-box status || true
           sudo journalctl --no-pager -n 200 -u incus.service -u 'errand-box-*' || true
+          # What decides whether the agent may make a user namespace, which
+          # rootless podman needs: the sysctls and AppArmor's denials.
+          sudo sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces || true
+          sudo journalctl -k --no-pager | grep -E 'apparmor="DENIED"' | tail -n 20 || true
