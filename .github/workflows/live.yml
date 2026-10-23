@@ -78,4 +78,11 @@ jobs:
           # What decides whether the agent may make a user namespace, which
           # rootless podman needs: the sysctls and AppArmor's denials.
           sudo sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces || true
-          sudo journalctl -k --no-pager | grep -E 'apparmor="DENIED"' | tail -n 20 || true
+          sudo journalctl -k --no-pager | grep -E 'apparmor="DENIED".*(userns|namespace)' | tail -n 10 || true
+      # A measurement, not a fix: the same test with Ubuntu's restriction on
+      # unprivileged user namespaces off, on a runner that is thrown away.
+      - name: inside, with apparmor_restrict_unprivileged_userns off
+        if: failure()
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh tests/live/live.sh inside || true
