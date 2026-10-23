@@ -6,7 +6,8 @@ is the git log and the entries.
 
 How this repository is worked on: [`RULES.md`](RULES.md). Every entry, one
 line each: [`INDEX.md`](INDEX.md). Routing for an agent:
-[`AGENTS.md`](../AGENTS.md).
+[`AGENTS.md`](../AGENTS.md). What the last session had in flight when it
+stopped: [`RESUME.md`](RESUME.md).
 
 ---
 
@@ -18,7 +19,9 @@ line each: [`INDEX.md`](INDEX.md). Routing for an agent:
 - **Deployed:** not released; no tag. errand-box is installed on the build
   host only, which is a hosted container that is taken back after the
   session.
-- **CI:** off on this repository. Every step ran through
+- **CI:** on since 2026-10-23T11:09Z. `gates` failed on the first three
+  pushes, at shellcheck 0.11 on the Ubuntu 26.04 runner; the session of
+  2026-10-23T12:17Z fixed the scripts. Every step also ran through
   `sh scripts/ci-local.sh` (below).
 
 ## Baseline, as measured this session

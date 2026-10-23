@@ -43,8 +43,8 @@ for channel in stable lts-6.0; do
   for suite in noble jammy trixie bookworm; do
     head_ok "https://pkgs.zabbly.com/incus/$channel/dists/$suite/Release" || bad="$bad $suite"
   done
-  [ -z "$bad" ]
-  result "zabbly-$channel" $? "pkgs.zabbly.com/incus/$channel: Release files${bad:+ missing for:$bad}${bad:- present for noble jammy trixie bookworm}"
+  if [ -z "$bad" ]; then rc=0; else rc=1; fi
+  result "zabbly-$channel" "$rc" "pkgs.zabbly.com/incus/$channel: Release files${bad:+ missing for:$bad}${bad:- present for noble jammy trixie bookworm}"
 done
 
 idx=$(curl -fsSL --retry 3 https://images.linuxcontainers.org/meta/1.0/index-system 2>/dev/null)
@@ -52,8 +52,8 @@ bad=""
 for arch in amd64 arm64; do
   printf '%s\n' "$idx" | grep -q "^debian;trixie;$arch;default;" || bad="$bad $arch"
 done
-[ -z "$bad" ]
-result images $? "images.linuxcontainers.org: debian/13 (trixie)${bad:+ missing for:$bad}${bad:- listed for amd64 and arm64}"
+if [ -z "$bad" ]; then rc=0; else rc=1; fi
+result images "$rc" "images.linuxcontainers.org: debian/13 (trixie)${bad:+ missing for:$bad}${bad:- listed for amd64 and arm64}"
 
 bad=""
 n=0

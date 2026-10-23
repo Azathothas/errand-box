@@ -29,8 +29,10 @@ these.
 
 [`scripts/ci-local.sh`](../scripts/ci-local.sh) runs the steps that
 `.github/workflows/gates.yml` runs, one by one, and the workflow calls the same
-script, so the two cannot differ. CI is off on this repository: run this
-before every push, and say in a pull request that CI did not run.
+script, so the two cannot differ. CI runs them on every push to `main` and on
+every pull request, all but `cross`. Run the script before every push all the
+same: a CI job stops at its first failed step, and the steps after it are not
+checked there.
 
 | step | what it proves |
 | --- | --- |
@@ -42,7 +44,7 @@ before every push, and say in a pull request that CI did not run.
 | `pins` | `tests/pins-test.sh`: `scripts/pins.sh` against releases on `file://` URLs. A bump writes both digests and moves `latest`; a digest that differs from upstream's `.sha256` changes nothing |
 | `errand-config` | `tests/errand-config-test.sh`: the pinned errand accepts the config errand-box writes. It downloads errand (digest checked) and runs it against the config from `tests/data/`. This step caught `output.postImages`, a key that errand v0.3.1 refuses |
 | `musl` | the static release binary builds for this machine and runs |
-| `cross` | the static binary builds for the other architecture (x86_64 or aarch64) with `rust-lld`, and, where `qemu-<arch>-static` is installed, the unit and integration tests pass there under qemu-user |
+| `cross` | the static binary builds for the other architecture (x86_64 or aarch64) with `rust-lld`, and the unit and integration tests pass there under qemu-user. It needs `qemu-<arch>-static`, and a `binfmt_misc` handler for that architecture, because `tests/shim.rs` starts the shim as a child. Without the handler it runs the unit tests and exits 2; without qemu it only builds and exits 2 |
 
 ## 3. The live tests
 

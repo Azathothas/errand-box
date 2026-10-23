@@ -23,8 +23,9 @@
 # Needs: python3, socat and curl on the host.
 # Exit: 0 every check passed, 1 a check failed, 2 could not run.
 
-# The tests are called as "t_$name", which shellcheck cannot follow.
-# shellcheck disable=SC2317
+# A check is written "[ condition ]; check test $? detail", and that $? is
+# the condition's own result on purpose. SC2319 warns about exactly that.
+# shellcheck disable=SC2319
 set -u
 
 [ "$(id -u)" = 0 ] || { echo "live.sh: run as root" >&2; exit 2; }
@@ -366,9 +367,20 @@ t_errand() {
 }
 
 tests=${*:-probe session acp inside quota signals reap maint up errand}
+# Each test is called by its own name, not as "t_$t": shellcheck follows only
+# a call it can read, and one it cannot hides a test that nothing reaches.
 for t in $tests; do
   case $t in
-    probe | session | acp | inside | quota | signals | reap | maint | up | errand) "t_$t" ;;
+    probe) t_probe ;;
+    session) t_session ;;
+    acp) t_acp ;;
+    inside) t_inside ;;
+    quota) t_quota ;;
+    signals) t_signals ;;
+    reap) t_reap ;;
+    maint) t_maint ;;
+    up) t_up ;;
+    errand) t_errand ;;
     *) echo "live.sh: unknown test $t" >&2; exit 2 ;;
   esac
 done

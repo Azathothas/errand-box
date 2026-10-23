@@ -1,10 +1,11 @@
 #!/bin/sh
 # ci-local.sh - run every step of .github/workflows/gates.yml on this machine.
 #
-# The defect this exists to stop: CI that is off (it is off on this
-# repository) and a push that nobody checked. gates.yml calls this script one
-# step at a time, so the two cannot drift: a step that passes here passes
-# there, on the same runner image.
+# The defect this exists to stop: a push that nobody checked. gates.yml calls
+# this script one step at a time, so the two cannot drift, and a CI job stops
+# at its first failed step, so the steps after it are not checked there. CI
+# runs every step but `cross`. Its runner image moves (ubuntu-latest), and a
+# newer tool can refuse what an older one passed: shellcheck 0.11 did.
 #
 # Usage:
 #   sh scripts/ci-local.sh                 every step, in order
@@ -14,8 +15,9 @@
 # Steps: gate kill-by-name shellcheck fmt clippy test pins errand-config musl
 # cross. `musl` builds the static release binary for this machine's
 # architecture. `cross` builds for the other architecture (x86_64 and
-# aarch64) and runs the unit and integration tests there under qemu-user
-# when qemu-<arch>-static is installed; without it, it only builds.
+# aarch64) and runs the unit and integration tests there under qemu-user.
+# It needs qemu-<arch>-static, and a binfmt_misc handler for the integration
+# tests; without them it runs what it can and exits 2.
 # The live tests (tests/live/live.sh) need a host with Incus and are not a
 # step here; docs/tests.md says when to run them.
 #
@@ -83,12 +85,21 @@ step() {
       tv=$(printf '%s' "$t" | tr 'a-z-' 'A-Z_')
       export "CARGO_TARGET_${tv}_LINKER=rust-lld"
       cargo build --locked --release --target "$t" || return 1
-      if command -v "qemu-$arch-static" >/dev/null 2>&1; then
-        export "CARGO_TARGET_${tv}_RUNNER=qemu-$arch-static"
-        cargo test --locked --target "$t"
-      else
-        echo "qemu-$arch-static is missing: built for $t, tests not run"
+      # A test that was not run is not a pass: each path that runs less
+      # than every test says what it left out and returns 2.
+      if ! command -v "qemu-$arch-static" >/dev/null 2>&1; then
+        echo "qemu-$arch-static is missing: built for $t, tests not run" >&2
+        return 2
       fi
+      export "CARGO_TARGET_${tv}_RUNNER=qemu-$arch-static"
+      # The runner starts the test binaries. tests/shim.rs starts the shim
+      # as a child, and only a binfmt_misc handler lets the kernel run that.
+      if [ ! -e "/proc/sys/fs/binfmt_misc/qemu-$arch" ]; then
+        cargo test --locked --target "$t" --bins || return 1
+        echo "no binfmt_misc handler for $arch: the unit tests passed; the integration tests start the shim as a child and were not run" >&2
+        return 2
+      fi
+      cargo test --locked --target "$t"
       ;;
     *) echo "unknown step: $1 (steps: $STEPS)" >&2; return 2 ;;
   esac

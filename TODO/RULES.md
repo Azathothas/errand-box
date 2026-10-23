@@ -36,8 +36,9 @@ Work on `main` of this repository. Push to `origin main` only when the
 operator asks in the session, and never force-push. The commit identity is
 the operator's, from the repository's git configuration, with no trailer.
 
-CI is off on this repository. `scripts/ci-local.sh` is the CI; a pull
-request says that CI did not run, so that whoever merges it runs it.
+CI runs `.github/workflows/gates.yml` on every push to `main`, through
+`scripts/ci-local.sh`. Run that script before a push all the same: CI stops
+at the first failed step and does not run `cross`.
 
 ---
 

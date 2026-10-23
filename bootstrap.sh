@@ -61,7 +61,9 @@ case $(uname -m) in
 esac
 [ "$(uname -s)" = Linux ] || die "errand-box runs on Linux" 2
 
-# shellcheck disable=SC2317 # reached through run(), which shellcheck cannot follow
+# Reached through run(), which shellcheck cannot follow. Version 0.11 names
+# this SC2329; the versions before it, SC2317.
+# shellcheck disable=SC2317,SC2329
 fetch() { # url dest
   if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"
   elif command -v wget >/dev/null 2>&1; then wget -q -O "$2" "$1"

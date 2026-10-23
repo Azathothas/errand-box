@@ -9,6 +9,24 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T12:36Z: CI passes on GitHub
+
+**Record:** [TODO/PROGRESS.md](TODO/PROGRESS.md) and
+[docs/tests.md](docs/tests.md) section 2. Not deployed and not released. The
+program does not change; the scripts and the gate do.
+
+- **shellcheck 0.11.** The `gates` job runs on `ubuntu-latest`, which is now
+  Ubuntu 26.04 with shellcheck 0.11.0, and it refused 42 SC2329 and 2 SC2319
+  findings. The live tests and the host steps were called as `"t_$name"`,
+  which shellcheck cannot follow, so it had checked none of their bodies.
+  Each is now called by its own name. Checked, the bodies held 17 more
+  SC2319 findings, and one was a defect: the `bootstrap` step of
+  `tests/hosts/host.sh` passed "errand-box is on PATH" on any output,
+  a "not found" included. It now reads the exit code.
+- **The `cross` step** exits 2, not 0, when it runs less than every test.
+  Without a `binfmt_misc` handler it runs the unit tests and names the
+  integration tests it left out, which start the shim as a child.
+
 ### 2026-10-23T10:28Z: hardening, QOL commands, and a host matrix
 
 **Record:** [TODO/PROGRESS.md](TODO/PROGRESS.md); entries T-011 and T-018

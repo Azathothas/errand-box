@@ -33,12 +33,10 @@
 #   tests/hosts/out/<name>/ (ignored by git).
 # Exit codes: 0 every check passed, 1 a check failed, 2 could not run.
 
-# The steps are called as "s_$name", which shellcheck cannot follow.
-# shellcheck disable=SC2317
 set -u
 
 [ "$(id -u)" = 0 ] || { echo "host.sh: run as root" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,36p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,34p' "$0"; exit 2; }
 name=$1
 image=$2
 shift 2
@@ -149,9 +147,11 @@ s_bootstrap() {
   kill "$hp" 2>/dev/null
   inc config device remove "$c" eb-release >/dev/null 2>&1
   check bootstrap "$rc" "bootstrap.sh fetched, checked and installed the release binary (exit $rc): $(grep -m 1 'digest' "$out/bootstrap.log")"
+  # The command's own exit code: the output holds stderr too, so a
+  # "not found" would pass a test that it is not empty.
   v=$(in_c errand-box version 2>&1)
-  [ -n "$v" ]
-  check bootstrap $? "errand-box is on PATH: $(printf '%s' "$v" | head -n 1)"
+  rc=$?
+  check bootstrap "$rc" "errand-box is on PATH: $(printf '%s' "$v" | head -n 1)"
 }
 
 write_inputs() {
@@ -251,9 +251,16 @@ s_destroy() {
   check destroy "$r" "$c deleted"
 }
 
+# Each step is called by its own name, not as "s_$s": shellcheck follows only
+# a call it can read, and one it cannot hides a step that nothing reaches.
 for s in $steps; do
   case $s in
-    create | bootstrap | setup | live | restart | destroy) "s_$s" ;;
+    create) s_create ;;
+    bootstrap) s_bootstrap ;;
+    setup) s_setup ;;
+    live) s_live ;;
+    restart) s_restart ;;
+    destroy) s_destroy ;;
     *) echo "host.sh: unknown step $s" >&2; exit 2 ;;
   esac
 done
