@@ -44,10 +44,19 @@ Partial, 2026-10-23T08:40Z. The local half passes: `tests/pins-test.sh` 5 of
 pinned 1.99.0; this session then moved the pin to 1.99.1. A bump of errand
 from v0.3.0 to v0.3.1 reproduced the pinned
 digests exactly, and matched both upstream's `.sha256` and GitHub's digest.
-`actionlint` passes on every workflow. Open: Actions is off on this
-repository, so no workflow has run on GitHub. Unblock: turn Actions on, set
-"Allow GitHub Actions to create and approve pull requests", and run each
-workflow once by hand.
+`actionlint` passes on every workflow.
+
+On GitHub, 2026-10-23T12:57Z, each dispatched by hand on `main`: `watchdog`
+(run 39957224850) passed 4 of 4 checks, found no `upstream-*` issue to
+clear, and turned the freshness schedule back on. `freshness` with
+`dry_run` (run 39957228817) and without it (run 39957441157) found kage
+v0.5.0, errand v0.3.1 and Rust 1.99.1 current, opened nothing, cleared no
+issue, and turned the watchdog schedule back on.
+
+Open: the step that opens a pull request has not run, because no upstream
+is newer. It needs the repository setting "Allow GitHub Actions to create
+and approve pull requests", which this session cannot read. It proves
+itself on the first newer errand, kage or Rust, or on a test bump.
 
 ---
 

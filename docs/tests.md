@@ -84,6 +84,12 @@ fix, a row in [edge-cases.md](edge-cases.md), and a test:
 The run after the fixes passed every check, 52 of 52:
 [`tests/live/2026-10-23.txt`](../tests/live/2026-10-23.txt) is its output.
 
+The release v0.1.0 passed every check, 52 of 52, on a second host of the
+same kind with nothing installed before: `bootstrap.sh` from the tag
+installed the release binary, and that binary ran `setup` and the shim.
+[`tests/live/2026-10-23-v0.1.0.txt`](../tests/live/2026-10-23-v0.1.0.txt)
+is its output.
+
 ### What the live tests do not cover
 
 - WSL2, and a real aarch64 machine: the `cross` step runs the unit and
