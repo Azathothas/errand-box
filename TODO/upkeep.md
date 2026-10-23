@@ -67,9 +67,12 @@ and `SHA256SUMS` from the latest release. There is none.
 
 ## Approach
 
-With Actions on, push the tag `v0.1.0`; `.github/workflows/release.yml`
-builds both architectures through `scripts/ci-local.sh --step musl` and
-publishes the release.
+Dispatch `.github/workflows/release.yml` on `main` with the version
+`v0.1.0`, or push that tag. It builds both architectures through
+`scripts/ci-local.sh --step musl` and publishes the release; a dispatch
+creates the tag on the commit it built. The dispatch exists because a
+session's git route can push `main` and refuses a tag: measured
+2026-10-23, HTTP 403 on the tag, while `git push --dry-run` accepts it.
 
 ## Prove
 

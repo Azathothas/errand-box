@@ -11,13 +11,20 @@ errand.
 
 ## 0.1.0
 
-### 2026-10-23T12:44Z: the tag v0.1.0
+### 2026-10-23T12:44Z: the release v0.1.0
 
-**Record:** T-009 in [TODO/upkeep.md](TODO/upkeep.md). The tag `v0.1.0`
-starts `.github/workflows/release.yml`, which builds the static binary on
-x86_64 and aarch64 and publishes it with `SHA256SUMS`; `bootstrap.sh` reads
-that release. Not deployed to a host by this entry. Version 0.1.0 is every
-entry below.
+**Record:** T-009 in [TODO/upkeep.md](TODO/upkeep.md).
+`.github/workflows/release.yml` builds the static binary on x86_64 and
+aarch64 and publishes it with `SHA256SUMS`; `bootstrap.sh` reads that
+release. Not deployed to a host by this entry. Version 0.1.0 is every entry
+below.
+
+- **A release by dispatch.** `release.yml` also runs on a manual dispatch on
+  `main` with the input `version`. It checks that the version is
+  Cargo.toml's and that the tag does not exist, and the release creates the
+  tag on the dispatched commit. Amended 2026-10-23T12:50Z: this entry first
+  said a pushed tag starts the release; the session's git route refused the
+  tag push, so the dispatch was added.
 
 ### 2026-10-23T12:36Z: CI passes on GitHub
 

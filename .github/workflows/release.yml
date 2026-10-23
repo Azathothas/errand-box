@@ -1,18 +1,31 @@
-# A release: push a tag vX.Y.Z whose version is Cargo.toml's. This builds the
-# static binary on each architecture through scripts/ci-local.sh (the same
-# step a session runs), writes SHA256SUMS, and publishes the GitHub release
-# that bootstrap.sh reads:
+# A release of the version in Cargo.toml. It builds the static binary on each
+# architecture through scripts/ci-local.sh (the same step a session runs),
+# writes SHA256SUMS, and publishes the GitHub release that bootstrap.sh reads:
 #   errand-box-x86_64-linux-musl, errand-box-aarch64-linux-musl, SHA256SUMS
+#
+# Two ways to start it, and both check that the version is Cargo.toml's:
+#   - push a tag vX.Y.Z; the release goes on that tag.
+#   - dispatch it on main with the input version vX.Y.Z; the release goes on
+#     the dispatched commit and creates the tag. It refuses a tag that exists.
+# The second needs no tag push, for a client that can push a branch and not a
+# tag. A tag the workflow token creates starts no other workflow, so this
+# workflow does not run twice.
 name: release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'vX.Y.Z, the version in Cargo.toml; the tag must not exist yet'
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -32,12 +45,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: the tag is Cargo.toml's version
+      - name: the version is Cargo.toml's, and a dispatch is on main with a new tag
         env:
-          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          [ "v$v" = "$TAG" ] || { echo "tag $TAG, Cargo.toml $v"; exit 1; }
+          [ "v$v" = "$TAG" ] || { echo "version $TAG, Cargo.toml $v"; exit 1; }
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [ "$REF" = refs/heads/main ] || { echo "dispatch a release on main, not $REF"; exit 1; }
+            # --exit-code: 2 when no ref matches, which is the one answer that lets
+            # this pass. The step runs under bash -e, so the code is caught with ||.
+            rc=0
+            git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null || rc=$?
+            [ "$rc" = 2 ] || { echo "the tag $TAG exists, or the remote did not answer (git ls-remote exit $rc)"; exit 1; }
+          fi
       - name: build and run the static binary
         run: sh scripts/ci-local.sh --step musl
       - name: name the asset
@@ -69,8 +92,12 @@ jobs:
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag \
+          # A pushed tag must exist; a dispatch creates the tag on the commit it built.
+          if [ "$EVENT" = workflow_dispatch ]; then set -- --target "$SHA"; else set -- --verify-tag; fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" "$@" \
             --notes "Static binaries for x86_64 and aarch64 Linux, and their SHA-256 digests. Install with bootstrap.sh; see docs/operations.md." \
             dist/errand-box-x86_64-linux-musl dist/errand-box-aarch64-linux-musl dist/SHA256SUMS
