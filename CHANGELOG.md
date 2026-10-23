@@ -9,6 +9,20 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T15:30Z: errand's ruling on #41, the operator's rulings, and docs for a Windows-hosted session
+
+**Record:** T-019 to T-027 in [TODO/](TODO/INDEX.md); section 10 of
+[docs/incus-backend.md](docs/incus-backend.md). Not deployed and not
+released. No code changed.
+
+- errand's maintainer accepted an `incus` backend on QaidVoid/errand#41,
+  with no proxy devices and a root incusd. errand-box keeps its `bailey`
+  stand-in as the default (T-019).
+- The operator's rulings on T-007, T-015, T-019 to T-022 and E-69 are in
+  their entries. New: T-024 to T-027.
+- docs/tests.md section 5 says how to test a release as a user on a host
+  you are given, and from a Windows machine.
+
 ### 2026-10-23T14:42Z: live tests on GitHub's runners, x86_64 and aarch64
 
 **Record:** T-013 in [TODO/setup.md](TODO/setup.md); E-69 and E-70 in

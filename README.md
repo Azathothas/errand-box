@@ -6,9 +6,12 @@ Incus system container: systemd is PID 1, and Docker, podman and FUSE work
 inside it. errand runs unchanged. It calls errand-box through its `bailey`
 backend.
 
-One command sets up a host:
+`bootstrap.sh` installs the release binary for this machine, after it checks
+the digest, and one command sets up the host:
 
 ```sh
+curl -fsSLO https://raw.githubusercontent.com/Azathothas/errand-box/main/bootstrap.sh
+sh bootstrap.sh
 errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
 ```
 
@@ -22,7 +25,7 @@ again at any time: a second run changes nothing. After a host restart, run
 | | |
 | --- | --- |
 | a system | Debian 13, systemd as PID 1, the agent as uid 1000 with sudo |
-| inside | Docker (and build), podman (root and rootless), FUSE, a compiler set, Python, Node |
+| inside | Docker (and build), podman as root, rootless podman on a cgroup v1 host (not yet where AppArmor restricts user namespaces or on cgroup v2: E-69, E-70), FUSE, a compiler set, Python, Node |
 | disk | 20 GiB, enforced (btrfs quota) |
 | memory and CPUs | 80% of the host's, enforced; lxcfs makes `free` and `nproc` show the limits |
 | network | none, except errand's broker; direct egress fails |
@@ -33,9 +36,12 @@ again at any time: a second run changes nothing. After a host restart, run
 
 errand-box is made for Linux on x86_64 or aarch64, with glibc or musl,
 with or without an init (systemd, or s6 that errand-box installs), and for
-WSL2. It needs root for setup. It was tested live on one host only: Ubuntu
-24.04 on x86_64, no init, cgroup v1, no KVM. The other hosts are open
-entries in [TODO/INDEX.md](TODO/INDEX.md).
+WSL2. It needs root for setup. The live tests have run on Ubuntu 24.04 with
+no init and cgroup v1; Ubuntu 24.04 and Debian 13 with systemd, and Alpine
+3.22 with OpenRC and musl, each nested in an Incus container; and GitHub's
+Ubuntu 24.04 runners with systemd and cgroup v2, on x86_64 and aarch64.
+[docs/tests.md](docs/tests.md) has each result. WSL2 has not run yet, and
+the other open hosts are entries in [TODO/INDEX.md](TODO/INDEX.md).
 [docs/research/engines.md](docs/research/engines.md) has the numbers above
 with their conditions.
 

@@ -45,29 +45,32 @@ They are done and shown live on one host.
 
 The open P1 entries are a broker link that does not need proxy devices,
 which closes the path from the errand account to the admin socket, a
-session with a real chat service, WSL2 of the hosts the operator named, and
-the one path of the scheduled workflows that has not run: a pull request.
+session with a real chat service, rootless podman on Ubuntu 24.04 hosts,
+errand-box used as a user uses it on three hosts the operator named (WSL2,
+Daytona, ModelScope Studio), and the one path of the scheduled workflows
+that has not run: a pull request.
 systemd and musl are shown live, the first release is out, and every
 workflow has run on GitHub. A host type is P1 rather than P0 because the
 code paths exist and the failure, if any, is at setup, before errand runs.
 
 P2 and P3 make errand-box cheaper or clearer: rootless setup, a published
-image, a pool size that fits the disk, errand's wording, a docs check, and a
-native Incus backend in errand, which waits on errand's author.
+image, a pool size that fits the disk, errand's wording, a docs check, a
+narrower AppArmor route, two live checks that depend on timing, and a
+native Incus backend, which errand's maintainer accepted and errand builds.
 
 ---
 
 ## Counts
 
-**23 items. 7 open, 4 partial, 2 blocked, 10 done.**
+**27 items. 11 open, 4 partial, 2 blocked, 10 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 3 | 3 |
-| P1 | 1 | 2 | 1 | 5 | 9 |
-| P2 | 4 | 2 | 1 | 2 | 9 |
+| P1 | 3 | 2 | 1 | 5 | 11 |
+| P2 | 6 | 2 | 1 | 2 | 11 |
 | P3 | 2 | 0 | 0 | 0 | 2 |
-| **All** | 7 | 4 | 2 | 10 | 23 |
+| **All** | 11 | 4 | 2 | 10 | 27 |
 
 ---
 
@@ -98,3 +101,7 @@ native Incus backend in errand, which waits on errand's author.
 | [T-021](sandbox.md) | P2 | sandbox | open | Operator-chosen session credentials, safely |
 | [T-022](sandbox.md) | P2 | sandbox | open | Egress a session can use beyond the HTTP broker |
 | [T-023](setup.md) | P2 | setup | open | Observability: metrics over time, and session traces |
+| [T-024](sandbox.md) | P1 | sandbox | open | Rootless podman under AppArmor's user namespace restriction, and on cgroup v2 |
+| [T-025](sandbox.md) | P2 | sandbox | open | An AppArmor route for user namespaces in guests, without the host-wide sysctl |
+| [T-026](upkeep.md) | P2 | upkeep | open | Live checks that read a state once, at a moment they do not control |
+| [T-027](setup.md) | P1 | setup | open | Use errand-box as a user does, on three hosts, and file what it finds |

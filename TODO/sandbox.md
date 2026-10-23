@@ -242,9 +242,11 @@ configuration errand-box already writes.
 
 ## Plan
 
-Run on the build host, as root, after `setup` has finished. Values in
-`$VARIABLE` form are the operator's. They go in files, never on a command
-line.
+The operator ruled on 2026-10-23: run it on every host that passes T-027,
+as root, after `setup` has finished. A host passes when setup exits 0 and
+`tests/live/live.sh` has no FAIL that an E-row does not explain. Each host
+gets its own run and its own evidence file. Values in `$VARIABLE` form are
+the operator's. They go in files, never on a command line.
 
 1. **Preflight, before creating a credential.**
 
@@ -284,8 +286,8 @@ provider.
 | `ERRAND_OPERATOR_USER_IDS` | `errand-box.env` | the same user id |
 | `ERRAND_PROVIDER` | `errand-box.env` | a known provider id |
 | `ERRAND_PROVIDER_BASE_URL` | `errand-box.env` | empty for a known provider |
-| `ERRAND_PROVIDER_KIND` | `errand-box.env` | `openai` or `anthropic` |
-| `ERRAND_PROVIDER_CREDENTIAL_NAME` | `errand-box.env` | the variable kage reads |
+| `ERRAND_PROVIDER_KIND` | `errand-box.env` | empty for a provider kage knows; `openai` or `anthropic` for another endpoint |
+| `ERRAND_PROVIDER_CREDENTIAL_NAME` | `errand-box.env` | optional: the variable kage reads the key from |
 | `ERRAND_MODEL` | `errand-box.env` | the model id |
 
 Do not set `ERRAND_GITHUB_TOKEN`. It enters every session as `GH_TOKEN`.
@@ -324,8 +326,8 @@ from the operator's own account, because bot messages are ignored:
 > output. Report both.
 
 7. **Record the evidence.** Save the live output, the redacted API answers
-and the thread transcript in `tests/live/YYYY-MM-DD-t015.txt`; replace the
-user, channel and thread ids. Update `## Prove` below with the run, then
+and the thread transcript in `tests/live/YYYY-MM-DD-t015-HOST.txt`, one file
+per host; replace the user, channel and thread ids. Update `## Prove` below with the run, then
 `sh scripts/check-todo.sh --set T-015 done`, update `TODO/PROGRESS.md` and
 `docs/tests.md` section 3, and run `sh scripts/ci-local.sh` and
 `sh tests/live/live.sh`.
@@ -342,6 +344,11 @@ permissions each needs. They go in the environment's secrets, not in a chat.
 The preflight adds a second condition: direct TCP 443 to
 `gateway.discord.gg`. The message path also needs a person to post the
 trigger, because bot messages are ignored.
+
+2026-10-23: the operator is preparing the credentials for the next session,
+which runs T-027 on three hosts and this entry on each one that passes. The
+steps of this plan are the list the operator follows. Unblock: the files of
+step 4 on the host, and the preflight passing there.
 
 ## Prove
 
@@ -442,11 +449,29 @@ and `sandbox.pids` are read from errand's configuration, never named in the
 policy, and never reported as inert. A session runs on the backend default
 while the configuration says otherwise.
 
+**Correction, 2026-10-23T15:00Z: the author has been asked.**
+[QaidVoid/errand#41](https://github.com/QaidVoid/errand/issues/41), opened
+by the operator at 13:12Z, proposes the backend with this entry's design and
+names the two broker transports and the five project exceptions it needs.
+Its one comment, at 13:15Z, is a triage note from an account with no role in
+errand, not the maintainer's. It confirms the v0.3.1 references and lists
+corrections. The maintainer has not answered. The corrections are claims
+read from the comment, not measured here, and each is checked where it
+lands before it is acted on:
+
+| claim in the triage comment | where it lands | how to check it |
+| --- | --- | --- |
+| `limits.cpu` is a count or a cpuset, not a cap on use; a fraction of `cpus` maps to `limits.cpu.allowance` as a time quota (`150ms/100ms`), not set together with `limits.cpu` | Part 1, step 3 | the live test of Part 1, reading the cgroup's quota in a session |
+| `limits.memory.swap` defaults to `true`; `false` makes `limits.memory` a ceiling | Part 1, and errand-box's own profile today | `incus config show` of a session, on a host that has swap |
+| `limits.kernel.fsize` is a per-process limit, and is set before the start | Part 2, the limits table of [docs/incus-backend.md](../docs/incus-backend.md) | the Incus documentation at the pinned Incus |
+| an instance name must not start with a digit or a dash, nor end with a dash | Part 2 | errand-box's own names: `session::tests::names` |
+| on errand `main` (`715e9b0`), the agent command passes `--yolo` and an images endpoint exists | Part 2 | re-pin the line references before implementing |
+
 ## Decision
 
 | route | verdict | evidence |
 | --- | --- | --- |
-| A. A full incus backend in errand | plausible, blocked | The four operations fit, but the closed enum and "not a plugin system" make it errand's change. No upstream work exists and the author has not ruled. |
+| A. A full incus backend in errand | accepted, errand's to build | The four operations fit, but the closed enum and "not a plugin system" make it errand's change. Proposed as #41; the maintainer accepted it on 2026-10-23, with changes (below). |
 | B. A smaller generic seam | refuted | errand's own `AGENTS.md` forbids an abstraction for a second implementation that does not exist. |
 | C. Keep the bailey stand-in and fix the limits | recommended now | The stand-in works, and the limits can be carried without the backend. |
 | D. Implement the podman command surface | refuted | The podman backend refuses a non-rootless runtime and asserts `--read-only`, `--cap-drop=ALL` and `--userns=keep-id`; a system container cannot honour those. |
@@ -512,12 +537,36 @@ proves errand-box, not errand.
 | D3, a rootless incusd | later, after T-020, which is the unix-socket relay it needs | not the author, until D1 settles the root daemon |
 | D4, the client for the exec | the `incus` client as a child process, so errand owns its pipes as it does `podman run`; the REST API for the rest | the implementer |
 
+**Correction, 2026-10-23T15:10Z: the maintainer has ruled.** QaidVoid, the
+owner, answered every open question on #41 at 15:02Z. The table in section
+10 of [docs/incus-backend.md](../docs/incus-backend.md) lists each ruling
+and where it differs from the specification. The four that change this
+entry:
+
+- Yes, a third backend, in errand. Part 2 is errand's to build; this
+  repository does not write to errand's.
+- Proxy devices stay forbidden, and the broker reaches the guest over a unix
+  socket on a disk device, with a guest-side relay. That is T-020's design,
+  so errand-box needs no second transport.
+- One instance per launch (D2), not one per session.
+- The incusd runs as root, and `probe` requires the `incus` client as root
+  or in `incus-admin` (D1, D3). errand's account in `incus-admin` is equal
+  to root, which errand-box's restricted project exists to avoid
+  ([SECURITY.md](../SECURITY.md), "What each compromise reaches").
+
+The operator ruled on 2026-10-23, after reading this, on what errand-box
+does when errand ships the backend: section 10 of
+[docs/incus-backend.md](../docs/incus-backend.md) has the ruling. The opt-in
+key goes in `errand-box.toml`, and `doctor`, `setup` and `up` name the
+reason with the DEGRADED line.
+
 ## Blocker
 
-errand's author: whether errand takes an `incus` backend, and the decisions
-D1 to D4. Unblock: an errand release with the backend, or a ruling against
-it, in which case this entry records the ruling and errand-box keeps the
-stand-in. Part 1 is blocked on nobody.
+An errand release that carries the `incus` backend. Then errand-box adds the
+opt-in key, pins that release, and runs this entry's Part 2 acceptance with
+the key on. Part 1 needs errand to write the three limits into the bailey
+policy, which is also errand's change, and errand-box's parser must accept
+them first (step 1, blocked on nobody).
 
 ## Prove
 
@@ -578,6 +627,27 @@ listen on 169.254.169.1 and relay to it, so kage and the guest's services
 see the same address. Then set `restricted.devices.proxy=block`. The guest
 image changes, so every host rebuilds it (E-31).
 
+## Decision
+
+The operator ruled on 2026-10-23: the unix socket, in a per-session host
+directory that the guest cannot write, shared into the guest read-only by a
+disk device. Not in the session's state directory, which the guest writes
+(SECURITY.md rule 1). If errand's maintainer chooses another transport for
+the incus backend (#41, T-019), errand-box adds that transport as a
+configuration option beside this one. On 2026-10-23 the maintainer chose
+the same transport, a unix socket on a disk device with a guest-side relay,
+so no second option is needed.
+
+To measure first, before the design is built on it:
+
+- that a guest connects to a unix socket on a read-only disk device;
+- the socket's owner and mode, so that the agent (guest uid 1000, mapped to
+  the errand account) and the guest's services (the guest's root, an isolated
+  uid) both connect, and no other host account does;
+- the guest-side relay: a systemd socket unit with `systemd-socket-proxyd`,
+  or `socat`, listening on 169.254.169.1 for the broker port and for
+  `guest_proxy_port`.
+
 ## Prove
 
 ```sh
@@ -631,6 +701,21 @@ the one that lets the operator add arbitrary credentials while keeping every
 grant verifiable and least-privilege. An ssh key is the worked example: it
 is useless without T-022, so the two are resolved together.
 
+## Decision
+
+The operator ruled on 2026-10-23: the secrets directory. Each secret is a
+file in a directory only root can read (`/etc/errand-box/secrets/`, 0700).
+`errand-box.toml` names it, the guest path it appears at, and which sessions
+are granted it. errand-box mounts it read-only into a granted session, owned
+by the agent and mode 0600. It is never in errand's policy, an argument
+list or a log. A session that is not granted it does not see it. The signed
+overlay lost: it is more machinery for the same grant, and it mixes the
+operator's grants into errand's trusted policy.
+
+To settle in the implementation: what a grant names a session by (all
+sessions, or errand's project path, which the policy carries), and what
+errand-box does with errand's own defaults, the GitHub token included.
+
 ## Prove
 
 ```sh
@@ -680,6 +765,21 @@ named outbound connection work while every other destination still fails
 closed. It is resolved with T-021 (the credential is useless without the
 path, and the path is dangerous without a scoped credential).
 
+## Decision
+
+The operator ruled on 2026-10-23: a raw-TCP allowlist that errand-box
+relays. `errand-box.toml` names the `host:port` pairs a session may reach,
+off by default. The shim relays each pair over the same unix-socket link
+T-020 builds, and the guest reaches each one at its own port on
+169.254.169.1. The guest still has no network device, and every destination
+that is not named fails. An HTTP-only default lost because it leaves the
+operator's own example, ssh to a named machine, unreachable. This waits on
+T-020's link.
+
+To settle in the implementation: how a session finds a target by name (an
+`/etc/hosts` entry in the guest, or an ssh `Host` alias the boot step
+writes), and whether a grant is per session, as T-021's is.
+
 ## Prove
 
 ```sh
@@ -687,3 +787,153 @@ path, and the path is dangerous without a scoped credential).
 # host; every ungranted raw-TCP connection still fails
 sh tests/live/live.sh
 ```
+
+---
+
+# T-024: Rootless podman under AppArmor's user namespace restriction, and on cgroup v2
+
+**Source:** measured 2026-10-23 on GitHub's ubuntu-24.04 runners, both
+architectures (live.yml runs 39968392861 and 39970746432); the operator's
+ruling of 2026-10-23
+**Category:** sandbox
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+On a host with `kernel.apparmor_restrict_unprivileged_userns = 1`, the
+agent's `podman run` as guest uid 1000 fails with "cannot re-exec process"
+(E-69). With the restriction off, on cgroup v2, it stops at "dbus: couldn't
+determine address of session bus" (E-70). Docker and `sudo podman` pass on
+the same hosts. T-005 says podman works inside a session, and on such a host
+the rootless half does not. The check that fails is "inside: rootless
+podman as the agent (E-30)" in `tests/live/live.sh`.
+
+## Premise
+
+Measured in run 39970746432: the audit line `apparmor="DENIED"
+operation="userns_create"` with the sysctl at 1. With `sysctl -w
+kernel.apparmor_restrict_unprivileged_userns=0` on the runner, podman gets
+past it and stops at the dbus error. Every cgroup v1 host passes, because the
+guest's boot step runs podman with cgroups disabled there
+(`image/guest-init:12-23`, E-04).
+
+Read, not measured: the agent has no systemd user session in the guest. The
+launcher drops to uid 1000 with `setpriv` (`image/launch:30`), and nothing
+enables lingering for the agent, so no systemd user manager for uid 1000
+and no session bus exist.
+
+## Decision
+
+The operator ruled on 2026-10-23: opt in for now, and the research for a
+narrower route is its own entry (T-025).
+
+- A key in `errand-box.toml`, off by default, makes `up` set
+  `kernel.apparmor_restrict_unprivileged_userns = 0`.
+- The sysctl is host-wide: every unprivileged process on the host may then
+  create user namespaces, which the restriction exists to stop. So while the
+  key lifts it, `doctor`, `setup` and `up` report the host as DEGRADED and
+  name the sysctl.
+- With the key off on such a host, they report rootless podman in guests as
+  unavailable, with E-69 and the key's name, and change nothing.
+
+## Approach
+
+1. The key, in `Engine` (`src/config.rs:23`), `examples/errand-box.toml` and
+   [docs/operations.md](../docs/operations.md). A proposed name:
+   `engine.lift_userns_restriction`. Check it against the other keys' names
+   before it ships, because a key name is an interface.
+2. In `src/up.rs`, beside `sysctls` (`src/up.rs:357`), called from
+   `src/up.rs:1241`. With the key on and the sysctl at 1: write 0, record the
+   value found in errand-box's state, and report DEGRADED. With the key off
+   and a recorded value: write the recorded value back, so turning the key
+   off undoes it. With the key off and nothing recorded: report and change
+   nothing. A host without the sysctl reports nothing.
+3. The E-70 fix, in the guest. Two routes, to measure in this order:
+   - A. Lingering for the agent at image build (the file
+     `/var/lib/systemd/linger/agent`), and the launcher sets
+     `XDG_RUNTIME_DIR=/run/user/1000`, so podman's systemd cgroup manager
+     reaches the agent's systemd user manager. Recommended: the agent's containers keep
+     real cgroup limits inside the guest's own.
+   - B. An agent-only `containers.conf` with `cgroup_manager = "cgroupfs"`,
+     if A fails.
+
+   The image changes, so every host rebuilds it (E-31).
+4. `tests/live/live.sh`: the rootless podman check passes on a host with the
+   key on. On a host with the restriction and the key off, it reports SKIP,
+   with E-69, instead of FAIL.
+5. Update E-69 and E-70 in [docs/edge-cases.md](../docs/edge-cases.md),
+   [docs/design.md](../docs/design.md) and the README.
+
+## Pitfalls
+
+- A sysctl write fails on a host where `/proc/sys` is read-only (a hosted
+  container). That is a DEGRADED line with the cause, not a failed setup.
+- `up` runs at every boot. The key's write must hold across restarts and not
+  fight another tool that sets the same sysctl; read the value each time.
+
+## Prove
+
+```sh
+cargo test --locked up
+sh tests/live/live.sh inside   # on ubuntu-24.04, key on: rootless podman PASS
+sh tests/live/live.sh inside   # on ubuntu-24.04, key off: SKIP with E-69
+```
+
+and live.yml on both runners, with the key on.
+
+---
+
+# T-025: An AppArmor route for user namespaces in guests, without the host-wide sysctl
+
+**Source:** the operator's ruling on E-69, 2026-10-23: "opt in for now and
+leave the research as a new entry"
+**Category:** sandbox
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+T-024's key lifts the user namespace restriction for every process on the
+host. Ubuntu's design is per program: a profile that grants `userns` lets
+that program create user namespaces while the restriction holds for the
+rest. If a profile can cover the guests' processes and nothing else, the
+operator gets rootless podman in sessions without weakening the host.
+
+## Premise
+
+Read, not measured. Incus confines each guest with a profile it generates
+per instance. errand's restricted project forbids `raw.apparmor`, because
+`restricted.containers.lowlevel` blocks it, and that rule is what keeps the
+errand account from raw LXC and AppArmor settings. So a route that needs
+`raw.apparmor` in errand's project widens the project, and loses for the
+same reason proxy devices are a finding (E-61, T-020).
+
+## Approach: research and measure
+
+Measure each route on a host with the sysctl at 1 (GitHub's ubuntu-24.04
+runners have it), and record the commands and the output in
+`docs/research/userns.md`:
+
+- A. Read the profile Incus generates for a session instance, on the stable
+  line and on 6.0 LTS (`/var/lib/incus/security/apparmor/profiles/`). Does
+  it grant `userns`, or a setting that adds it? If a newer Incus grants it,
+  the route is a version, not a profile.
+- B. A profile errand-box installs for the processes Incus starts, without
+  a key in errand's project: whether AppArmor's stacking lets a host
+  profile grant `userns` under the generated one.
+- C. `raw.apparmor` set by root on the profile errand's project uses: whether
+  a restricted project refuses it from root as it refuses proxy devices.
+  Expected refused, and recorded as measured either way.
+
+## Prove
+
+```sh
+# with the sysctl at 1 and T-024's key off
+sh tests/live/live.sh inside   # rootless podman PASS through the chosen route
+```
+
+Or `docs/research/userns.md` shows each route refused, with the command and
+its output, and T-024's key stays the only route.

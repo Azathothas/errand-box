@@ -19,7 +19,7 @@ from session to session. Every general rule is a link.
 
 | | |
 | --- | --- |
-| every gate step | `sh scripts/ci-local.sh` |
+| every gate step | `sh scripts/ci-local.sh`, on Linux; on a Windows machine, in WSL2 |
 | the live tests, on a host with Incus | `sh tests/live/live.sh`, as root |
 | the record agrees with itself | `sh scripts/check-todo.sh` |
 | move an entry's status and every count | `sh scripts/check-todo.sh --set T-NNN STATUS` |

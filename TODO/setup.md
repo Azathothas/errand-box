@@ -315,7 +315,9 @@ put the errand account in the shared group `nogroup`), and showed that
 `host.sh` allowed every FAILED row whose name starts with "errand".
 
 Open: WSL2 is untouched. It needs a Windows machine with WSL2 and Ubuntu,
-where the operator runs `sh tests/live/live.sh` after setup.
+where the operator runs `sh tests/live/live.sh` after setup. The next
+session runs on the operator's Windows machine and covers it as the WSL host
+of T-027.
 
 ## Prove
 
@@ -461,3 +463,86 @@ a place secrets land (T-021).
 # over time and the lifecycle events, bounded on disk, with no secret in it
 errand-box status --watch   # or the chosen read/export path
 ```
+
+---
+
+# T-027: Use errand-box as a user does, on three hosts, and file what it finds
+
+**Source:** the operator, 2026-10-23: "it must use our errand-box like a user
+would on 3 separate environments (I will provide it access), `daytona`,
+`modelscope studio` & `wsl` - it will then note down all the issues, QOL
+misses, things that are broken or can be improved, it will file them as
+additional task entries and then it will present a summary to me"
+**Category:** setup
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+Every run so far drove errand-box from its source tree, as its developer
+does: `tests/hosts/host.sh` builds the binary and copies it in, and
+`tests/live/live.sh` runs from the checkout. No run has fetched
+`bootstrap.sh` from a release tag, followed the README and
+[docs/operations.md](../docs/operations.md), written the three inputs, and
+run setup on a host somebody was given. The three hosts the operator uses
+have never run errand-box: Daytona, a hosted sandbox reached by ssh;
+ModelScope Studio, a hosted notebook environment; and WSL2 on Windows.
+
+## Premise
+
+Nothing about the three hosts is measured. This session could not reach
+Daytona: its network policy refused TCP 22. Whether each host gives root,
+user namespaces, `/dev/fuse`, a writable `/proc/sys` and the hosts setup
+fetches from is what the run finds out. `errand-box doctor` changes nothing,
+so it runs first on each.
+
+## Approach
+
+The next session runs on the operator's Windows machine. The operator gives
+it access to the three hosts at its start. On each host, in this order: WSL2,
+Daytona, ModelScope Studio.
+
+1. Follow [docs/tests.md](../docs/tests.md) section 5 as written, from the
+   release tag, as a user would. Read only what a user reads: the README,
+   docs/operations.md and the command's own output.
+2. Note each finding when it happens, one line each, with the command and
+   the output: a failure, a wrong or missing line in a page, a message that
+   does not say what to do, a step a user would not guess, a wait with no
+   output, anything slow.
+3. If setup exits 0 and `tests/live/live.sh` has no FAIL that an E-row does
+   not explain, the host passes: run T-015 on it (the operator's ruling).
+4. A finding that stops the run on a host is recorded with its cause, and
+   the run moves to the next host.
+5. Remove what the run made: `sudo errand-box uninstall --purge --yes`, and
+   name what stays (the Incus packages).
+6. File each finding as an entry, per
+   [authoring.md](../docs/methodology/authoring.md), and a new host condition
+   as an E-row in [docs/edge-cases.md](../docs/edge-cases.md). This entry
+   files; it does not fix.
+7. Present the summary to the operator: per host, what worked, what failed,
+   and the entries filed.
+
+Also in that session, because it has the operator's `gh` CLI: T-007's
+setting and secret, and the v0.1.1 release, which this session did not
+reach.
+
+## Pitfalls
+
+- The Daytona ssh token is a credential. It stays in the operator's ssh
+  config, never in the tree, a log or the chat.
+- `wsl.exe` writes UTF-16. Read its output through `wsl -e`, as
+  docs/tests.md says.
+- A hosted container may refuse nested containers outright. That is a
+  finding with its measurement, not a reason to stop the other hosts.
+
+## Prove
+
+```sh
+ls tests/live/*-wsl2.txt tests/live/*-daytona.txt tests/live/*-modelscope.txt
+sh scripts/check-todo.sh
+```
+
+Each file holds the host's `doctor` output and the live result, or the step
+where the run stopped and the entry filed for it. Every finding has a row
+in INDEX.md.

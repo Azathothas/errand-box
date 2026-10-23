@@ -1,7 +1,10 @@
 # Incus backend for errand: specification
 
-**Status:** proposal to errand's author; not implemented in errand. errand-box
-implements the same behaviour today, behind errand's `bailey` backend.
+**Status:** accepted by errand's maintainer on
+[QaidVoid/errand#41](https://github.com/QaidVoid/errand/issues/41),
+2026-10-23T15:02Z, with changes that section 10 lists. Not implemented in
+errand yet. errand-box implements the same behaviour today, behind errand's
+`bailey` backend.
 **Target:** errand v0.3.x, `src/sandbox/`. **Tracked as:** T-019 in
 [TODO/sandbox.md](../TODO/sandbox.md).
 
@@ -287,6 +290,29 @@ errand. errand-box's `errand-box setup` and `errand-box up` do all of them
 | D2 | One instance per session, kept between launches, or one per launch | per session: a revived session starts in about 0.3 s and keeps what the agent installed |
 | D3 | An incusd without root | later. It runs at the same speed but loses the disk quota (E-24), and its proxy devices cannot reach host loopback, so the broker needs a unix-socket relay (E-23) |
 | D4 | The client for the exec | the `incus` client as a child process, so that errand owns its pipes as it does `podman run`; the REST API for the rest |
+
+### The maintainer's ruling, 2026-10-23T15:02Z
+
+Read from #41. Where the ruling differs from this page, the ruling wins, and
+the sections above are not yet rewritten to it.
+
+| question | the ruling | differs from this page |
+| --- | --- | --- |
+| scope | a third backend, `incus`, beside `podman`; the enum stays closed | no |
+| project exceptions | `security.nesting=true` with `restricted.containers.nesting=allow`; `restricted.devices.disk=allow` bounded by `restricted.devices.disk.paths`; `restricted.containers.lowlevel=allow` for `raw.idmap`, bounded by `restricted.idmap.uid` and `.gid`; `restricted.devices.proxy` stays `block` | yes: no proxy devices |
+| broker transport | a unix socket on a disk device, and a guest-side relay to the loopback address | yes: section 4's proxy devices go; the same design as T-020 |
+| D2 | one instance per launch; state outside the host mounts does not survive | yes: not kept between launches |
+| D1, D3 | the incusd runs as root; `probe` requires the `incus` client as root or in `incus-admin`, and reports an `incus-user` project as unavailable | yes: errand's account is then equal to root |
+| the image | errand builds it in its own repository; the backend takes an alias | yes: not errand-box's image |
+| the image key | `sandbox.incus.image`; `sandbox.image` stays podman's | yes |
+| the uid map | `raw.idmap both`, bounded; no `shift=true` | no |
+| `cpus` | `limits.cpu.allowance` as a time quota; `limits.cpu` unset | yes: section 7 |
+| instance names | truncated to 63 characters, a trailing dash stripped | no |
+
+The operator's ruling for errand-box, 2026-10-23: errand-box keeps the
+`bailey` stand-in and its restricted project as the default. When errand
+ships this backend, errand-box offers it as an opt-in key, reported as
+DEGRADED, because the errand account must then be in `incus-admin`.
 
 ## 11. Acceptance
 

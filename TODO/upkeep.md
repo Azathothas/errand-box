@@ -58,6 +58,30 @@ is newer. It needs the repository setting "Allow GitHub Actions to create
 and approve pull requests", which this session cannot read. It proves
 itself on the first newer errand, kage or Rust, or on a test bump.
 
+## Decision
+
+The operator ruled on 2026-10-23: the next session's agent sets the
+repository setting and stores `FRESHNESS_TOKEN`, with the operator's `gh`
+CLI. That is the delegation [secrets.md](../docs/security/secrets.md)
+requires. The operator creates the token: fine-grained, this repository
+only, Contents and Pull requests read and write. The agent:
+
+```sh
+gh api repos/Azathothas/errand-box/actions/permissions/workflow
+gh api -X PUT repos/Azathothas/errand-box/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
+gh secret list --repo Azathothas/errand-box
+gh secret set FRESHNESS_TOKEN --repo Azathothas/errand-box < "$TOKEN_FILE"
+```
+
+The first command reads the current value; pass the
+`default_workflow_permissions` it shows, not a guess. Set the secret only if
+the list shows no `FRESHNESS_TOKEN`, so no working value is overwritten. The
+value goes from a file the operator writes, outside every repository,
+through stdin: never on a command line or in the chat. Delete the file
+after. Then dispatch `freshness.yml` with a test bump, or wait for the
+first newer upstream, and record the pull request it opens.
+
 ---
 
 # T-009: The first release
@@ -139,3 +163,54 @@ sh scripts/ci-local.sh --step gate
 ```
 
 fails on a page that names `errand-box frobnicate`.
+
+---
+
+# T-026: Live checks that read a state once, at a moment they do not control
+
+**Source:** the live runs on GitHub's runners, 2026-10-23 (run 39968392861,
+and job 120468853678 of a later run)
+**Category:** upkeep
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+Two checks in `tests/live/live.sh` read a state once, so the same code
+passes or fails by timing:
+
+1. `t_errand` (`tests/live/live.sh:355`) reads `systemctl is-active` once.
+   Under test credentials errand exits at the chat connection and systemd
+   restarts it, so the check reads `active` or `activating` by chance. In
+   run 39968392861 the x86_64 job read `active` and the aarch64 job read
+   `activating`.
+2. `t_reap` (`tests/live/live.sh:299`) kills the launcher and the watchdog,
+   sleeps 2 s, and expects RUNNING. In job 120468853678, on aarch64, it read
+   STOPPED.
+
+## Premise
+
+The first is measured. The cause of the second is read, not measured: if
+`pgrep` finds no watchdog, the watchdog outlives the kill and stops the
+instance as designed, which reads as STOPPED.
+
+## Approach
+
+1. `t_errand`: read `systemctl show -p ActiveState,SubState,NRestarts`.
+   Under test credentials, pass when errand is active, or restarting with
+   the chat failure in its log, and name which. With T-015's credentials,
+   require `active`.
+2. `t_reap`: wait until `pgrep` finds the watchdog instead of `sleep 2`, and
+   fail with its own message when it never does, so the two causes read
+   differently.
+
+## Prove
+
+```sh
+sh tests/live/live.sh errand
+sh tests/live/live.sh reap
+```
+
+On both runners, through live.yml; and neither check sleeps where it can
+wait on a condition.

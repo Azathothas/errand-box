@@ -6,11 +6,17 @@ as root unless it says otherwise.
 ## Install
 
 1. Get the program. From a release, `bootstrap.sh` fetches it and checks
-   its digest:
+   its digest. Take the script from the release tag you install, so the two
+   match:
 
    ```sh
-   sh bootstrap.sh                     # or --base-url URL for a mirror
+   v=v0.1.0                            # the newest release
+   curl -fsSLO "https://raw.githubusercontent.com/Azathothas/errand-box/$v/bootstrap.sh"
+   sh bootstrap.sh --version "$v"      # or --base-url URL for a mirror
    ```
+
+   Without `--version` it takes the latest release. It runs as root, or
+   through `sudo` without a password.
 
    It installs `/usr/local/lib/errand-box/bin/errand-box`, the place setup
    keeps the program, and links `/usr/local/bin/errand-box` to it.

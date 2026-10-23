@@ -121,7 +121,9 @@ build tools, Python, Node.js and kage, adds the agent user (uid 1000, in
 group docker, with passwordless sudo), and installs the launcher and a boot
 step. The boot step adds 169.254.169.1 to `lo` and, on a cgroup v1 host,
 sets podman to run without cgroups. The agent has subordinate ids 1001 to
-65535 for rootless podman, whose network is slirp4netns (E-30). Session
+65535 for rootless podman, whose network is slirp4netns (E-30). Rootless
+podman works on a cgroup v1 host; where AppArmor restricts user namespaces,
+or on cgroup v2, it does not yet (E-69, E-70, T-024). Session
 instances never get a network device; only the build instance does.
 
 The image records a digest of what made it: the three files of `image/`,

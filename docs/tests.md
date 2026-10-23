@@ -1,14 +1,19 @@
 # Tests
 
-Four kinds, from the cheapest. Each one prints PASS or FAIL per check and
+Five kinds, from the cheapest. Each one prints PASS or FAIL per check and
 exits 0 only when every check passed. Read the exit code unpiped.
 
 | kind | needs | command |
 | --- | --- | --- |
-| 1. unit and integration tests | cargo | `cargo test --locked` |
-| 2. the local CI steps | cargo, shellcheck, curl, the network for one step | `sh scripts/ci-local.sh` |
+| 1. unit and integration tests | cargo, on Linux | `cargo test --locked` |
+| 2. the local CI steps | cargo, shellcheck, curl, the network for one step, on Linux | `sh scripts/ci-local.sh` |
 | 3. the live tests | root on a host where `errand-box setup` finished | `sh tests/live/live.sh` |
 | 4. other kinds of host | root on a host where Incus runs | `sh tests/hosts/host.sh NAME IMAGE` |
+| 5. as a user, on a host you are given | sudo on that host, and a release | section 5 |
+
+The crate builds for Linux only. On a Windows machine, run kinds 1 and 2 in
+WSL2, from a checkout that has LF line endings (`.gitattributes` gives every
+checkout LF): `wsl -e sh scripts/ci-local.sh` from the checkout's directory.
 
 ## 1. Unit and integration tests
 
@@ -135,3 +140,110 @@ level of containers. Set `EB_HOSTS_IMAGE` to a directory that
 with `errand-box image import` before it runs setup. With it, Alpine 3.22
 passed the live tests:
 [`tests/live/2026-10-23-alpine-3.22.txt`](../tests/live/2026-10-23-alpine-3.22.txt).
+
+## 5. As a user, on a host you are given
+
+This is how an operator installs errand-box, run on a host that has no
+checkout: a remote machine over ssh, a web terminal, or a WSL2 distribution.
+It tests the release, not the tree. Every file comes from the release tag,
+so the scripts match the binary.
+
+### Before you start
+
+- The host needs Linux on x86_64 or aarch64, and root or `sudo` without a
+  password. `bootstrap.sh` uses `sudo -n` and never prompts.
+- The host needs to reach `github.com`, `raw.githubusercontent.com`,
+  `release-assets.githubusercontent.com` (where a release download redirects,
+  measured 2026-10-23), its package mirrors, `pkgs.zabbly.com` on a Debian or
+  Ubuntu host, and `images.linuxcontainers.org`. With an egress proxy, export
+  `HTTPS_PROXY` before every command.
+- Write down what the host is before you change it: the distribution, the
+  init, the cgroup version, whether it is a container, the free disk. The
+  probe of this repository answers that from a checkout; on the host,
+  `cat /etc/os-release`, `cat /proc/1/comm`, `stat -fc %T /sys/fs/cgroup`
+  and `df -h /` do.
+
+On a Windows machine that drives the hosts, the ssh client is Windows'
+OpenSSH. A host whose credential is a token in the ssh user name, as
+Daytona's is, gets an alias in `%USERPROFILE%\.ssh\config`, a file only your
+account can read, so the token is never on a command line:
+
+```text
+Host eb-daytona
+  HostName ssh.app.daytona.io
+  User THE_TOKEN
+```
+
+Then `ssh eb-daytona` is the only command that names it. For WSL2, use a
+distribution made for this test, not the one that builds this repository,
+because setup installs Incus and changes the host. A distribution with
+systemd as PID 1 has `systemd=true` under `[boot]` in `/etc/wsl.conf`. Read
+`wsl.exe`'s own output as UTF-16
+([conventions/shell.md](conventions/shell.md) section 7).
+
+### Install and set up
+
+```sh
+v=v0.1.1                     # v0.1.0 until v0.1.1 is released
+base="https://raw.githubusercontent.com/Azathothas/errand-box/$v"
+mkdir -p ~/eb && cd ~/eb
+curl -fsSLO "$base/bootstrap.sh"
+sh bootstrap.sh --version "$v" --dry-run
+sh bootstrap.sh --version "$v"
+errand-box doctor
+```
+
+`doctor` changes nothing and says what the host lacks. Then the three
+inputs. The values in `tests/data` are not real, so errand's daemon stops at
+the chat connection, and setup reports that one row as FAILED (T-015). With
+real credentials, write the two env files from
+[`../SECURITY.md`](../SECURITY.md) and T-015 instead.
+
+```sh
+curl -fsSLO "$base/examples/errand-box.toml"
+curl -fsSL -o errand-box.env "$base/tests/data/errand.env"
+curl -fsSL -o creds.env "$base/tests/data/creds.env"
+chmod 600 creds.env
+sudo errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
+sudo errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
+sudo errand-box status
+```
+
+The second setup ends `0 changed`. Keep both outputs.
+
+### The live tests on that host
+
+They need `python3`, `socat` and `curl`. The `inside` test pulls container
+images through a relay that stands in for errand's broker, so it needs an
+HTTP CONNECT proxy on the host. Use the host's own egress proxy as
+`EB_LIVE_PROXY`. On a host with direct egress, run `tinyproxy` on loopback,
+as `.github/workflows/live.yml` does:
+
+```sh
+sudo apt-get install -y python3 socat curl tinyproxy
+printf 'Port 8888\nListen 127.0.0.1\nAllow 127.0.0.1\nTimeout 600\nConnectPort 443\n' | sudo tee /etc/tinyproxy/tinyproxy.conf >/dev/null
+sudo systemctl restart tinyproxy
+mkdir -p live
+for f in live.sh acp.py; do curl -fsSL -o "live/$f" "$base/tests/live/$f"; done
+sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh live/live.sh
+```
+
+On Alpine, `apk add python3 socat curl tinyproxy` and start it with
+`rc-service tinyproxy start`. Where nothing supervises it, run `tinyproxy`
+in the foreground of a second terminal, with the same configuration file.
+
+### Record and remove
+
+Save the outputs of `doctor`, both setups, `status` and the live tests in
+`tests/live/DATE-HOST.txt`. Cut every 64-character digest to 12 characters,
+because the public sweep of the gate refuses a long hex string. A failure is
+a finding: give it a row in [edge-cases.md](edge-cases.md) or an entry in
+`TODO/`, with the command and the output that show it. Then remove what the
+test made:
+
+```sh
+sudo errand-box uninstall --purge --yes
+```
+
+`uninstall` keeps Incus, its pools and the errand account. On a host made
+for the test, delete the host itself.
