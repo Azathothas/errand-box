@@ -58,15 +58,15 @@ native Incus backend in errand, which waits on errand's author.
 
 ## Counts
 
-**23 items. 8 open, 4 partial, 2 blocked, 9 done.**
+**23 items. 7 open, 4 partial, 2 blocked, 10 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 3 | 3 |
-| P1 | 2 | 2 | 1 | 4 | 9 |
+| P1 | 1 | 2 | 1 | 5 | 9 |
 | P2 | 4 | 2 | 1 | 2 | 9 |
 | P3 | 2 | 0 | 0 | 0 | 2 |
-| **All** | 8 | 4 | 2 | 9 | 23 |
+| **All** | 7 | 4 | 2 | 10 | 23 |
 
 ---
 
@@ -82,7 +82,7 @@ native Incus backend in errand, which waits on errand's author.
 | [T-006](setup.md) | P1 | setup | done | The config setup writes is one the pinned errand accepts |
 | [T-007](upkeep.md) | P1 | upkeep | partial | Scheduled workflows that open pull requests and issues |
 | [T-008](setup.md) | P2 | setup | done | Bounded logs, and a daemon that restarts in a loop is reported |
-| [T-009](upkeep.md) | P1 | upkeep | open | The first release |
+| [T-009](upkeep.md) | P1 | upkeep | done | The first release |
 | [T-010](setup.md) | P2 | setup | open | Setup without root at run time |
 | [T-011](setup.md) | P1 | setup | done | Live test on a host with systemd |
 | [T-012](setup.md) | P1 | setup | partial | Live test on musl and on WSL2 |

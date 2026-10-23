@@ -41,7 +41,7 @@ The build host: Ubuntu 24.04 in a hosted container, kernel 6.18, x86_64, 4
 CPUs, 16 GiB, cgroup v1, no init, no KVM, egress through an HTTP proxy;
 Incus 6.0.6 from Zabbly, errand v0.3.1, kage v0.5.0.
 
-**23 entries: 9 done, 4 partial, 2 blocked, 8 open.**
+**23 entries: 10 done, 4 partial, 2 blocked, 7 open.**
 
 ---
 

@@ -58,7 +58,7 @@ exist yet
 **Category:** upkeep
 **Priority:** P1
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -81,6 +81,26 @@ sh bootstrap.sh --dry-run && sh bootstrap.sh
 ```
 
 on a host with no checkout: the digest line, then `installed`.
+
+## Closing
+
+**Closed 2026-10-23T12:56Z.** A dispatch of `release.yml` on `main` (run
+39956908005, commit `7363d89`) built both architectures and published
+[v0.1.0](https://github.com/Azathothas/errand-box/releases/tag/v0.1.0) with
+the tag on that commit. The three assets, downloaded: `sha256sum -c
+SHA256SUMS` passes for both binaries, each digest matches the one GitHub
+records, both are static, and both print `errand-box 0.1.0`, the aarch64 one
+under qemu-user. Then `bootstrap.sh`, fetched from the tag into an empty
+directory, on a host with no errand-box installed. The digest below is cut to
+its first 12 characters; the release's `SHA256SUMS` holds all of it.
+
+```text
+bootstrap: fetching errand-box-x86_64-linux-musl and SHA256SUMS from https://github.com/Azathothas/errand-box/releases/latest/download
+bootstrap: digest checked: 589e100bd83d...
+bootstrap: installed /usr/local/lib/errand-box/bin/errand-box; /usr/local/bin/errand-box links to it
+```
+
+Exit 0, after `--dry-run` exited 0 and named each step it would run.
 
 ---
 
