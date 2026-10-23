@@ -287,12 +287,24 @@ installs Incus and s6, creates the `incus-admin` and `incus` groups the
 package does not (E-35), writes the OpenRC boot hook (E-36), and `errand-box
 up` brings every daemon back after a restart. The run drove out E-35 and
 E-62 (newer `s6-svstat` prints `pid N pgid N`, which the crash-loop check
-misread). Open: a nested host cannot build the guest image, because that
-launches a third level of container nesting that the test host's kernel
-refuses (`forkstart` exit 1), so the full live suite has not run on musl;
-and WSL2 is untouched. A real (not triply nested) Alpine host, or a nested
-host that imports the image (`errand-box image import`) instead of building
-it, would finish musl.
+misread). A nested host cannot build the guest image, because that launches
+a third level of container nesting that the test host's kernel refuses
+(`forkstart` exit 1).
+
+2026-10-23T13:35Z, musl done: Alpine 3.22.6 (musl, OpenRC, busybox) as a
+nested host that imports a distrobuilder build (`EB_HOSTS_IMAGE`, T-014)
+instead of building one. Setup exit 0, and the second run changed nothing;
+`tests/live/live.sh` 50 PASS, 0 FAIL, 1 SKIP (the quota test on a nested
+`dir` pool, E-05); after a container restart `up` brought every daemon back,
+and a probe and a session passed 17 of 17.
+[tests/live/2026-10-23-alpine-3.22.txt](../tests/live/2026-10-23-alpine-3.22.txt)
+is the output. The first run past the image drove out E-66 (Alpine packages
+`incus-user` apart, so errand reached no Incus socket) and E-67 (busybox
+put the errand account in the shared group `nogroup`), and showed that
+`host.sh` allowed every FAILED row whose name starts with "errand".
+
+Open: WSL2 is untouched. It needs a Windows machine with WSL2 and Ubuntu,
+where the operator runs `sh tests/live/live.sh` after setup.
 
 ## Prove
 

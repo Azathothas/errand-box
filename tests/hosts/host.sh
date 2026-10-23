@@ -212,8 +212,10 @@ s_setup() {
 # Exit 0 when the only FAILED rows name the errand daemon (its dummy creds),
 # 1 when any other row failed.
 # True when a setup log has no FAILED row but errand's, or the row $2 names.
+# The name is followed by the padding and FAILED: "errand " alone is also the
+# start of "errand project" and "errand config", which must not fail.
 other_fail() {
-  ! grep -E '  FAILED ' "$1" | grep -qvE "^(errand|errand-box-errand|bailey doctor as errand${2:+|$2}) "
+  ! grep -E '  FAILED ' "$1" | grep -qvE "^(errand|errand-box-errand|bailey doctor as errand${2:+|$2})  +FAILED "
 }
 
 # A first setup with --skip-image starts Incus and stops at the missing

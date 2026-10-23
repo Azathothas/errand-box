@@ -108,7 +108,8 @@ shm_size = "256m"
 [network]
 egress_allow = [{ host = "*", port = 443 }]
 P
-  chown -R errand:errand "$st" "$proj"
+  # The account's own group, by number: its name is not always the account's.
+  chown -R "errand:$(id -g errand)" "$st" "$proj"
   chmod 700 "$st"
   chmod 600 "$st/policy.toml"
   as "$bailey" trust "$st/policy.toml" >/dev/null
@@ -205,7 +206,7 @@ t_inside() {
   rm -f "$proj/.eb-live-ca.crt"
   if [ -n "${EB_LIVE_CA:-}" ]; then
     cp "$EB_LIVE_CA" "$proj/.eb-live-ca.crt"
-    chown errand:errand "$proj/.eb-live-ca.crt"
+    chown "errand:$(id -g errand)" "$proj/.eb-live-ca.crt"
   fi
   # shellcheck disable=SC2016 # expanded inside the guest
   out=$(session "$port" sh -c '

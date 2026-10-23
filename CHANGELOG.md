@@ -9,6 +9,25 @@ errand.
 
 ## Unreleased
 
+### 2026-10-23T13:36Z: Alpine passes the live tests
+
+**Record:** T-012 in [TODO/setup.md](TODO/setup.md); E-66 and E-67 in
+[docs/edge-cases.md](docs/edge-cases.md). Not deployed and not released.
+
+- **E-66.** Alpine packages `incus-user` apart from `incus`. setup did not
+  install it, `up` ran no incus-user, and errand's project never appeared.
+  setup now installs it on apk hosts, and `up` reports a packaging with no
+  incus-user program as FAILED where it left the service out.
+- **E-67.** busybox `adduser -S` put the errand account in `nogroup`, which
+  other system accounts share. setup now gives the account a group of its
+  own. An account that exists keeps its group.
+- **The host tests.** `tests/hosts/host.sh` imports a distrobuilder build
+  when `EB_HOSTS_IMAGE` names one, so a nested host gets past the image it
+  cannot build. Its setup check allowed every FAILED row whose name starts
+  with "errand", `errand project` included; it now allows errand's own row
+  only. `tests/live/live.sh` gives the session files the account's own group
+  by number, not by the name `errand`.
+
 ### 2026-10-23T13:23Z: a distrobuilder build imports as current
 
 **Record:** T-014 in [TODO/sandbox.md](TODO/sandbox.md). Not deployed and

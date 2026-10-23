@@ -95,6 +95,15 @@ pub fn stamp(files: &[&str]) -> String {
     crate::sha256::digest_hex(&all)[..16].to_owned()
 }
 
+/// Why the daemons cannot serve errand when this packaging has no
+/// incus-user program: `services` leaves it out, and errand reaches Incus
+/// only through it, so no session could start (E-66).
+fn incus_user_missing(lay: &Layout) -> Option<&'static str> {
+    lay.incus_user.is_empty().then_some(
+        "no incus-user program in this Incus packaging, and errand reaches Incus only through it; on Alpine, install the incus-user package (E-66)",
+    )
+}
+
 pub fn services(
     lay: &Layout,
     lx: Option<&Lxcfs>,
@@ -1304,6 +1313,9 @@ pub fn up(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report) {
         }
     };
     groups(runner, r);
+    if let Some(why) = incus_user_missing(&lay) {
+        r.add("incus-user", St::Failed, why);
+    }
     let svcs = services(&lay, lx.as_ref(), errand_ready(cfg), &cfg.errand.user);
     if host.systemd {
         systemd_up(&svcs, &lay, lx.as_ref(), runner, r);
@@ -1373,6 +1385,24 @@ mod tests {
             lxcfs_env: vec![("LD_LIBRARY_PATH".into(), "/opt/incus/lib".into())],
             lxcfs_mount: "/var/lib/incus-lxcfs".into(),
         }
+    }
+
+    #[test]
+    fn a_packaging_without_incus_user_is_a_failure_not_a_missing_service() {
+        // Measured 2026-10-23 on Alpine 3.22: the incus package has no
+        // incus-user, `up` ran none, and errand's project never appeared.
+        assert_eq!(incus_user_missing(&lay()), None);
+        let alpine = Layout {
+            incus_user: String::new(),
+            ..lay()
+        };
+        let why = incus_user_missing(&alpine).unwrap_or_default();
+        assert!(why.contains("(E-66)"), "{why}");
+        assert!(
+            !services(&alpine, None, true, "errand")
+                .iter()
+                .any(|s| s.name == "incus-user")
+        );
     }
 
     #[test]

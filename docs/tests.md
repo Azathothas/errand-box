@@ -120,3 +120,10 @@ sh tests/hosts/host.sh u2404 ubuntu/24.04 destroy
 A nested host cannot make a loop-file pool, so it uses a `dir` pool and the
 `quota` live test is skipped (E-05). Set `EB_HOSTS_CA` to the proxy's CA
 when the egress proxy intercepts TLS.
+
+A nested host cannot build the guest image either: the build is a third
+level of containers. Set `EB_HOSTS_IMAGE` to a directory that
+`scripts/build-image.sh` wrote, and the `setup` step imports that image
+with `errand-box image import` before it runs setup. With it, Alpine 3.22
+passed the live tests:
+[`tests/live/2026-10-23-alpine-3.22.txt`](../tests/live/2026-10-23-alpine-3.22.txt).

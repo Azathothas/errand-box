@@ -1,0 +1,68 @@
+PASS alpine create: ebt-alpine from images:alpine/3.22 is up (init)
+PASS alpine create: test tools installed (python3, socat, curl)
+PASS alpine bootstrap: bootstrap.sh fetched, checked and installed the release binary (exit 0): bootstrap: digest checked: 317bd8bb4cc9...
+PASS alpine bootstrap: errand-box is on PATH: errand-box 0.1.0
+PASS alpine setup: setup --skip-image starts Incus: guest image       FAILED    errand-box/debian-13 is missing and --skip-image was given
+PASS alpine setup: errand-box image import: 1 changed, 1 unchanged, 0 degraded, 0 failed, 0 skipped
+PASS alpine setup: first setup exit 0 in 20 s: 6 changed, 29 unchanged, 2 degraded, 0 failed, 0 skipped
+PASS alpine setup: second setup changes nothing but errand: 0 changed, 34 unchanged, 2 degraded, 0 failed, 0 skipped
+PASS alpine live: tests/live/live.sh: 50 PASS, 0 FAIL, 1 SKIP
+  SKIP quota: the pool errand-box is a dir pool, which does not enforce a quota (E-05)
+PASS alpine restart: errand-box up after the restart: 0 changed, 14 unchanged, 0 degraded, 0 failed, 0 skipped
+PASS alpine restart: probe and a session after the restart: 17 PASS, 0 FAIL
+
+# tests/live/live.sh inside ebt-alpine (Alpine 3.22.6, musl, OpenRC):
+PASS probe: bailey doctor exit 0: errand-box 0.1.0 (bailey interface; sessions are Incus system containers);kernel:;  landlock: ABI 7 (not used: each session is a whole guest);  user namespaces:
+PASS probe: per-session check (run -- true) exit 0 in 10374 ms
+PASS session: session exit 0 in 4556 ms
+PASS session: agent uid 1000
+PASS session: supplementary groups agent,docker include docker (E-29)
+PASS session: workspace readable
+PASS session: a file the agent wrote is owned by errand on the host
+PASS session: network devices other than guest-internal bridges: lo 
+PASS session: no default route: ''
+PASS session: broker reached through the proxy device: broker-ok
+PASS session: direct egress: blocked
+PASS session: file size limit: 2097152
+PASS session: environment file deleted
+PASS session: passed variable arrives
+PASS session: PID 1 is systemd
+PASS session: instance STOPPED after the session
+PASS session: lease cleared
+PASS acp: initialize: result (2.73 s);session/new: result (2.74 s);launcher exit: 0 (3.61 s)
+PASS inside: session exit 0
+PASS inside: docker run: 13.7
+PASS inside: docker build and run: built
+PASS inside: sudo podman run: 13.7
+PASS inside: rootless podman as the agent (E-30): 13.7
+PASS inside: FUSE mount as the agent: fuse-ok fuse.rclone
+PASS inside: CPUs seen: 3, limit 3
+PASS inside: memory seen: 12571 MiB of 16091 MiB on the host (limits.memory 80%)
+SKIP quota: the pool errand-box is a dir pool, which does not enforce a quota (E-05)
+sh: invalid number '--'
+PASS signals: SIGTERM to the launcher's process group: instance STOPPED after 860 ms
+PASS signals: SIGTERM: lease cleared
+PASS signals: SIGTERM: launcher gone
+sh: invalid number '--'
+PASS signals: SIGKILL to the launcher's process group: instance STOPPED after 851 ms
+PASS signals: SIGKILL: lease cleared
+PASS signals: SIGKILL: launcher gone
+sh: invalid number '--'
+PASS reap: launcher and watchdog killed: instance still RUNNING, as after a crash
+PASS reap: errand-box reap: instance STOPPED
+PASS maint: maint --once exit 0: fstrim /var/lib/incus/storage-pools/errand-box: fstrim: /var/lib/incus/storage-pools/errand-box: FITRIM ioctl failed: Operation not permitted;fstrim: fstrim: /var/lib/incus/storage-pools/errand-box: F
+PASS up: daemons stopped through s6-svscanctl, as a restart loses them
+PASS up: errand-box up exit 0 in 3949 ms
+PASS up: incusd answers
+PASS up: /dev/fuse mode 666 (E-03)
+PASS up: service incusd: up (pid 9868 pgid 9868) 3 seconds
+PASS up: service incus-user: up (pid 9866 pgid 9866) 3 seconds
+PASS up: service lxcfs: up (pid 9869 pgid 9869) 3 seconds
+PASS up: service errand: up (pid 9881 pgid 9881) 3 seconds
+PASS up: service errand-box-maint: up (pid 9872 pgid 9872) 3 seconds
+PASS up: a second up changes nothing: 0 changed, 14 unchanged, 0 degraded, 0 failed, 0 skipped
+PASS probe: bailey doctor exit 0: errand-box 0.1.0 (bailey interface; sessions are Incus system containers);kernel:;  landlock: ABI 7 (not used: each session is a whole guest);  user namespaces:
+PASS probe: per-session check (run -- true) exit 0 in 257 ms
+PASS errand: service errand: up (pid 9881 pgid 9881) 4 seconds
+PASS errand: errand accepts the config setup wrote
+PASS errand: errand's own probe of the bailey shim passed: the backend enforces every configured guarantee

@@ -125,6 +125,8 @@ fn packages(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report) {
                 "--no-cache",
                 "incus",
                 "incus-client",
+                // Alpine packages it apart, and errand reaches Incus only through it (E-66).
+                "incus-user",
                 "lxcfs",
                 "btrfs-progs",
                 "iproute2",
@@ -444,6 +446,25 @@ pub fn has_range(text: &str, owner: &str) -> bool {
     })
 }
 
+/// busybox adduser for the errand account. Without -G, -S puts a system
+/// account in the group nogroup, which other system accounts share, and
+/// errand's home is group-readable (E-67).
+fn adduser_args(user: &str, home: &str) -> Vec<String> {
+    [
+        "-S",
+        "-D",
+        "-G",
+        user,
+        "-h",
+        home,
+        "-s",
+        "/sbin/nologin",
+        user,
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
+
 fn users(cfg: &Config, runner: &dyn Runner, r: &mut Report) -> Option<(u32, u32, bool)> {
     let u = &cfg.errand.user;
     if procs::account(u).is_none() {
@@ -458,15 +479,9 @@ fn users(cfg: &Config, runner: &dyn Runner, r: &mut Report) -> Option<(u32, u32,
                 u,
             ]))
         } else {
-            runner.run(&Cmd::new("adduser").args([
-                "-S",
-                "-D",
-                "-h",
-                &cfg.errand.home,
-                "-s",
-                "/sbin/nologin",
-                u,
-            ]))
+            // A group that exists already refuses addgroup; adduser -G then uses it.
+            let _ = runner.run(&Cmd::new("addgroup").args(["-S", u.as_str()]));
+            runner.run(&Cmd::new("adduser").args(adduser_args(u, &cfg.errand.home)))
         };
         if !out.ok() {
             r.add(
@@ -1595,6 +1610,16 @@ mod tests {
         assert!(loop_outgrows_host(20 * g, 3 * g, 14 * g));
         assert!(!loop_outgrows_host(20 * g, 3 * g, 17 * g));
         assert!(!loop_outgrows_host(20 * g, 25 * g, 0));
+    }
+
+    #[test]
+    fn busybox_gives_the_errand_account_a_group_of_its_own() {
+        // Measured 2026-10-23 on Alpine 3.22: without -G the account's group
+        // was nogroup, shared with other system accounts.
+        let a = adduser_args("errand", "/var/lib/errand");
+        let g = a.iter().position(|x| x == "-G").map(|i| a[i + 1].as_str());
+        assert_eq!(g, Some("errand"));
+        assert_eq!(a.last().map(String::as_str), Some("errand"));
     }
 
     #[test]
