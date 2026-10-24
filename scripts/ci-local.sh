@@ -36,7 +36,7 @@ shell_files() {
   printf '%s\n' bootstrap.sh image/provision.sh image/launch image/guest-init tests/fake-incus \
     tests/pins-test.sh tests/errand-config-test.sh tests/live/live.sh scripts/ci-local.sh scripts/pins.sh \
     scripts/check-no-kill-by-name.sh scripts/check-todo.sh scripts/track-issue.sh \
-    scripts/freshness.sh scripts/watch-upstreams.sh scripts/build-image.sh tests/hosts/host.sh \
+    scripts/freshness.sh scripts/watch-upstreams.sh scripts/build-image.sh scripts/fetch-tracker.sh tests/hosts/host.sh \
     tests/setup-failed-only-errand.sh
 }
 

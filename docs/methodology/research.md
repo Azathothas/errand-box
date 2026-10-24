@@ -153,9 +153,11 @@ would have made it fire, which is the sentence that tells the two apart.
 
 ### 3.1 Fetch it all, and keep the fetcher in the tree
 
-This project ships no fetch script. The template has one, `mine-repo`, and
-this project left it out because a full fetch is slow and needs the network.
-Fetch with `git clone` and with read-only `gh api` calls.
+The template has a fetch script, `mine-repo`, and this project left it out
+because a full fetch is slow and needs the network. Fetch the tree with `git
+clone`. Fetch the tracker with
+[`../../scripts/fetch-tracker.sh`](../../scripts/fetch-tracker.sh), which
+makes read-only GET calls and needs no credential.
 
 Fetch all of these: the metadata, the issues and pull requests in **both
 states**, the comments, the review comments, the releases, the tags, the
