@@ -4,8 +4,8 @@ Overwritten every session. Not the record: [`PROGRESS.md`](PROGRESS.md) is.
 
 | | |
 | --- | --- |
-| the task | The operator, 2026-10-24, in a hosted session: research whether to vendor-and-patch errand or rewrite our own chat layer, and whether eight named projects (agent-vault, claw-wrap, wardgate, lens-sandbox-core, vultrino, raxis, charon, openshell) can be adopted as ideas or replacements; then recommend. The Windows-host mandate (T-027, v0.1.1, T-007) is deferred by the operator: this session is not on the Windows machine |
-| the resume point | Read the five write-ups in `docs/history/references/2026-10-24-*.md`, spot-check their citations, write the decision page and entries, update the record |
-| in flight | five research agents writing those five files; corpus in `references/` (ten clones and their trackers), fetched by `scripts/fetch-tracker.sh` |
-| the state of the tree | dirty: `references/`, `scripts/fetch-tracker.sh`, this file. Branch `claude/eloquent-faraday-nbo94y`, the hosted session's branch |
-| the paste | Read AGENTS.md and TODO/RESUME.md. Finish the 2026-10-24 errand research: read docs/history/references/2026-10-24-*.md, verify a sample of citations against references/, write the recommendation, file entries per docs/methodology/authoring.md, update the record, run the gate. |
+| the task | The operator, 2026-10-24, in a hosted session: should errand-box vendor and patch errand or rewrite the chat layer, and can eight named projects be adopted. Finished as research; the recommendation waits for the operator's ruling |
+| the resume point | `PROGRESS.md`, "Decisions that wait for the operator". On a ruling: file the approved entries per `docs/methodology/authoring.md`, then fix errand#48 first |
+| in flight | nothing in the tree. The corpus `references/` is in the hosted container only, excluded by `.git/info/exclude`, until the operator rules on its branch |
+| the state of the tree | clean after the record commit on `claude/eloquent-faraday-nbo94y`, pushed to that branch; `main` did not move |
+| the paste | Read AGENTS.md and TODO/PROGRESS.md in full. Take the operator's ruling on the decisions at the top of PROGRESS.md, file the approved entries, and start with errand#48. The Windows-machine mandate in PROGRESS.md still stands for a session on that machine. |

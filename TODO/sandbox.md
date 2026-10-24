@@ -467,6 +467,11 @@ lands before it is acted on:
 | an instance name must not start with a digit or a dash, nor end with a dash | Part 2 | errand-box's own names: `session::tests::names` |
 | on errand `main` (`715e9b0`), the agent command passes `--yolo` and an images endpoint exists | Part 2 | re-pin the line references before implementing |
 
+**Correction, 2026-10-24: one citation holds for v0.3.1 only.** The two arms
+of `parse_backend` are at `src/config/validate.rs:1527-1533` in v0.3.1 and at
+`:1592-1598` on `main` (`715e9b0b777a`). Read in the sweep of
+[docs/history/references/2026-10-24-errand-code.md](../docs/history/references/2026-10-24-errand-code.md).
+
 ## Decision
 
 | route | verdict | evidence |
