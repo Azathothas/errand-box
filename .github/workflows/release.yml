@@ -72,8 +72,10 @@ jobs:
           mkdir -p dist
           cp "target/${{ matrix.arch }}-unknown-linux-musl/release/errand-box" "dist/errand-box-${{ matrix.arch }}-linux-musl"
           # The binary carries errand, which is MIT OR Apache-2.0; taken under
-          # MIT, its notice goes with every copy.
+          # MIT, its notice goes with every copy, as do the notices of every
+          # crate it links. Both architectures write the same two files.
           cp errand/LICENSE-MIT dist/LICENSE-errand
+          sh scripts/notices.sh dist/THIRD-PARTY-NOTICES
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: errand-box-${{ matrix.arch }}
@@ -106,5 +108,5 @@ jobs:
           # A pushed tag must exist; a dispatch creates the tag on the commit it built.
           if [ "$EVENT" = workflow_dispatch ]; then set -- --target "$SHA"; else set -- --verify-tag; fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" "$@" \
-            --notes "Static binaries for x86_64 and aarch64 Linux, and their SHA-256 digests. Each carries errand, errand-box's fork, whose MIT notice is LICENSE-errand. Install with bootstrap.sh; see docs/operations.md." \
-            dist/errand-box-x86_64-linux-musl dist/errand-box-aarch64-linux-musl dist/SHA256SUMS dist/LICENSE-errand
+            --notes "Static binaries for x86_64 and aarch64 Linux, and their SHA-256 digests. Each carries errand, errand-box's fork, whose MIT notice is LICENSE-errand; THIRD-PARTY-NOTICES holds the notice of every crate the binaries link. Install with bootstrap.sh; see docs/operations.md." \
+            dist/errand-box-x86_64-linux-musl dist/errand-box-aarch64-linux-musl dist/SHA256SUMS dist/LICENSE-errand dist/THIRD-PARTY-NOTICES

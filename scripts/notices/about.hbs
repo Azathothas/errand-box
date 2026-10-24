@@ -1,0 +1,14 @@
+THIRD-PARTY-NOTICES for errand-box
+
+The errand-box binary links the crates below. Each licence text is given
+once, followed by the crates it covers. errand-box itself is 0BSD; errand,
+its fork of QaidVoid/errand, is MIT OR Apache-2.0 (LICENSE-errand).
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{id}})
+Used by:
+{{#each used_by}}  {{crate.name}} {{crate.version}}
+{{/each}}--------------------------------------------------------------------------------
+{{{text}}}
+{{/each}}
