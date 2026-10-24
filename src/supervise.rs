@@ -171,7 +171,10 @@ mod tests {
     fn svc() -> Service {
         Service {
             name: "errand".into(),
-            argv: vec!["/usr/local/lib/errand-box/bin/errand".into(), "run".into()],
+            argv: vec![
+                "/usr/local/lib/errand-box/bin/errand-box".into(),
+                "serve".into(),
+            ],
             env: vec![("HOME".into(), "/var/lib/errand".into())],
             user: Some("errand".into()),
             env_file: Some("/etc/errand-box/errand.env".into()),
@@ -217,7 +220,7 @@ mod tests {
     fn s6_script_drops_privileges_and_execs() {
         let s = s6_run(&svc(), "/usr/local/lib/errand-box/bin/errand-box");
         assert!(s.starts_with("#!/bin/sh\n"));
-        assert!(s.contains("exec /usr/local/lib/errand-box/bin/errand-box __as errand -- /usr/local/lib/errand-box/bin/errand run\n"));
+        assert!(s.contains("exec /usr/local/lib/errand-box/bin/errand-box __as errand -- /usr/local/lib/errand-box/bin/errand-box serve\n"));
         assert!(s.contains("export HOME=/var/lib/errand\n"));
         assert!(s.contains("if [ -r /etc/errand-box/errand.env ]; then set -a; . /etc/errand-box/errand.env; set +a; fi\n"));
     }
@@ -233,7 +236,7 @@ mod tests {
         assert!(u.contains("Before=x.service\n"));
         assert!(u.contains("KillMode=process\n"));
         assert!(u.contains("After=incus.service\n"));
-        assert!(u.contains("ExecStart=/usr/local/lib/errand-box/bin/errand-box __as errand -- /usr/local/lib/errand-box/bin/errand run\n"));
+        assert!(u.contains("ExecStart=/usr/local/lib/errand-box/bin/errand-box __as errand -- /usr/local/lib/errand-box/bin/errand-box serve\n"));
     }
 
     #[test]

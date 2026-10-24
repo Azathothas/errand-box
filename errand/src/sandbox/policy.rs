@@ -166,7 +166,7 @@ pub struct PolicyOptions<'a> {
 /// there, so the file sits somewhere the session can rewrite. Nothing reads
 /// it back as a policy: every launch regenerates it, and the tool is handed
 /// its path fresh each time. The one place the daemon reads it again is
-/// `errand threads revive`, which takes the project path out of it; that
+/// `errand-box threads revive`, which takes the project path out of it; that
 /// reader checks what it finds against the configured project root, so a
 /// rewritten policy cannot point a revived session anywhere else.
 ///

@@ -51,12 +51,12 @@ again; 4 would also mean fighting the daemon that is already serving. See
 The log holds progress, warnings, and errors by default. Each `-v` on the
 command line adds a level:
 
-- `errand run -v` logs each decision and why: which messages were accepted,
+- `errand-box serve -v` logs each decision and why: which messages were accepted,
   where a session starts and on which model, each prompt sent, each provider
   answer with its status and time, and each refusal.
-- `errand run -vv` also logs each step: every command sent to the agent and
+- `errand-box serve -vv` also logs each step: every command sent to the agent and
   every event it answers with, by type.
-- `errand run -vvv` also logs every line exchanged with the agent, verbatim.
+- `errand-box serve -vvv` also logs every line exchanged with the agent, verbatim.
   That includes prompts and tool output, so keep it to diagnosing a problem.
 
 Under systemd, put the flag on `ExecStart` and restart the service.

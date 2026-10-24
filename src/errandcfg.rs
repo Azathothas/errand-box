@@ -149,7 +149,6 @@ pub fn build(
         },
         "output": { "forwardToolOutput": false, "postDiffs": true },
         "shutdown": { "allowedUserIds": list(settings.get("ERRAND_OPERATOR_USER_IDS")) },
-        "web": { "host": "127.0.0.1", "port": 8787, "observer": false },
         "limits": { "maxConcurrentTurns": 2, "maxLiveSessions": 4 },
         "timeouts": { "idleMs": 1800000, "startupMs": 60000 },
     });

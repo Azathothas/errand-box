@@ -1,10 +1,9 @@
 //! errand runs a coding agent from a chat channel, in a sandbox it cannot
 //! escape.
 //!
-//! The command line is what an operator runs: the daemon is one subcommand
-//! among several rather than the only thing this program does, because
-//! managing what it left on disk is an operator's job and belongs where an
-//! operator already is.
+//! errand-box's hard fork, kept as a library: errand-box runs the daemon as
+//! `errand-box serve` and the operator's thread commands as `errand-box
+//! threads`, through [`serve`] and [`threads`]. There is no `errand` program.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -20,7 +19,7 @@ use crate::log::now_ms;
 use crate::log::{LogLevel, logger};
 use crate::log::{LogValue, fields};
 use crate::sandbox::policy::POLICY_FILENAME;
-use crate::serve::serve;
+use crate::serve::serve as serve_daemon;
 use crate::session::disk::tree_bytes;
 use crate::session::record::record_dir;
 use crate::session::registry::ThreadRegistry;
@@ -48,26 +47,6 @@ mod test_util;
 
 /// The environment an operator's shell hands over.
 type Vars = BTreeMap<String, String>;
-
-fn usage(env: &Vars) -> String {
-    [
-        "usage: errand [-v | -vv | -vvv] <command>".to_owned(),
-        String::new(),
-        "  run                  run the daemon until it is told to stop".to_owned(),
-        "  threads [command]    manage remembered threads and their data".to_owned(),
-        "  help                 this".to_owned(),
-        String::new(),
-        "  -v                   also log each decision and why".to_owned(),
-        "  -vv                  also log each step between decisions".to_owned(),
-        "  -vvv                 also log every line exchanged with the agent".to_owned(),
-        String::new(),
-        format!(
-            "the configuration is read from {}",
-            config_path(env, |candidate| std::path::Path::new(candidate).exists())
-        ),
-    ]
-    .join("\n")
-}
 
 /// Reads the configuration the way every command does, and the file it came
 /// from.
@@ -156,7 +135,11 @@ fn project_of(state_dir: &str, root: &str) -> Option<Project> {
         })
 }
 
-async fn threads(args: &[String], env: &Vars, level: LogLevel) -> Result<i32, ConfigError> {
+async fn thread_command(
+    args: &[String],
+    env: &Vars,
+    level: LogLevel,
+) -> Result<i32, ConfigError> {
     let (_path, config) = load(env)?;
     let log = logger(level);
     let registry = Arc::new(Mutex::new(ThreadRegistry::new(
@@ -215,63 +198,72 @@ async fn run(env: &Vars, level: LogLevel) -> i32 {
             return 1;
         }
     };
-    serve(config, path, env.clone(), log).await.code()
+    serve_daemon(config, path, env.clone(), log).await.code()
 }
 
-/// Runs errand's command line: the arguments after the program's name, the
-/// process environment, and an exit code for the caller to return.
+/// What `errand-box serve` runs: the daemon, until it is told to stop.
 ///
-/// It is the whole of the `errand` binary, and errand-box calls it when it
-/// is started under the name `errand`.
+/// `args` are the words after `serve`: `-v`, `-vv` or `-vvv` only, for more
+/// of the daemon's reasoning in its log.
 ///
 /// # Panics
 ///
 /// When the operating system refuses the threads a tokio runtime needs.
 #[must_use]
-pub fn main() -> std::process::ExitCode {
-    let env: Vars = std::env::vars_os()
+pub fn serve(args: &[String]) -> i32 {
+    let mut args = args.to_vec();
+    let level = take_verbosity(&mut args);
+    if let Some(word) = args.first() {
+        eprintln!("errand-box serve takes -v, -vv or -vvv only, not {word}");
+        return 2;
+    }
+    let env = process_env();
+    exit_code(runtime().block_on(async { Ok(run(&env, level).await) }))
+}
+
+/// What `errand-box threads` runs: list, show, forget, remove and revive the
+/// threads the daemon remembers.
+///
+/// `args` are the words after `threads`, verbosity flags included.
+///
+/// # Panics
+///
+/// When the operating system refuses the threads a tokio runtime needs.
+#[must_use]
+pub fn threads(args: &[String]) -> i32 {
+    let mut args = args.to_vec();
+    let level = take_verbosity(&mut args);
+    let env = process_env();
+    exit_code(runtime().block_on(async { thread_command(&args, &env, level).await }))
+}
+
+/// The environment an operator's shell hands over, as text.
+fn process_env() -> Vars {
+    std::env::vars_os()
         .map(|(key, value)| {
             (
                 key.to_string_lossy().into_owned(),
                 value.to_string_lossy().into_owned(),
             )
         })
-        .collect();
-    let args: Vec<String> = std::env::args().skip(1).collect();
-
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("a tokio runtime is always buildable");
-
-    match runtime.block_on(dispatch(args, env)) {
-        Ok(code) => std::process::ExitCode::from(u8::try_from(code).unwrap_or(1)),
-        Err(error) => {
-            // A configuration problem is the operator's to fix, so it is
-            // printed as itself rather than as a stack trace.
-            eprintln!("ConfigError: {error}");
-            std::process::ExitCode::FAILURE
-        }
-    }
+        .collect()
 }
 
-async fn dispatch(mut args: Vec<String>, env: Vars) -> Result<i32, ConfigError> {
-    let level = take_verbosity(&mut args);
-    let Some(command) = args.first().cloned() else {
-        println!("{}", usage(&env));
-        return Ok(2);
-    };
-    match command.as_str() {
-        "run" => Ok(run(&env, level).await),
-        "threads" => threads(&args[1..], &env, level).await,
-        "help" | "--help" => {
-            println!("{}", usage(&env));
-            Ok(0)
-        }
-        other => {
-            eprintln!("there is no command called {other}");
-            eprintln!("{}", usage(&env));
-            Ok(2)
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("a tokio runtime is always buildable")
+}
+
+/// A configuration problem is the operator's to fix, so it is printed as
+/// itself rather than as a stack trace.
+fn exit_code(outcome: Result<i32, ConfigError>) -> i32 {
+    match outcome {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("ConfigError: {error}");
+            1
         }
     }
 }

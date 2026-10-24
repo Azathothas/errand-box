@@ -43,8 +43,8 @@ shell_files() {
 # The C compiler for target $1, exported as the cc crate reads it, or a
 # message and 2. errand compiles C (ring, aws-lc-sys, SQLite; T-028), and a
 # static musl binary needs a musl C compiler: `musl-gcc` from musl-tools for
-# this machine's own target, `ARCH-linux-musl-gcc` for another. A CC_ the
-# caller set wins.
+# this machine's own target, `ARCH-linux-musl-gcc` for another, else zig
+# when $3 is `zig`. A CC_ the caller set wins.
 musl_cc() {
   cv=CC_$(printf '%s' "$1" | tr '-' '_')
   if env | grep -q "^$cv="; then return 0; fi
@@ -54,8 +54,37 @@ musl_cc() {
       return 0
     fi
   done
-  echo "no musl C compiler for $1: set $cv (musl-tools gives musl-gcc for this machine's own target only)" >&2
+  if [ "${3:-}" = zig ] && zig_cc "$1"; then return 0; fi
+  echo "no musl C compiler for $1: set $cv (musl-tools gives musl-gcc for this machine's own target only; zig serves any, see docs/tests.md)" >&2
   return 2
+}
+
+# zig as the C compiler and archiver for target $1: `zig` on PATH, or the
+# ziglang package of pip (`python3 -m ziglang`). It writes two wrappers under
+# target/zig, because the cc crate names a compiler with one path, and drops
+# the Rust triple the cc crate passes as --target, which zig does not read.
+zig_cc() {
+  if command -v zig >/dev/null 2>&1; then
+    zig=zig
+  elif python3 -m ziglang version >/dev/null 2>&1; then
+    zig="python3 -m ziglang"
+  else
+    return 1
+  fi
+  d=$PWD/target/zig
+  mkdir -p "$d" || return 1
+  zt=${1%%-*}-linux-musl
+  # shellcheck disable=SC2016 # the wrapper's own text: its $@ and $a expand when it runs
+  {
+    printf '#!/bin/sh\n# Written by scripts/ci-local.sh: %s cc for %s.\n' "$zig" "$zt"
+    printf 'for a in "$@"; do shift; case $a in --target=*) ;; *) set -- "$@" "$a" ;; esac; done\n'
+    printf 'exec %s cc -target %s "$@"\n' "$zig" "$zt"
+  } >"$d/$zt-cc" || return 1
+  printf '#!/bin/sh\nexec %s ar "$@"\n' "$zig" >"$d/$zt-ar" || return 1
+  chmod +x "$d/$zt-cc" "$d/$zt-ar" || return 1
+  tv=$(printf '%s' "$1" | tr '-' '_')
+  export "CC_$tv=$d/$zt-cc" "AR_$tv=$d/$zt-ar"
+  echo "zig ($zig version $($zig version)) compiles C for $1" >&2
 }
 
 musl_target() {
@@ -92,12 +121,14 @@ step() {
         file "$bin" | grep -q 'static' || { echo "$bin is not static: $(file "$bin")" >&2; return 1; }
       fi
       "$bin" version || return 1
-      # Setup links this binary as errand (T-028), so it must answer as errand.
-      d=$(mktemp -d) || return 2
-      ln -s "$PWD/$bin" "$d/errand" && "$d/errand" help >/dev/null
-      rc=$?
-      rm -rf "$d"
-      [ "$rc" = 0 ] || { echo "$bin does not answer as errand (exit $rc)" >&2; return 1; }
+      # The supervisor runs errand as `errand-box serve` (T-028): the static
+      # binary must carry it. A word serve does not take is refused by
+      # errand's own parser, which proves the library is there.
+      said=$("$bin" serve --not-a-flag 2>&1)
+      case $said in
+        *"serve takes -v"*) ;;
+        *) echo "$bin does not carry errand's serve: $said" >&2; return 1 ;;
+      esac
       ;;
     cross)
       case $(uname -m) in
@@ -110,7 +141,7 @@ step() {
       # rust-lld links a static musl binary for any target; no cross gcc.
       tv=$(printf '%s' "$t" | tr 'a-z-' 'A-Z_')
       export "CARGO_TARGET_${tv}_LINKER=rust-lld"
-      musl_cc "$t" "" || return 2
+      musl_cc "$t" "" zig || return 2
       cargo build --locked --release --target "$t" || return 1
       # A test that was not run is not a pass: each path that runs less
       # than every test says what it left out and returns 2.

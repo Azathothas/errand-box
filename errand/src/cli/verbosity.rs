@@ -5,7 +5,7 @@ use crate::log::LogLevel;
 /// Takes every `-v`, `-vv`, `-vvv`, and `--verbose` out of the arguments,
 /// wherever they sit, and returns the level they add up to.
 ///
-/// Accepted anywhere so `errand run -vv` and `errand -vv run` both work, and
+/// Accepted anywhere among the words, so `errand-box serve -vv` works, and
 /// taken out so no subcommand has to know about them.
 pub fn take_verbosity(args: &mut Vec<String>) -> LogLevel {
     let mut count = 0;

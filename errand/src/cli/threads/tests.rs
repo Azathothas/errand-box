@@ -409,7 +409,7 @@ async fn a_command_nobody_has_heard_of_prints_what_there_is() {
             .out()
             .contains("no threads command called destroy-everything")
     );
-    assert!(harness.out().contains("usage: errand threads"));
+    assert!(harness.out().contains("usage: errand-box threads"));
 }
 
 #[tokio::test]

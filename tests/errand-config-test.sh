@@ -5,9 +5,9 @@
 # errand v0.3.1 refused a key that the generator wrote for a later errand
 # (`output.postImages`), and its supervisor restarted it every second. This
 # check finds that class of defect before setup does: it builds the config
-# from tests/data with `errand-box errand-config`, runs errand-box under the
-# name errand as setup links it (T-028), and runs `errand run` with that
-# config for a few seconds. errand checks its config before it does anything
+# from tests/data with `errand-box errand-config`, and runs `errand-box
+# serve`, errand's daemon from the library built in (T-028), with that config
+# for a few seconds. errand checks its config before it does anything
 # else. The pass condition is the line errand logs after the check ("egress
 # is brokered"); with no bailey on PATH it then stops.
 #
@@ -21,10 +21,6 @@ eb=${ERRAND_BOX:-$root/target/debug/errand-box}
 t=$(mktemp -d) || exit 2
 trap 'rm -rf "$t"' EXIT INT TERM
 
-# errand is errand-box itself under the name errand, as setup links it.
-mkdir -p "$t/bin"
-ln -s "$eb" "$t/bin/errand" || exit 2
-errand=$t/bin/errand
 v=fork
 
 "$eb" errand-config --env "$root/tests/data/errand.env" --creds "$root/tests/data/creds.env" \
@@ -32,7 +28,7 @@ v=fork
 # errand gets the environment errand-box gives it (procs::exec_as): cleared,
 # then HOME and PATH. errand reads XDG_CONFIG_HOME before HOME, and a GitHub
 # runner sets it, so an inherited environment hides the config from errand.
-out=$(cd "$t" && env -i HOME="$t/h" PATH=/usr/bin:/bin timeout 20 "$errand" run 2>&1)
+out=$(cd "$t" && env -i HOME="$t/h" PATH=/usr/bin:/bin timeout 20 "$eb" serve 2>&1)
 case $out in
   *ConfigError* | *"configuration rejected"*)
     printf 'FAIL errand %s refuses the config errand-box writes:\n%s\n' "$v" "$(printf '%s\n' "$out" | grep -m 3 -i 'config')"

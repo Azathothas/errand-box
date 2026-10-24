@@ -52,7 +52,7 @@ pub struct Deps {
 }
 
 const USAGE: &str = "\
-usage: errand threads <command>
+usage: errand-box threads <command>
 
   list                 every remembered thread, most recent first
   show <thread>        one thread in full, with what it holds on disk
@@ -170,7 +170,7 @@ fn truncate(text: &str, limit: usize) -> String {
 
 async fn show(deps: &Deps, wanted: Option<&str>) -> i32 {
     let Some(wanted) = wanted else {
-        (deps.write)("say which thread, as `errand threads show <thread>`");
+        (deps.write)("say which thread, as `errand-box threads show <thread>`");
         return 2;
     };
 
@@ -231,7 +231,7 @@ fn not_found(deps: &Deps, wanted: &str, ambiguous: Option<&[ThreadRecord]>) -> i
 
 fn forget(deps: &Deps, wanted: Option<&str>) -> i32 {
     let Some(wanted) = wanted else {
-        (deps.write)("say which thread, as `errand threads forget <thread>`");
+        (deps.write)("say which thread, as `errand-box threads forget <thread>`");
         return 2;
     };
 
@@ -258,7 +258,7 @@ fn forget(deps: &Deps, wanted: Option<&str>) -> i32 {
 
 async fn remove(deps: &Deps, wanted: Option<&str>, confirmed: bool) -> i32 {
     let Some(wanted) = wanted else {
-        (deps.write)("say which thread, as `errand threads remove <thread> --yes`");
+        (deps.write)("say which thread, as `errand-box threads remove <thread> --yes`");
         return 2;
     };
 
@@ -350,7 +350,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 async fn revive(deps: &Deps, session: Option<&str>, args: &[String]) -> i32 {
     let Some(session) = session else {
         (deps.write)(
-            "say which session, as `errand threads revive <session> --thread <id> --owner <id>`",
+            "say which session, as `errand-box threads revive <session> --thread <id> --owner <id>`",
         );
         return 2;
     };

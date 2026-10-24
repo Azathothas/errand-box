@@ -50,10 +50,11 @@ one enforces, and what the daemon does when a host cannot enforce it.
 ## Running it
 
 ```sh
-errand run       # run the daemon until it is told to stop
-errand threads   # list, inspect, and remove what past sessions left on disk
-errand help
+errand-box serve     # the daemon, until it is told to stop; the supervisor runs it
+errand-box threads   # list, inspect, and remove what past sessions left on disk
 ```
+
+errand is a library inside errand-box, not a program of its own.
 
 There is a file to copy in [config.example.json](config.example.json), and a
 schema beside it that gives an editor completion and checking.
@@ -175,19 +176,14 @@ service definitions for both init systems.
 ## Development
 
 ```sh
-cargo fmt --check   # formatting
-cargo clippy        # lint, pedantic, warnings denied
-cargo test          # the test suite
-cargo run -- run    # run the daemon from the checkout
-cargo build --release   # the daemon binary, into target/release/
+cargo fmt --check                    # formatting
+cargo clippy -p errand --all-targets # lint, pedantic, warnings denied
+cargo test -p errand                 # the test suite
+cargo run -- serve                   # from the workspace root: errand-box runs the daemon
 ```
 
-`cargo build --release` produces `target/release/errand`. The web interface
-builds out of `web` into `dist/web`:
-
-```sh
-cd web && bun install && bun run build
-```
+errand builds into the errand-box binary; the workspace root's
+[`scripts/ci-local.sh`](../scripts/ci-local.sh) runs every gate step.
 
 The reference pages are generated from the schema, the command table, and the
 character table; `cargo test` fails when what is committed no longer matches,

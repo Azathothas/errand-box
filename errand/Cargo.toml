@@ -16,10 +16,6 @@ path = "src/lib.rs"
 # The doc comments show configuration and shell, not Rust to compile.
 doctest = false
 
-[[bin]]
-name = "errand"
-path = "src/main.rs"
-
 [dependencies]
 axum = "0.8.9"
 futures-util = { version = "0.3.34", features = ["io"] }

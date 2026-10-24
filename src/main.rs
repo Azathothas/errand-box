@@ -1,7 +1,7 @@
-//! errand-box: one program with four faces.
-//! - `errand-box <command>`: the operator's tool (`errand-box help`).
-//! - `errand <command>`: the chat daemon, errand-box's fork in `errand/`;
-//!   setup links this program as `errand`.
+//! errand-box: one program with three faces.
+//! - `errand-box <command>`: the operator's tool (`errand-box help`), and
+//!   `serve` and `threads`, errand's daemon and thread commands from the
+//!   library in `errand/`, errand-box's fork (T-028).
 //! - `bailey <verb>`: what errand runs; setup links this program as
 //!   `bailey` on errand's PATH (src/shim.rs).
 //! - `errand-box __watchdog`, `__as` and `__wait`: started by errand-box
@@ -35,18 +35,13 @@ mod up;
 use report::{Report, St};
 use std::path::{Path, PathBuf};
 
-fn main() -> std::process::ExitCode {
+fn main() {
     let args: Vec<String> = std::env::args().collect();
     let argv0 = args.first().map(String::as_str).unwrap_or("errand-box");
     let name = Path::new(argv0)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("errand-box");
-    // Setup links this program as errand on errand's PATH: the daemon is the
-    // fork in errand/, built into this binary (T-028).
-    if name == "errand" {
-        return errand::main();
-    }
     let runner = run::System;
     let code = if name == "bailey" {
         shim::main(&args[1..], &runner)
@@ -81,6 +76,11 @@ const USAGE: &str = "usage: errand-box <command> [options]
   uninstall [--purge] [--yes]
                         remove errand-box (and with --purge its instances, image
                         and state); without --yes, print the plan only
+  serve [-v|-vv|-vvv]   run errand's daemon until it is told to stop; the
+                        supervisor runs it as the errand account
+  threads [command]     errand's remembered threads: list, show, forget,
+                        remove, revive (`errand-box threads help`); run as
+                        root, it runs as the errand account
   errand-config --env F --creds F --home DIR --out F
                         write the config.json setup would give errand (mode
                         0600), and nothing else; tests check it against errand
@@ -187,6 +187,26 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
         };
     match cmd.as_str() {
         "bailey" => shim::main(rest, runner),
+        // errand, from the library in errand/ (T-028). The supervisor runs
+        // `serve` as the errand account.
+        "serve" => errand::serve(rest),
+        // errand reads its config from the errand account's home, so root
+        // runs the thread commands as that account, as the supervisor does.
+        "threads" if paths::euid() == 0 => {
+            let cfg = config::load(Path::new(config::DEFAULT_PATH))
+                .or_else(|_| config::load(Path::new(config::APPLIED_PATH)))
+                .unwrap_or_default();
+            let me = std::env::current_exe()
+                .map_or_else(|_| up::SELF_BIN.to_owned(), |p| p.display().to_string());
+            let mut argv = vec![me, "threads".to_owned()];
+            argv.extend(rest.iter().cloned());
+            eprintln!(
+                "errand-box threads: {}",
+                procs::exec_as(&cfg.errand.user, &argv)
+            );
+            1
+        }
+        "threads" => errand::threads(rest),
         "setup" => {
             let (c, rest) = opt(rest, "--config");
             let (env, rest) = opt(&rest, "--env");

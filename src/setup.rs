@@ -15,7 +15,7 @@ use crate::report::{Report, St};
 use crate::run::{Cmd, Runner};
 use crate::runtime::{self, Runtime};
 use crate::session::IMAGE_KEY;
-use crate::up::{self, ERRAND_BIN, SELF_BIN};
+use crate::up::{self, OLD_ERRAND_BIN, SELF_BIN};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -680,15 +680,21 @@ fn binaries(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report, cach
         }
     }
     c |= link("../bin/errand-box", &Path::new(SHIM_DIR).join("bailey")).unwrap_or(false);
-    // errand is the fork in errand/, built into this program (T-028). The
-    // link replaces the errand an earlier setup downloaded. A failure is
-    // reported on this row: `up`'s errand row replaces any row named errand.
-    match link("errand-box", Path::new(ERRAND_BIN)) {
-        Ok(x) => c |= x,
-        Err(e) => {
-            r.add("errand-box", St::Failed, e);
+    // errand is a library in this program, run as `errand-box serve`
+    // (T-028). An earlier setup left a downloaded errand, or a link, at
+    // OLD_ERRAND_BIN: nothing runs it now. A failure is reported on this row:
+    // `up`'s errand row replaces any row named errand.
+    let old_errand = Path::new(OLD_ERRAND_BIN);
+    if fs::symlink_metadata(old_errand).is_ok() {
+        if let Err(e) = fs::remove_file(old_errand) {
+            r.add(
+                "errand-box",
+                St::Failed,
+                format!("cannot remove {OLD_ERRAND_BIN}: {e}"),
+            );
             return;
         }
+        c = true;
     }
     c |= link(SELF_BIN, Path::new("/usr/local/bin/errand-box")).unwrap_or(false);
     // An earlier bootstrap.sh installed a copy in /usr/local/sbin, which
@@ -700,7 +706,7 @@ fn binaries(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report, cach
     r.add(
         "errand-box",
         if c { St::Changed } else { St::Ok },
-        format!("{SELF_BIN}; errand is {ERRAND_BIN}, and its `bailey` is {SHIM_DIR}/bailey"),
+        format!("{SELF_BIN}, which runs errand as `serve`; errand's `bailey` is {SHIM_DIR}/bailey"),
     );
     if cfg.errand.version != "latest" {
         r.add(
@@ -874,18 +880,55 @@ fn runlevels_with(svc: &str) -> Vec<String> {
     v
 }
 
+/// Takes the `web` section out of an errand config an earlier setup wrote:
+/// the fork refuses it since the interface left (T-034), and a config setup
+/// keeps would stop errand at start. True when it took the section out.
+fn drop_web(dst: &Path, uid: u32, gid: u32) -> Result<bool, String> {
+    if fs::symlink_metadata(dst).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(format!(
+            "{} is a symbolic link; pass --env and --creds to rewrite it",
+            dst.display()
+        ));
+    }
+    let text = fs::read_to_string(dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+    let mut json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "{} is not JSON errand-box can edit ({e}); pass --env and --creds to rewrite it",
+            dst.display()
+        )
+    })?;
+    let Some(object) = json.as_object_mut() else {
+        return Ok(false);
+    };
+    if object.remove("web").is_none() {
+        return Ok(false);
+    }
+    let text = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())? + "\n";
+    up::write_if_changed(dst, &text, 0o600)?;
+    std::os::unix::fs::lchown(dst, Some(uid), Some(gid)).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 fn errand_config(cfg: &Config, args: &Args, uid: u32, gid: u32, r: &mut Report) {
     let dst = Path::new(&cfg.errand.home).join(".config/errand/config.json");
     let (Some(envp), Some(credp)) = (&args.env, &args.creds) else {
         if dst.exists() {
-            r.add(
-                "errand config",
-                St::Ok,
-                format!(
-                    "{} (kept; pass --env and --creds to rewrite it)",
-                    dst.display()
+            match drop_web(&dst, uid, gid) {
+                Ok(dropped) => r.add(
+                    "errand config",
+                    if dropped { St::Changed } else { St::Ok },
+                    format!(
+                        "{} (kept{}; pass --env and --creds to rewrite it)",
+                        dst.display(),
+                        if dropped {
+                            ", without its `web` section: errand serves no interface now (T-034)"
+                        } else {
+                            ""
+                        }
+                    ),
                 ),
-            );
+                Err(e) => r.add("errand config", St::Failed, e),
+            }
         } else {
             r.add("errand config", St::Skipped, "not written: pass --env errand-box.env --creds creds.env; errand stays stopped until then");
         }
@@ -1584,9 +1627,6 @@ pub fn setup(args: &Args, runner: &dyn Runner) -> Report {
             format!("{}{}", doc.stdout, doc.stderr).trim().to_owned(),
         );
     }
-    if !Path::new(ERRAND_BIN).exists() {
-        r.add("errand", St::Failed, format!("{ERRAND_BIN} is missing"));
-    }
     r
 }
 
@@ -1769,5 +1809,28 @@ mod tests {
             std::fs::read_to_string(&p).unwrap(),
             "ubuntu:100000:65536\nroot:994:1\n"
         );
+    }
+
+    /// A config an earlier setup wrote loses its `web` section once, and
+    /// keeps the rest (T-034).
+    #[test]
+    fn a_kept_errand_config_loses_its_web_section() {
+        let dir = std::env::temp_dir().join(format!("eb-dropweb-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("config.json");
+        fs::write(
+            &p,
+            r#"{"chat":{"channelId":"1"},"web":{"host":"127.0.0.1","port":8787}}"#,
+        )
+        .unwrap();
+        let (uid, gid) = (paths::euid(), unsafe { libc::getegid() });
+        assert_eq!(drop_web(&p, uid, gid), Ok(true));
+        let kept: serde_json::Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
+        assert!(kept.get("web").is_none());
+        assert_eq!(kept["chat"]["channelId"], "1");
+        assert_eq!(drop_web(&p, uid, gid), Ok(false));
+        fs::write(&p, "not json").unwrap();
+        assert!(drop_web(&p, uid, gid).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

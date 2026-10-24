@@ -25,7 +25,9 @@ use std::time::{Duration, Instant};
 pub const SCAN_DIR: &str = "/var/lib/errand-box/s6";
 pub const PROXY_ENV: &str = "/etc/errand-box/proxy.env";
 pub const SELF_BIN: &str = "/usr/local/lib/errand-box/bin/errand-box";
-pub const ERRAND_BIN: &str = "/usr/local/lib/errand-box/bin/errand";
+/// Where errand lived before it was built into errand-box (T-028): a
+/// downloaded binary, then a link. Setup deletes what it finds there.
+pub const OLD_ERRAND_BIN: &str = "/usr/local/lib/errand-box/bin/errand";
 pub const LOG_DIR: &str = "/var/log/errand-box";
 
 /// The lxcfs program to run, or why none runs.
@@ -185,7 +187,7 @@ pub fn services(
     });
     v.push(Service {
         name: "errand".into(),
-        argv: vec![ERRAND_BIN.into(), "run".into()],
+        argv: vec![SELF_BIN.into(), "serve".into()],
         env: Vec::new(),
         user: Some(errand_user.to_owned()),
         env_file: Some(PROXY_ENV.into()),
@@ -195,8 +197,8 @@ pub fn services(
             user_socket().display()
         )],
         description: format!(
-            "errand; program, shim and proxy {}",
-            stamp(&[ERRAND_BIN, SELF_BIN, PROXY_ENV])
+            "errand; program and proxy {}",
+            stamp(&[SELF_BIN, PROXY_ENV])
         ),
         down: !errand_ready,
     });
@@ -1096,7 +1098,7 @@ pub fn errand_ready(cfg: &Config) -> bool {
 pub fn errand_missing(cfg: &Config) -> Vec<String> {
     let conf = Path::new(&cfg.errand.home).join(".config/errand/config.json");
     let rt = crate::runtime::path();
-    [conf.as_path(), Path::new(ERRAND_BIN), rt.as_path()]
+    [conf.as_path(), Path::new(SELF_BIN), rt.as_path()]
         .iter()
         .filter(|p| !p.exists())
         .map(|p| p.display().to_string())

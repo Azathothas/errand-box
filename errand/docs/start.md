@@ -50,7 +50,7 @@ Keep the file mode 0600: it holds two credentials.
 ## Run it
 
 ```sh
-errand run
+errand-box serve   # errand-box's supervisor runs this; errand is not a program of its own
 ```
 
 It checks the sandbox before it touches the chat service, and says what it can
