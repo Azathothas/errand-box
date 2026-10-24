@@ -16,11 +16,10 @@ sh bootstrap.sh
 errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
 ```
 
-It installs Incus, builds the guest image, links errand to errand-box,
-installs kage at a pinned digest, writes errand's configuration and starts
-the daemons. Run it
-again at any time: a second run changes nothing. After a host restart, run
-`errand-box up`.
+It installs Incus, builds the guest image, installs kage at a pinned
+digest, writes errand's configuration and starts the daemons, errand among
+them as `errand-box serve`. Run it again at any time: a second run changes
+nothing. After a host restart, run `errand-box up`.
 
 ## What a session gets
 

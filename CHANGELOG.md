@@ -7,13 +7,25 @@ errand.
 
 ---
 
-## Unreleased
+## 0.1.1
+
+### 2026-10-24T12:21Z: the release v0.1.1
+
+**Record:** [TODO/PROGRESS.md](TODO/PROGRESS.md), and T-028 in
+[TODO/errand.md](TODO/errand.md). Released by dispatching
+`.github/workflows/release.yml` on `main`; deployed to no host by this
+entry. Version 0.1.1 is every entry below, down to 0.1.0.
+
+- **Each release carries errand.** The binaries now include errand's
+  daemon; `LICENSE-errand` and `THIRD-PARTY-NOTICES`, generated from
+  `Cargo.lock` by a pinned cargo-about, are published beside them.
 
 ### 2026-10-24: errand is errand-box's hard fork, built in
 
-**Record:** T-028 to T-034 in [TODO/errand.md](TODO/errand.md); the
-research in [docs/history/references/](docs/history/README.md). Not
-deployed and not released.
+**Record:** T-028 to T-035 in [TODO/errand.md](TODO/errand.md); the
+research in [docs/history/references/](docs/history/README.md). Released in
+0.1.1 (the entry above); deployed to no host by this entry. The live tests
+passed 54 of 54 on a hosted container with the static binary of `9b27e60`.
 
 - errand, imported at QaidVoid/errand `715e9b0b777a`, is the workspace
   member `errand/`, a library: `errand-box serve` is the daemon and
@@ -23,9 +35,16 @@ deployed and not released.
 - errand's local web interface is gone, and setup takes `web` out of a
   kept errand config (T-034).
 - A session could make errand's broker send the operator's provider key to
-  a host it named (T-029, errand#48). Fixed in the fork.
+  a host it named (T-029, errand#48). Fixed in the fork. Also fixed: the
+  host-side push could publish another session's repository through a git
+  directory that borrows from it (T-030, errand#52), and the relay now logs
+  a connection it drops when its target does not answer (T-031).
+- A Discord stand-in, `discord-mock/`, tests errand's chat path in-process
+  and in CI; the gate checks its answers against Discord's OpenAPI spec
+  (T-035).
 - The static build compiles C now: install musl-tools to run the `musl`
-  step. Each release carries `LICENSE-errand`.
+  step. The `cross` step takes zig 0.16 as the other architecture's C
+  compiler.
 - The gate's placeholder and public email rules are narrower, each with a
   planted positive that still fails.
 
