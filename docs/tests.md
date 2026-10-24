@@ -160,109 +160,119 @@ with `errand-box image import` before it runs setup. With it, Alpine 3.22
 passed the live tests:
 [`tests/live/2026-10-23-alpine-3.22.txt`](../tests/live/2026-10-23-alpine-3.22.txt).
 
-## 5. As a user, on a host you are given
+## 5. End to end, as a user, on a host you are given
 
-This is how an operator installs errand-box, run on a host that has no
-checkout: a remote machine over ssh, a web terminal, or a WSL2 distribution.
-It tests the release, not the tree. Every file comes from the release tag,
-so the scripts match the binary.
+This is how an operator installs and uses errand-box, on a host with no
+checkout: a remote machine over ssh, a web terminal, or a WSL2
+distribution made for the test (setup installs Incus and changes the host).
+It tests what a user downloads, not the tree.
+
+Two downloads serve it. A version, such as
+[v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1), is
+what `bootstrap.sh` installs. The prerelease
+[`artefacts`](https://github.com/Azathothas/errand-box/releases/tag/artefacts),
+rebuilt from `main` by dispatching `.github/workflows/artefacts.yml`, holds
+what a test needs beside it, for x86_64 and aarch64, each in `SHA256SUMS`:
+
+| asset | what it is |
+| --- | --- |
+| `errand-box-<arch>-linux-musl` | errand-box built from that commit |
+| `discord-mock-<arch>-linux-musl` | the Discord stand-in (T-035), as a process |
+| `errand-box-image-<arch>.tar` | the guest image, for a host that cannot build it |
+| `errand-box-e2e-kit.tar.gz` | `bootstrap.sh`, `examples/`, `tests/data/`, `tests/e2e/`, the live tests |
 
 ### Before you start
 
-- The host needs Linux on x86_64 or aarch64, and root or `sudo` without a
-  password. `bootstrap.sh` uses `sudo -n` and never prompts.
-- The host needs to reach `github.com`, `raw.githubusercontent.com`,
-  `release-assets.githubusercontent.com` (where a release download redirects,
-  measured 2026-10-23), its package mirrors, `pkgs.zabbly.com` on a Debian or
-  Ubuntu host, and `images.linuxcontainers.org`. With an egress proxy, export
+- Linux on x86_64 or aarch64, and root or `sudo` without a password.
+  `bootstrap.sh` uses `sudo -n` and never prompts.
+- The host reaches `github.com`, `raw.githubusercontent.com`,
+  `release-assets.githubusercontent.com` (where a release download
+  redirects), its package mirrors, `pkgs.zabbly.com` on a Debian or Ubuntu
+  host, and `images.linuxcontainers.org`. With an egress proxy, export
   `HTTPS_PROXY` before every command.
-- Write down what the host is before you change it: the distribution, the
-  init, the cgroup version, whether it is a container, the free disk. The
-  probe of this repository answers that from a checkout; on the host,
-  `cat /etc/os-release`, `cat /proc/1/comm`, `stat -fc %T /sys/fs/cgroup`
-  and `df -h /` do.
-
-On a Windows machine that drives the hosts, the ssh client is Windows'
-OpenSSH. A host whose credential is a token in the ssh user name, as
-Daytona's is, gets an alias in `%USERPROFILE%\.ssh\config`, a file only your
-account can read, so the token is never on a command line:
-
-```text
-Host eb-daytona
-  HostName ssh.app.daytona.io
-  User THE_TOKEN
-```
-
-Then `ssh eb-daytona` is the only command that names it. For WSL2, use a
-distribution made for this test, not the one that builds this repository,
-because setup installs Incus and changes the host. A distribution with
-systemd as PID 1 has `systemd=true` under `[boot]` in `/etc/wsl.conf`. Read
-`wsl.exe`'s own output as UTF-16
-([conventions/shell.md](conventions/shell.md) section 7).
+- Write down what the host is before you change it: `cat /etc/os-release`,
+  `cat /proc/1/comm`, `stat -fc %T /sys/fs/cgroup`, `df -h /`.
 
 ### Install and set up
 
 ```sh
-v=v0.1.1
-base="https://raw.githubusercontent.com/Azathothas/errand-box/$v"
+a=https://github.com/Azathothas/errand-box/releases/download/artefacts
 mkdir -p ~/eb && cd ~/eb
-curl -fsSLO "$base/bootstrap.sh"
-sh bootstrap.sh --version "$v" --dry-run
-sh bootstrap.sh --version "$v"
+curl -fsSLO "$a/SHA256SUMS" && curl -fsSLO "$a/errand-box-e2e-kit.tar.gz"
+sha256sum --ignore-missing -c SHA256SUMS && tar -xzf errand-box-e2e-kit.tar.gz
+cd errand-box-e2e-kit
+sudo sh bootstrap.sh --version v0.1.1      # or --base-url "$a" for errand-box from main
 errand-box doctor
 ```
 
-`doctor` changes nothing and says what the host lacks. Then the three
-inputs. The values in `tests/data` are not real, so errand's daemon stops at
-the chat connection, and setup reports that one row as FAILED (T-015). With
-real credentials, write the two env files from
-[`../SECURITY.md`](../SECURITY.md) and T-015 instead.
+`doctor` changes nothing and says what the host lacks. The values in
+`tests/data` are not real, so errand stops at the chat connection, and
+setup reports that one row as FAILED (T-015). `tests/e2e/mock.env` and
+`mock-creds.env` point errand at discord-mock instead.
 
 ```sh
-curl -fsSLO "$base/examples/errand-box.toml"
-curl -fsSL -o errand-box.env "$base/tests/data/errand.env"
-curl -fsSL -o creds.env "$base/tests/data/creds.env"
-chmod 600 creds.env
-sudo errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
-sudo errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
+sudo errand-box setup --config examples/errand-box.toml --env tests/e2e/mock.env --creds tests/e2e/mock-creds.env
+sudo errand-box setup --config examples/errand-box.toml --env tests/e2e/mock.env --creds tests/e2e/mock-creds.env
 sudo errand-box status
 ```
 
-The second setup ends `0 changed`. Keep both outputs.
+The first setup builds the guest image, which takes minutes and needs
+nested containers. Where that cannot run, take the image from `artefacts`:
+setup with `--skip-image` starts Incus and stops at the missing image, then
+
+```sh
+arch=$(uname -m)
+curl -fsSLO "$a/errand-box-image-$arch.tar" && sha256sum --ignore-missing -c ../SHA256SUMS
+mkdir image && tar -xf "errand-box-image-$arch.tar" -C image
+sudo errand-box image import image && sudo errand-box setup --config ... --env ... --creds ...
+```
+
+The second setup ends `0 changed`. Keep every output.
+
+### errand against discord-mock
+
+On a host set up with the two `tests/e2e` files:
+
+```sh
+curl -fsSLO "$a/discord-mock-$(uname -m)-linux-musl" && chmod +x discord-mock-*-linux-musl
+sudo sh tests/e2e/mock-session.sh "demo: say hello"
+```
+
+It needs `curl` and `python3`. It starts the stand-in, runs errand
+against it as the errand account, posts the prompt as the stand-in's
+person, and passes when errand opens a thread and posts in it. Its logs and the stand-in's journal of every
+request go to `./mock-session-<time>/`. The provider in `mock.env` answers
+nothing, so the first model turn fails; give the `ERRAND_PROVIDER_*` lines
+a real gateway for a model turn.
 
 ### The live tests on that host
 
 They need `python3`, `socat` and `curl`. The `inside` test pulls container
 images through a relay that stands in for errand's broker, so it needs an
-HTTP CONNECT proxy on the host. Use the host's own egress proxy as
-`EB_LIVE_PROXY`. On a host with direct egress, run `tinyproxy` on loopback,
-as `.github/workflows/live.yml` does:
+HTTP CONNECT proxy on the host: the host's own egress proxy as
+`EB_LIVE_PROXY`, or `tinyproxy` on loopback, as
+`.github/workflows/live.yml` runs it.
 
 ```sh
 sudo apt-get install -y python3 socat curl tinyproxy
 printf 'Port 8888\nListen 127.0.0.1\nAllow 127.0.0.1\nTimeout 600\nConnectPort 443\n' | sudo tee /etc/tinyproxy/tinyproxy.conf >/dev/null
-sudo systemctl restart tinyproxy
-mkdir -p live
-for f in live.sh acp.py; do curl -fsSL -o "live/$f" "$base/tests/live/$f"; done
-sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh live/live.sh
+sudo systemctl restart tinyproxy            # Alpine: rc-service tinyproxy start
+sudo env EB_LIVE_PROXY=127.0.0.1:8888 sh tests/live/live.sh
 ```
-
-On Alpine, `apk add python3 socat curl tinyproxy` and start it with
-`rc-service tinyproxy start`. Where nothing supervises it, run `tinyproxy`
-in the foreground of a second terminal, with the same configuration file.
 
 ### Record and remove
 
-Save the outputs of `doctor`, both setups, `status` and the live tests in
-`tests/live/DATE-HOST.txt`. Cut every 64-character digest to 12 characters,
-because the public sweep of the gate refuses a long hex string. A failure is
-a finding: give it a row in [edge-cases.md](edge-cases.md) or an entry in
-`TODO/`, with the command and the output that show it. Then remove what the
-test made:
+Keep the outputs of `doctor`, both setups, `status`, the live tests and
+`mock-session.sh`. A failure is a finding: an issue with the command and the
+output that show it, and a row in [edge-cases.md](edge-cases.md) for a new
+host condition. Cut every 64-character digest to 12 characters before it
+goes into the tree, because the gate's public sweep refuses a long hex
+string. Then remove what the test made:
 
 ```sh
 sudo errand-box uninstall --purge --yes
 ```
 
-`uninstall` keeps Incus, its pools and the errand account. On a host made
-for the test, delete the host itself.
+`uninstall` keeps Incus, its pools and the errand account, and under s6
+Incus's dnsmasq outlives it (T-036). On a host made for the test, delete the
+host itself.

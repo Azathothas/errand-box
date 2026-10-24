@@ -23,6 +23,14 @@ released: `artefacts` is a prerelease of test assets, not a version.
   on a host set up with `tests/e2e/mock.env` and `mock-creds.env`.
 - `scripts/notices.sh --workspace` adds discord-mock's crates.
 - T-037 filed: errand's refusals restart every two seconds.
+- The assets of the first `artefacts` run, on a hosted container: v0.1.1
+  installed by the kit, the image imported and taken as current, setup 0
+  failed, and `mock-session.sh` passed: errand opened a thread and posted
+  in it. `mock-session.sh` then got the service's PATH and proxy settings,
+  and reads the journal with python3.
+- docs/tests.md section 5 is the end-to-end test with these assets; the
+  plan of 2026-10-23 for a session on the operator's Windows machine is
+  withdrawn from the record (T-027).
 
 ## 0.1.1
 

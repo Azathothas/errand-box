@@ -528,6 +528,19 @@ five tests that section names.
   `tests/live` does not use it. The `discord-mock` binary is for a CI job
   that runs errand against it from outside.
 
+  **Correction, 2026-10-24, the operator:** the binary goes to test hosts
+  too, as an asset of the prerelease `artefacts`
+  (`.github/workflows/artefacts.yml`), for T-027's end-to-end run. It is
+  still no asset of a version. `tests/e2e/mock-session.sh` runs errand
+  against it on a host errand-box set up with `tests/e2e/mock.env`; it runs
+  errand by hand, because `errand-box __as` clears the environment
+  (`src/procs.rs`) and nothing hands the supervised errand
+  `ERRAND_DISCORD_MOCK_URL`. Measured on a hosted container with the
+  assets of `e3121d0` (v0.1.1 installed, the image imported from
+  `artefacts`): PASS, errand opened a thread (201) and posted three
+  messages in it, with no gap; kage then refused the first turn, "no
+  provider credentials found", with the `mock.env` gateway.
+
 ## Done, and open
 
 **The plan's steps 1 to 4, the errand patch and the five tests done on

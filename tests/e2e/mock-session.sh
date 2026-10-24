@@ -21,8 +21,10 @@
 #   EB_E2E_USER    errand's account (default errand)
 #   EB_E2E_WAIT    seconds to wait for the thread and its first post (default 300)
 #   EB_E2E_OUT     where the logs go (default ./mock-session-<UTC time>)
-# Needs: root, errand-box set up, curl.
-# Output: OUT/mock.log, OUT/errand.log, OUT/journal.json, and a summary.
+# Needs: root, errand-box set up, curl, python3 (to read the journal).
+# Output: OUT/mock.log, OUT/errand.log, OUT/journal.json (every request
+# errand made), OUT/gaps.json (what it asked for that the stand-in does not
+# implement), OUT/calls.txt, and a summary.
 # Exit codes: 0 errand opened a thread and posted in it, 1 it did not,
 #   2 could not run.
 set -u
@@ -37,7 +39,7 @@ scan=/var/lib/errand-box/s6
 
 [ "$(id -u)" = 0 ] || die "run as root"
 [ -x "$eb" ] || die "$eb is missing: install errand-box and run setup first"
-command -v curl >/dev/null 2>&1 || die "curl is missing"
+for t in curl python3; do command -v "$t" >/dev/null 2>&1 || die "$t is missing"; done
 case $(uname -m) in
   x86_64 | amd64) arch=x86_64 ;;
   aarch64 | arm64) arch=aarch64 ;;
@@ -83,7 +85,12 @@ base=http://127.0.0.1:$port
 printf 'discord-mock: %s\n' "$base"
 
 sup down || die "cannot stop the supervised errand"
-"$eb" __as "$user" -- /usr/bin/env ERRAND_DISCORD_MOCK_URL="$base" "$eb" serve -v >"$out/errand.log" 2>&1 &
+# The environment the service gives errand (src/supervise.rs): its PATH,
+# with the bailey shim first, and the proxy settings setup wrote.
+# shellcheck source=/dev/null
+if [ -r /etc/errand-box/proxy.env ]; then set -a; . /etc/errand-box/proxy.env; set +a; fi
+PATH=/usr/local/lib/errand-box/shim:/usr/local/lib/errand-box/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  "$eb" __as "$user" -- /usr/bin/env ERRAND_DISCORD_MOCK_URL="$base" "$eb" serve -v >"$out/errand.log" 2>&1 &
 errand_pid=$!
 i=0
 until grep -q 'accepting messages' "$out/errand.log" 2>/dev/null; do
@@ -101,6 +108,16 @@ curl -fsS --noproxy '*' -H 'Content-Type: application/json' \
   die "the stand-in refused the message: $(cat "$out/posted.json" 2>/dev/null)"
 printf 'posted: %s\n' "$prompt"
 
+# The journal's REST calls, one line each: METHOD ROUTE STATUS PATH.
+calls() {
+  python3 -I -c '
+import json, sys
+for e in json.load(open(sys.argv[1])):
+    if e.get("kind") == "rest":
+        print(e["method"], e.get("route") or "(no route)", e["status"], e["path"])
+' "$out/journal.json" >"$out/calls.txt"
+}
+
 # Wait for a thread, then for a post in a channel other than the served
 # one, which is the channel the stand-in put the message in.
 channel=$(grep -o '"channel_id":"[0-9]*"' "$out/posted.json" | head -n 1 | tr -dc '0-9')
@@ -109,22 +126,22 @@ thread=""
 posted=""
 i=0
 while [ "$i" -lt "$wait_s" ]; do
-  curl -fsS --noproxy '*' "$base/_mock/journal" >"$out/journal.json" 2>/dev/null
-  thread=$(grep -o '"method":"POST","path":"/api/v10/channels/[0-9]*/messages/[0-9]*/threads","route":"[^"]*","query":[^,]*,"status":20[01]' "$out/journal.json" | head -n 1)
+  curl -fsS --noproxy '*' "$base/_mock/journal" >"$out/journal.json" 2>/dev/null && calls
+  thread=$(grep -E '^POST [^ ]*/threads 20[01] ' "$out/calls.txt" | head -n 1)
   if [ -n "$thread" ]; then
-    posted=$(grep -o '"method":"POST","path":"/api/v10/channels/[0-9]*/messages","route":"[^"]*","query":[^,]*,"status":200' "$out/journal.json" |
-      grep -v "/channels/$channel/messages\"" | head -n 1)
+    posted=$(grep -E '^POST /api/v10/channels/\{channel_id\}/messages 200 ' "$out/calls.txt" |
+      grep -v " /api/v10/channels/$channel/messages\$" | head -n 1)
     [ -n "$posted" ] && break
   fi
   kill -0 "$errand_pid" 2>/dev/null || break
   i=$((i + 2))
   sleep 2
 done
+curl -fsS --noproxy '*' "$base/_mock/gaps" >"$out/gaps.json" 2>/dev/null
 
-printf '\nREST calls errand made, by route and status:\n'
-grep -o '"method":"[A-Z]*","path":"[^"]*","route":"[^"]*","query":[^,]*,"status":[0-9]*' "$out/journal.json" |
-  sed 's/"path":"[^"]*",//; s/"query":[^,]*,//; s/"method":"\([A-Z]*\)","route":"\([^"]*\)","status":\([0-9]*\)/\1 \2 \3/' |
-  sort | uniq -c
+printf '\nREST calls errand made, by method, route and status:\n'
+cut -d' ' -f1-3 "$out/calls.txt" | sort | uniq -c
+printf '\nwhat errand asked for that the stand-in does not implement: %s\n' "$(cat "$out/gaps.json")"
 printf '\nthe last lines errand logged:\n'
 tail -n 15 "$out/errand.log"
 if [ -n "$thread" ] && [ -n "$posted" ]; then

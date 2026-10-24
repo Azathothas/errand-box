@@ -60,9 +60,9 @@ itself on the first newer errand, kage or Rust, or on a test bump.
 
 ## Decision
 
-The operator ruled on 2026-10-23: the next session's agent sets the
-repository setting and stores `FRESHNESS_TOKEN`, with the operator's `gh`
-CLI. That is the delegation [secrets.md](../docs/security/secrets.md)
+The operator ruled on 2026-10-23: an agent with the operator's `gh` CLI
+sets the repository setting and stores `FRESHNESS_TOKEN`, when the operator
+asks for it. That is the delegation [secrets.md](../docs/security/secrets.md)
 requires. The operator creates the token: fine-grained, this repository
 only, Contents and Pull requests read and write. The agent:
 

@@ -314,10 +314,7 @@ is the output. The first run past the image drove out E-66 (Alpine packages
 put the errand account in the shared group `nogroup`), and showed that
 `host.sh` allowed every FAILED row whose name starts with "errand".
 
-Open: WSL2 is untouched. It needs a Windows machine with WSL2 and Ubuntu,
-where the operator runs `sh tests/live/live.sh` after setup. The next
-session runs on the operator's Windows machine and covers it as the WSL host
-of T-027.
+Open: WSL2 is untouched. T-027's run covers it.
 
 ## Prove
 
@@ -491,61 +488,46 @@ ModelScope Studio, a hosted notebook environment; and WSL2 on Windows.
 
 ## Premise
 
-Nothing about the three hosts is measured. This session could not reach
-Daytona: its network policy refused TCP 22. Whether each host gives root,
-user namespaces, `/dev/fuse`, a writable `/proc/sys` and the hosts setup
-fetches from is what the run finds out. `errand-box doctor` changes nothing,
-so it runs first on each.
+Nothing about the three hosts is measured. Whether each gives root, user
+namespaces, `/dev/fuse`, a writable `/proc/sys`, nested containers and the
+hosts setup fetches from is what the run finds out. `errand-box doctor`
+changes nothing, so it runs first on each.
 
 ## Approach
 
-The next session runs on the operator's Windows machine. The operator gives
-it access to the three hosts at its start. On each host, in this order: WSL2,
-Daytona, ModelScope Studio.
+The operator, 2026-10-24, replaced the plan of 2026-10-23: a standalone
+agent on the operator's Windows machine runs a runbook the operator gives
+it, outside the tree. It reads the code and does not change it.
 
-1. Follow [docs/tests.md](../docs/tests.md) section 5 as written, from the
-   release tag, as a user would. Read only what a user reads: the README,
-   docs/operations.md and the command's own output.
-2. Note each finding when it happens, one line each, with the command and
-   the output: a failure, a wrong or missing line in a page, a message that
-   does not say what to do, a step a user would not guess, a wait with no
-   output, anything slow.
-3. If setup exits 0 and `tests/live/live.sh` has no FAIL that an E-row does
-   not explain, the host passes: run T-015 on it (the operator's ruling).
-4. A finding that stops the run on a host is recorded with its cause, and
-   the run moves to the next host.
-5. Remove what the run made: `sudo errand-box uninstall --purge --yes`, and
-   name what stays (the Incus packages).
-6. File each finding as an entry, per
-   [authoring.md](../docs/methodology/authoring.md), and a new host condition
-   as an E-row in [docs/edge-cases.md](../docs/edge-cases.md). This entry
-   files; it does not fix.
-7. Present the summary to the operator: per host, what worked, what failed,
-   and the entries filed.
-
-Also in that session, because it has the operator's `gh` CLI: T-007's
-setting and secret, and the v0.1.1 release, which this session did not
-reach.
+1. On WSL2, ModelScope Studio (ssh) and Daytona (ssh), it installs
+   errand-box as a user does, from v0.1.1 and from the prerelease
+   `artefacts` (the guest image, discord-mock and the e2e kit), and tests
+   every command and setting a user can reach, errand's chat path against
+   discord-mock with `tests/e2e/mock-session.sh` included.
+2. It files each finding as an issue on this repository, with the
+   commands, the output, the code it traced the cause to, and a fix.
+3. It files an entry per issue, per
+   [authoring.md](../docs/methodology/authoring.md), that links it, runs
+   the record's checks, and pushes. It builds nothing.
+4. A later session works the issues.
 
 ## Pitfalls
 
-- The Daytona ssh token is a credential. It stays in the operator's ssh
-  config, never in the tree, a log or the chat.
-- `wsl.exe` writes UTF-16. Read its output through `wsl -e`, as
-  docs/tests.md says.
+- An ssh token is a credential. It stays in the operator's files, never in
+  the tree, an issue, a log or the chat.
+- `wsl.exe` writes UTF-16 ([conventions/shell.md](../docs/conventions/shell.md)
+  section 7).
 - A hosted container may refuse nested containers outright. That is a
   finding with its measurement, not a reason to stop the other hosts.
 
 ## Prove
 
 ```sh
-ls tests/live/*-wsl2.txt tests/live/*-daytona.txt tests/live/*-modelscope.txt
+gh issue list --repo Azathothas/errand-box --state all --limit 200
 sh scripts/check-todo.sh
 ```
 
-Each file holds the host's `doctor` output and the live result, or the step
-where the run stopped and the entry filed for it. Every finding has a row
-in INDEX.md.
+Every finding has an issue and an entry that links it.
 
 ---
 

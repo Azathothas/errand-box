@@ -58,7 +58,7 @@ authority. To read a row is not to read the rule.
 | Something superseded | [`docs/methodology/history.md`](docs/methodology/history.md) |
 | A review | [`docs/methodology/reviews.md`](docs/methodology/reviews.md) |
 | A machine that is not the operator's | [`docs/hosted-sessions.md`](docs/hosted-sessions.md), [`docs/containers.md`](docs/containers.md) |
-| Test the release as a user on a host you are given (ssh, a web terminal, WSL2) | [`docs/tests.md`](docs/tests.md) section 5, [`docs/security/secrets.md`](docs/security/secrets.md) |
+| Test errand-box end to end, as a user, on a host you are given | [`docs/tests.md`](docs/tests.md) section 5, [`docs/security/secrets.md`](docs/security/secrets.md) |
 | Work from a Windows machine | [`docs/tests.md`](docs/tests.md) (the gate runs in WSL2), [`docs/conventions/shell.md`](docs/conventions/shell.md) section 7 |
 | How this project was started | [`docs/methodology/initialize.md`](docs/methodology/initialize.md), [`docs/methodology/template-sync.md`](docs/methodology/template-sync.md) |
 | Close a session | [`docs/methodology/sessions.md`](docs/methodology/sessions.md), [`docs/methodology/reviews.md`](docs/methodology/reviews.md) |

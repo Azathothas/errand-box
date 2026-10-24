@@ -345,10 +345,11 @@ The preflight adds a second condition: direct TCP 443 to
 `gateway.discord.gg`. The message path also needs a person to post the
 trigger, because bot messages are ignored.
 
-2026-10-23: the operator is preparing the credentials for the next session,
-which runs T-027 on three hosts and this entry on each one that passes. The
-steps of this plan are the list the operator follows. Unblock: the files of
-step 4 on the host, and the preflight passing there.
+The steps of this plan are the list the operator follows. Unblock: the
+files of step 4 on the host, and the preflight passing there. T-027's run
+covers the chat path against discord-mock, and a model turn where the
+operator gives it a provider key; a real Discord application stays this
+entry's.
 
 **Correction, 2026-10-24: the chat half can be tested without Discord.**
 The research of 2026-10-24 finds that serenity can be pointed at a local
