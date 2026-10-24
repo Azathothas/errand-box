@@ -92,7 +92,7 @@ Measure again with the same commands before you change anything.
 
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
 
-**36 entries: 14 done, 6 partial, 1 blocked, 15 open.**
+**37 entries: 14 done, 6 partial, 1 blocked, 16 open.**
 
 ---
 
@@ -129,9 +129,8 @@ Findings, not filed:
 
 ## What is in progress
 
-Nothing. The build host no longer has musl-tools, qemu-user-static or
-zig: the session removed what it installed, so `musl` and `cross` exit 2
-there until they are installed again.
+The prerelease `artefacts` (`.github/workflows/artefacts.yml`) and the
+e2e kit in `tests/e2e/`: committed, to be published and checked on a host.
 
 ---
 

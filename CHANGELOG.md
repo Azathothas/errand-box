@@ -7,6 +7,23 @@ errand.
 
 ---
 
+## Unreleased
+
+### 2026-10-24T13:18Z: assets for an end-to-end test, and T-037
+
+**Record:** T-035 and T-037 in [TODO/](TODO/INDEX.md). Not deployed and not
+released: `artefacts` is a prerelease of test assets, not a version.
+
+- `.github/workflows/artefacts.yml`, dispatched by hand on main, publishes
+  the prerelease `artefacts`: errand-box and discord-mock as static binaries
+  for x86_64 and aarch64, the guest image built with distrobuilder for
+  `errand-box image import`, and a kit with `bootstrap.sh`, the inputs of
+  setup and the live tests. It is never the latest release.
+- `tests/e2e/mock-session.sh` runs one errand session against discord-mock
+  on a host set up with `tests/e2e/mock.env` and `mock-creds.env`.
+- `scripts/notices.sh --workspace` adds discord-mock's crates.
+- T-037 filed: errand's refusals restart every two seconds.
+
 ## 0.1.1
 
 ### 2026-10-24T12:21Z: the release v0.1.1

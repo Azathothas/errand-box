@@ -2,11 +2,12 @@
 # notices.sh - write THIRD-PARTY-NOTICES: the licence of every crate the
 # release binary links, generated from Cargo.lock.
 #
-#   sh scripts/notices.sh OUT_FILE
+#   sh scripts/notices.sh OUT_FILE [--workspace]
 #
 # The binary links errand (T-028) and its crates, each under a licence that
 # asks for its notice to go with the binary. A release publishes the file
-# this writes beside the binaries.
+# this writes beside the binaries. --workspace also takes the crates of
+# discord-mock, for a release that ships it (artefacts.yml).
 #
 # It downloads cargo-about for this machine, refuses bytes whose SHA-256 is
 # not the pinned one, and runs it with scripts/notices/about.toml and
@@ -20,7 +21,9 @@
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-}
-[ -n "$out" ] || { echo "usage: notices.sh OUT_FILE" >&2; exit 2; }
+scope=${2:-}
+[ -n "$out" ] || { echo "usage: notices.sh OUT_FILE [--workspace]" >&2; exit 2; }
+case $scope in "" | --workspace) ;; *) echo "notices: unknown option $scope" >&2; exit 2 ;; esac
 for t in curl tar sha256sum cargo; do
   command -v "$t" >/dev/null 2>&1 || { echo "notices: $t is missing" >&2; exit 2; }
 done
@@ -46,7 +49,9 @@ bin=$(find "$t" -type f -name cargo-about -perm -u+x | head -n 1)
 [ -n "$bin" ] || { echo "notices: no cargo-about in $url" >&2; exit 2; }
 
 cd "$root" || exit 2
-"$bin" about generate --locked --fail \
+# $scope is empty or --workspace: unquoted, so an empty one is no word.
+# shellcheck disable=SC2086
+"$bin" about generate --locked --fail $scope \
   -c scripts/notices/about.toml -o "$t/notices" scripts/notices/about.hbs || exit 1
 [ -s "$t/notices" ] || { echo "notices: cargo-about wrote nothing" >&2; exit 1; }
 cp "$t/notices" "$out" || exit 2

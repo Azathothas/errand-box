@@ -1,0 +1,145 @@
+# The prerelease `artefacts`: what an end-to-end test of errand-box needs on
+# a host, built from one commit of main. <arch> is x86_64 and aarch64.
+#   errand-box-<arch>-linux-musl    the program, built as a release builds it
+#   discord-mock-<arch>-linux-musl  the Discord stand-in (T-035), as a process
+#   errand-box-image-<arch>.tar     the guest image from scripts/build-image.sh,
+#                                   for `errand-box image import`
+#   errand-box-e2e-kit.tar.gz       bootstrap.sh, the inputs of setup
+#                                   (examples/, tests/data/, tests/e2e/) and
+#                                   the live tests
+#   LICENSE-errand, THIRD-PARTY-NOTICES, SHA256SUMS
+#
+# Dispatched by hand, on main only. Each run deletes the release and its tag
+# and publishes both again on the commit it built. The release is a
+# prerelease and never the latest, so bootstrap.sh without --version still
+# takes the newest version; `--base-url` with this release's download URL
+# installs this one.
+name: artefacts
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: artefacts
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: dispatched on main
+        env:
+          REF: ${{ github.ref }}
+        run: '[ "$REF" = refs/heads/main ] || { echo "dispatch artefacts on main, not $REF"; exit 1; }'
+      - name: the build's packages
+        run: |
+          sudo apt-get -qq update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y musl-tools debootstrap debian-archive-keyring squashfs-tools golang-go
+      - name: errand-box, static
+        run: sh scripts/ci-local.sh --step musl
+      - name: discord-mock, static
+        run: |
+          t=$ARCH-unknown-linux-musl
+          export "CC_$(printf '%s' "$t" | tr '-' '_')=musl-gcc"
+          cargo build --locked --release --target "$t" -p discord-mock
+          bin=target/$t/release/discord-mock
+          # It answers a wrong argument with its usage and exit 2.
+          rc=0
+          "$bin" --not-an-option x || rc=$?
+          [ "$rc" = 2 ] || { echo "discord-mock exited $rc on a wrong argument, not 2"; exit 1; }
+          file "$bin"
+      - name: distrobuilder 3.3.0, from source (T-014)
+        env:
+          # distrobuilder's go.mod asks for go 1.25.6; auto fetches it.
+          GOTOOLCHAIN: auto
+        run: |
+          d=$RUNNER_TEMP/distrobuilder
+          git clone -q https://github.com/lxc/distrobuilder "$d"
+          git -C "$d" checkout -q 232e78c93721
+          cd "$d"
+          go mod edit -replace github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
+          go mod tidy
+          go build -tags "exclude_graphdriver_btrfs exclude_graphdriver_devicemapper containers_image_openpgp" \
+            -o "$RUNNER_TEMP/distrobuilder.bin" ./distrobuilder
+          "$RUNNER_TEMP/distrobuilder.bin" --version
+      - name: the guest image
+        run: |
+          sudo env DISTROBUILDER="$RUNNER_TEMP/distrobuilder.bin" sh scripts/build-image.sh "$RUNNER_TEMP/image"
+          ls -l "$RUNNER_TEMP/image"
+      - name: name the assets
+        run: |
+          mkdir -p dist
+          cp "target/$ARCH-unknown-linux-musl/release/errand-box" "dist/errand-box-$ARCH-linux-musl"
+          cp "target/$ARCH-unknown-linux-musl/release/discord-mock" "dist/discord-mock-$ARCH-linux-musl"
+          tar -cf "dist/errand-box-image-$ARCH.tar" -C "$RUNNER_TEMP/image" incus.tar.xz rootfs.squashfs SHA256SUMS inputs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artefacts-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: the notices
+        run: |
+          # The binaries carry errand, MIT OR Apache-2.0, taken under MIT, and
+          # the crates of both programs.
+          cp errand/LICENSE-MIT dist/LICENSE-errand
+          sh scripts/notices.sh dist/THIRD-PARTY-NOTICES --workspace
+      - name: the kit
+        run: |
+          k=errand-box-e2e-kit
+          mkdir -p "$RUNNER_TEMP/$k"
+          cp --parents bootstrap.sh examples/errand-box.toml examples/errand-box.env examples/creds.env \
+            tests/data/errand.env tests/data/creds.env tests/e2e/mock.env tests/e2e/mock-creds.env \
+            tests/e2e/mock-session.sh tests/live/live.sh tests/live/acp.py "$RUNNER_TEMP/$k/"
+          chmod 0600 "$RUNNER_TEMP/$k/examples/creds.env" "$RUNNER_TEMP/$k/tests/data/creds.env" "$RUNNER_TEMP/$k/tests/e2e/mock-creds.env"
+          git rev-parse HEAD > "$RUNNER_TEMP/$k/COMMIT"
+          tar -czf "dist/$k.tar.gz" -C "$RUNNER_TEMP" "$k"
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          if gh release view artefacts --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete artefacts --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          fi
+          gh release create artefacts --repo "$GITHUB_REPOSITORY" --target "$SHA" --title "artefacts" \
+            --prerelease --latest=false \
+            --notes "Assets for an end-to-end test of errand-box on a host, built from $SHA, rebuilt on each dispatch of artefacts.yml. Not a release: install a version with bootstrap.sh for anything else. errand-box and discord-mock are static binaries for x86_64 and aarch64 Linux; errand-box-image-<arch>.tar is the guest image for errand-box image import; errand-box-e2e-kit.tar.gz holds bootstrap.sh, the inputs of setup, tests/e2e/mock-session.sh and the live tests. bootstrap.sh --base-url https://github.com/$GITHUB_REPOSITORY/releases/download/artefacts installs this errand-box. SHA256SUMS lists every asset." \
+            dist/*

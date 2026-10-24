@@ -589,3 +589,80 @@ Never by name (E-12).
 errand-box uninstall --purge --yes
 ps -u incus -o pid= | wc -l   # 0
 ```
+
+---
+
+# T-037: errand's refusals restart every two seconds, and a transient one looks the same
+
+**Source:** found on 2026-10-24 while documenting errand's service under
+errand-box; the operator approved the entry the same day
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+errand exits 2, 3 or 4 when it refuses to run: the configuration, the
+sandbox backend or the token refused (2), a guarantee it cannot enforce (3),
+another daemon on the same state directory (4)
+(`errand/src/serve.rs:515`). errand-box's supervisor restarts it after
+every exit. Under systemd the unit says `Restart=always` and `RestartSec=2`
+(`src/supervise.rs:162`); under s6 there is no `finish` script, so
+s6-supervise starts it again at once, at most once a second. A refusal
+whose cause has not changed is repeated forever, and the log fills with the
+same lines: errand v0.3.1 refused its config and restarted every second
+(T-006), and the hosts of `tests/hosts/host.sh` show errand crash-looping
+on test credentials (docs/tests.md section 4).
+
+Not restarting is not the fix. A sandbox that does not answer yet is also
+exit 2 (`StartError::Unavailable`, `errand/src/serve.rs:818`), which is the
+race at boot that E-34 describes, and it passes on its own.
+
+`status` reports a daemon up for under a minute as degraded "may be
+restarting" (`src/status.rs:129`), but does not say that it is refusing, or
+why.
+
+## Premise
+
+Read, not measured: the systemd unit and the missing s6 `finish` script
+(`src/supervise.rs`), and the exit codes. The restart rate under s6 is
+s6-supervise's documented minimum of one second between starts; the
+"every second" of v0.3.1 matches it.
+
+## Decision
+
+Approved by the operator on 2026-10-24: keep restarting, back off on 2, 3
+and 4, and say so in `status`.
+
+- **One policy for both inits, in errand-box.** Each exit is recorded: the
+  s6 `finish` script gets the code as `$1`, systemd's `ExecStopPost=` gets
+  `$EXIT_STATUS`; each writes it with a time to `/run/errand-box/errand.exit`
+  through `errand-box __exited errand CODE`. The service's existing pre-step
+  (`prepare`, `src/up.rs:195`) waits before the next start: 2 s, doubled for
+  each refusal in a row, at most 60 s. A run that stays up for `STEADY`
+  (`src/up.rs:740`) resets the count. Exit 0 and 1 are not refusals and
+  keep today's restart.
+- Lost: `RestartPreventExitStatus=2 3 4`, because exit 2 is also the
+  transient race of E-34; systemd's `RestartSteps=` and
+  `RestartMaxDelaySec=`, because they exist from systemd 254 only (Debian
+  12 has 252) and do nothing under s6.
+- **`status` says it.** A service whose last exit was a refusal reports
+  "refusing (exit N), next start in S s" and the last line of its log.
+
+## Approach
+
+1. `src/supervise.rs`: the s6 service directory gets a `finish` script; the
+   systemd unit gets `ExecStopPost=`. Both call `errand-box __exited`.
+2. `src/up.rs`: the errand service's `prepare` gets the wait; the policy is
+   a pure function of the recorded exits, unit-tested.
+3. `src/status.rs`: the refusing line.
+4. `tests/live/live.sh`: a `refusal` test that writes a config errand
+   refuses, runs `up`, and counts starts over 60 s.
+
+## Prove
+
+```sh
+cargo test --locked supervise:: up:: status::
+sh tests/live/live.sh refusal   # at most 6 starts in 60 s; status says refusing (exit 2)
+```

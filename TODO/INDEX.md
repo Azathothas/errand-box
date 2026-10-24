@@ -68,15 +68,15 @@ retires the `bailey` stand-in.
 
 ## Counts
 
-**36 items. 15 open, 6 partial, 1 blocked, 14 done.**
+**37 items. 16 open, 6 partial, 1 blocked, 14 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 3 | 3 | 1 | 7 | 14 |
-| P2 | 9 | 2 | 0 | 3 | 14 |
+| P2 | 10 | 2 | 0 | 3 | 15 |
 | P3 | 3 | 1 | 0 | 0 | 4 |
-| **All** | 15 | 6 | 1 | 14 | 36 |
+| **All** | 16 | 6 | 1 | 14 | 37 |
 
 ---
 
@@ -120,3 +120,4 @@ retires the `bailey` stand-in.
 | [T-034](errand.md) | P3 | errand | partial | Remove from the fork what errand-box does not run |
 | [T-035](errand.md) | P1 | errand | partial | A Discord stand-in, so errand's chat path is tested without Discord |
 | [T-036](setup.md) | P3 | setup | open | `uninstall` stops incusd under s6 and leaves its dnsmasq running |
+| [T-037](setup.md) | P2 | setup | open | errand's refusals restart every two seconds, and a transient one looks the same |
