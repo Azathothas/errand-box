@@ -10,7 +10,7 @@ use tokio::net::TcpStream;
 use super::server::{Broker, dial, read_request_head};
 use super::{
     NoAddress, ProviderRoute, Resolve, carries_nonce, host_allowed, is_private_address,
-    parse_connect, parse_forward, public_addresses,
+    parse_connect, parse_forward, provider_target, public_addresses, under_prefix, url_host,
 };
 use crate::log::{LogFields, Logger};
 
@@ -867,5 +867,137 @@ async fn a_plain_http_request_is_forwarded_only_on_an_allowed_port() {
     let mut refused = String::new();
     let _ = conn.read_to_string(&mut refused).await;
     assert!(refused.starts_with("HTTP/1.1 403"));
+    broker.close();
+}
+
+/// A route answers its own path and the paths below it, and nothing that only
+/// begins with the same letters: what follows the prefix is pasted onto the
+/// provider's address (T-029, errand#48).
+#[test]
+fn a_route_matches_only_at_a_path_boundary() {
+    assert!(under_prefix("/provider/anthropic", "/provider/anthropic"));
+    assert!(under_prefix(
+        "/provider/anthropic/v1/messages",
+        "/provider/anthropic"
+    ));
+    assert!(under_prefix(
+        "/provider/anthropic/v1",
+        "/provider/anthropic/"
+    ));
+    assert!(!under_prefix(
+        "/provider/anthropic.attacker.example/v1",
+        "/provider/anthropic"
+    ));
+    assert!(!under_prefix(
+        "/provider/anthropic:443@evil.example/v1",
+        "/provider/anthropic"
+    ));
+    assert!(!under_prefix("/provider/anthropicx", "/provider/anthropic"));
+    assert!(!under_prefix("/other", "/provider/anthropic"));
+}
+
+/// The session names only the path, so the address stays the provider's.
+#[test]
+fn a_provider_target_keeps_the_providers_address() {
+    let bare = "https://api.anthropic.com";
+    let pathed = "https://gw.example/v1";
+    assert_eq!(
+        provider_target(bare, "/v1/messages", "").as_deref(),
+        Some("https://api.anthropic.com/v1/messages")
+    );
+    assert_eq!(
+        provider_target(pathed, "/chat/completions", "?stream=true").as_deref(),
+        Some("https://gw.example/v1/chat/completions?stream=true")
+    );
+    assert_eq!(
+        provider_target("https://gw.example/v1/", "/chat", "").as_deref(),
+        Some("https://gw.example/v1/chat")
+    );
+    assert!(provider_target(pathed, "", "").is_some());
+
+    // Another host, by a suffix on the name or by a user part.
+    assert_eq!(provider_target(bare, ".attacker.example/v1", ""), None);
+    assert_eq!(provider_target(bare, ":443@evil.example/v1", ""), None);
+    assert_eq!(provider_target(bare, "@evil.example/v1", ""), None);
+    // Another port.
+    assert_eq!(provider_target(bare, ":8443/v1", ""), None);
+    // Out of the base URL's path, plainly or encoded.
+    assert_eq!(provider_target(pathed, "/../admin", ""), None);
+    assert_eq!(provider_target(pathed, "/%2e%2e/admin", ""), None);
+    assert_eq!(provider_target(pathed, "/..%2fadmin", ""), None);
+    assert_eq!(provider_target(pathed, "/..%5Cadmin", ""), None);
+    assert_eq!(provider_target(pathed, "/..\\admin", ""), None);
+    // A sibling of the base path is not below it.
+    assert_eq!(provider_target(pathed, "x/admin", ""), None);
+}
+
+/// The host is read as the client that dials it reads it.
+#[test]
+fn a_host_is_read_from_the_parsed_address() {
+    assert_eq!(
+        url_host("https://api.anthropic.com:443@evil.example/v1").as_deref(),
+        Some("evil.example")
+    );
+    assert_eq!(
+        url_host("https://api.anthropic.com/v1").as_deref(),
+        Some("api.anthropic.com")
+    );
+    assert_eq!(
+        url_host("http://127.0.0.1:8080/").as_deref(),
+        Some("127.0.0.1")
+    );
+    assert_eq!(url_host("not a url"), None);
+}
+
+/// End to end: a session that holds one provider's nonce cannot make the
+/// broker send that provider's real key to another address, by the user-part
+/// spelling of errand#54 or by a path that climbs out of the base URL.
+#[tokio::test]
+async fn a_session_cannot_steer_a_providers_key_to_another_address() {
+    let seen: Arc<Mutex<BTreeMap<String, String>>> = Arc::new(Mutex::new(BTreeMap::new()));
+    let provider_port = start_upstream(Arc::clone(&seen), "provider").await;
+    let elsewhere_port = start_upstream(Arc::clone(&seen), "elsewhere").await;
+
+    let mut broker = Broker::new(
+        Vec::new(),
+        vec![443],
+        silent(),
+        vec![ProviderRoute {
+            prefix: "/provider/zai".to_owned(),
+            upstream: format!("http://127.0.0.1:{provider_port}"),
+            nonce: "nonce-zai".to_owned(),
+            credential: "key-zai".to_owned(),
+        }],
+        true,
+    );
+    let port = broker.listen("127.0.0.1").await.expect("bound");
+
+    // Sent raw, so neither the client nor its URL parser changes the path.
+    let raw = |path: String| async move {
+        let mut stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connected");
+        let head = format!(
+            "POST {path} HTTP/1.1\r\nhost: 127.0.0.1\r\nauthorization: Bearer nonce-zai\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}"
+        );
+        stream.write_all(head.as_bytes()).await.expect("sent");
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).await.expect("read");
+        answer.lines().next().unwrap_or_default().to_owned()
+    };
+
+    let steered = raw(format!("/provider/zai:1@127.0.0.1:{elsewhere_port}/v1")).await;
+    assert!(steered.contains(" 404 "), "{steered}");
+    let climbed = raw("/provider/zai/../../v1".to_owned()).await;
+    assert!(climbed.starts_with("HTTP/1.1 "), "{climbed}");
+    let normal = raw("/provider/zai/v1/chat".to_owned()).await;
+    assert!(normal.contains(" 200 "), "{normal}");
+
+    // The other address never saw the key; the provider did.
+    assert_eq!(seen.lock().unwrap().get("elsewhere"), None);
+    assert_eq!(
+        seen.lock().unwrap().get("provider").map(String::as_str),
+        Some("Bearer key-zai")
+    );
     broker.close();
 }

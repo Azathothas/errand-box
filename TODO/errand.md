@@ -106,7 +106,7 @@ readlink /usr/local/lib/errand-box/bin/errand   # errand-box
 **Category:** errand
 **Priority:** P0
 **Effort:** S
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -145,6 +145,21 @@ is the shape.
 ```sh
 cargo test --locked -p errand broker   # each spelling above is refused; a normal provider call is forwarded
 ```
+
+## Done, and open
+
+**Fixed in the fork on 2026-10-24.** `under_prefix` matches a route at a
+path boundary only; `provider_target` parses the joined address and refuses
+another scheme, host or port, a user part, a path outside the base URL's
+path, and an encoded slash or backslash; `url_host` reads the parsed
+address (`errand/src/sandbox/broker/mod.rs`). Four new tests in
+`errand/src/sandbox/broker/tests.rs`. The prove passed: 42 broker tests.
+With the old match and the old join planted back, the end-to-end test
+fails: the steered request answered `HTTP/1.1 200 OK` and the second
+stand-in provider received the key.
+
+**Open:** hosts run the downloaded errand v0.3.1 until T-028 ships the fork.
+Close this entry when T-028's live test runs the fork's errand.
 
 ---
 

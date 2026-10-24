@@ -504,7 +504,52 @@ fn route_for<'a>(state: &'a ProviderState, path: &str) -> Option<&'a ProviderRou
     routes.sort_by_key(|route| std::cmp::Reverse(route.prefix.len()));
     routes
         .into_iter()
-        .find(|candidate| path.starts_with(&candidate.prefix))
+        .find(|candidate| under_prefix(path, &candidate.prefix))
+}
+
+/// Whether `path` is `prefix` itself or a path below it.
+///
+/// A match on the bare string would let `/provider/NAME.other.example/...` and
+/// `/provider/NAME:443@other.example/...` reach the route for `NAME`, and what
+/// follows the prefix is pasted onto the provider's address.
+fn under_prefix(path: &str, prefix: &str) -> bool {
+    let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+    path.strip_prefix(prefix)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
+/// The address a provider call goes to: the provider's base URL with the
+/// session's path below it, or `None` when the result is anywhere else.
+///
+/// The session names only the path, so the scheme, host and port must be the
+/// provider's, with no user part, and the path, once `..` is resolved, must
+/// stay below the base URL's own path. An encoded slash or backslash is
+/// refused, because many servers decode it to a separator after the check.
+/// What is returned is the parsed form, so what was judged is what is sent.
+fn provider_target(upstream: &str, rest: &str, query: &str) -> Option<String> {
+    let lowered = rest.to_ascii_lowercase();
+    if lowered.contains("%2f") || lowered.contains("%5c") || rest.contains('\\') {
+        return None;
+    }
+    let base_text = upstream.strip_suffix('/').unwrap_or(upstream);
+    let base = url::Url::parse(base_text).ok()?;
+    let target = url::Url::parse(&format!("{base_text}{rest}{query}")).ok()?;
+    if !matches!(target.scheme(), "http" | "https")
+        || target.scheme() != base.scheme()
+        || target.host_str() != base.host_str()
+        || target.port_or_known_default() != base.port_or_known_default()
+        || !target.username().is_empty()
+        || target.password().is_some()
+    {
+        return None;
+    }
+    let base_path = base.path().trim_end_matches('/');
+    let path = target.path();
+    let contained = path == base_path
+        || path
+            .strip_prefix(base_path)
+            .is_some_and(|below| below.starts_with('/'));
+    contained.then(|| target.to_string())
 }
 
 /// Serves the provider API, with the real credential put on here.
@@ -542,9 +587,22 @@ pub(crate) async fn serve_provider_request(
         return (axum::http::StatusCode::UNAUTHORIZED, "not this session\n").into_response();
     }
 
-    let rest = path[route.prefix.len()..].to_owned();
-    let trimmed_upstream = route.upstream.strip_suffix('/').unwrap_or(&route.upstream);
-    let target = format!("{trimmed_upstream}{rest}{query}");
+    let rest = &path[route
+        .prefix
+        .strip_suffix('/')
+        .unwrap_or(&route.prefix)
+        .len()..];
+    let Some(target) = provider_target(&route.upstream, rest, &query) else {
+        state.log.warn(
+            "a provider call named a path that leaves its provider's address",
+            &fields([("provider", route.prefix.as_str().into())]),
+        );
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "that path leaves the provider's address\n",
+        )
+            .into_response();
+    };
     if let Some(refused) = provider_refusal(&state, route, &target).await {
         return refused;
     }
@@ -716,18 +774,17 @@ fn stream_answer(answered: reqwest::Response) -> axum::response::Response {
 /// Where a resolved name comes back as.
 pub(crate) type ResolveFuture = Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send>>;
 
-/// The host of a URL, without pulling in a full URL parser for one field.
+/// The host of a URL, as the client that dials it reads it.
+///
+/// Parsed, not split: a split on the last colon read
+/// `https://a.example:443@b.example/` as `a.example`, where the client dials
+/// `b.example`.
 fn url_host(target: &str) -> Option<String> {
-    let rest = target
-        .strip_prefix("http://")
-        .or_else(|| target.strip_prefix("https://"))?;
-    let authority = rest.split(['/', '?']).next()?;
-    // A provider is named, never bracketed, so an IPv6 literal here is not
-    // reachable through this path either.
-    let host = authority
-        .rsplit_once(':')
-        .map_or(authority, |(host, _)| host);
-    Some(host.to_owned())
+    match url::Url::parse(target).ok()?.host()? {
+        url::Host::Domain(name) => Some(name.to_owned()),
+        url::Host::Ipv4(address) => Some(address.to_string()),
+        url::Host::Ipv6(address) => Some(address.to_string()),
+    }
 }
 
 /// The listener that admits a session's connections and tunnels them.
