@@ -1,11 +1,11 @@
 # Incus backend for errand: specification
 
-**Status:** accepted by errand's maintainer on
-[QaidVoid/errand#41](https://github.com/QaidVoid/errand/issues/41),
-2026-10-23T15:02Z, with changes that section 10 lists. Not implemented in
-errand yet. errand-box implements the same behaviour today, behind errand's
-`bailey` backend.
-**Target:** errand v0.3.x, `src/sandbox/`. **Tracked as:** T-019 in
+**Status:** errand-box builds it in its own fork of errand, `errand/`
+(T-028), not yet implemented. errand-box implements the same behaviour today,
+behind errand's `bailey` backend. Section 10 records upstream's ruling on
+[QaidVoid/errand#41](https://github.com/QaidVoid/errand/issues/41); it does
+not bind the fork.
+**Target:** `errand/src/sandbox/`. **Tracked as:** T-019 in
 [TODO/sandbox.md](../TODO/sandbox.md).
 
 This page specifies a third errand sandbox backend, `incus`, that runs each

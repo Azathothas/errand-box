@@ -40,6 +40,24 @@ shell_files() {
     tests/setup-failed-only-errand.sh
 }
 
+# The C compiler for target $1, exported as the cc crate reads it, or a
+# message and 2. errand compiles C (ring, aws-lc-sys, SQLite; T-028), and a
+# static musl binary needs a musl C compiler: `musl-gcc` from musl-tools for
+# this machine's own target, `ARCH-linux-musl-gcc` for another. A CC_ the
+# caller set wins.
+musl_cc() {
+  cv=CC_$(printf '%s' "$1" | tr '-' '_')
+  if env | grep -q "^$cv="; then return 0; fi
+  for cc in "$2" "${1%%-*}-linux-musl-gcc"; do
+    if [ -n "$cc" ] && command -v "$cc" >/dev/null 2>&1; then
+      export "$cv=$cc"
+      return 0
+    fi
+  done
+  echo "no musl C compiler for $1: set $cv (musl-tools gives musl-gcc for this machine's own target only)" >&2
+  return 2
+}
+
 musl_target() {
   case $(uname -m) in
     x86_64 | amd64) echo x86_64-unknown-linux-musl ;;
@@ -61,18 +79,25 @@ step() {
     clippy) cargo clippy --locked --workspace --all-targets -- -D warnings ;;
     test) cargo test --locked --workspace ;;
     pins) sh tests/pins-test.sh ;;
-    # Downloads the pinned errand: the one step that needs the network.
+    # Runs errand-box as errand against the config errand-box writes.
     errand-config) cargo build --locked && sh tests/errand-config-test.sh ;;
     musl)
       t=$(musl_target)
       [ -n "$t" ] || { echo "no musl target for $(uname -m)" >&2; return 2; }
+      musl_cc "$t" musl-gcc || return 2
       cargo build --locked --release --target "$t" || return 1
       bin="target/$t/release/errand-box"
       # A static binary has no interpreter; `file` says so where it exists.
       if command -v file >/dev/null 2>&1; then
         file "$bin" | grep -q 'static' || { echo "$bin is not static: $(file "$bin")" >&2; return 1; }
       fi
-      "$bin" version
+      "$bin" version || return 1
+      # Setup links this binary as errand (T-028), so it must answer as errand.
+      d=$(mktemp -d) || return 2
+      ln -s "$PWD/$bin" "$d/errand" && "$d/errand" help >/dev/null
+      rc=$?
+      rm -rf "$d"
+      [ "$rc" = 0 ] || { echo "$bin does not answer as errand (exit $rc)" >&2; return 1; }
       ;;
     cross)
       case $(uname -m) in
@@ -85,6 +110,7 @@ step() {
       # rust-lld links a static musl binary for any target; no cross gcc.
       tv=$(printf '%s' "$t" | tr 'a-z-' 'A-Z_')
       export "CARGO_TARGET_${tv}_LINKER=rust-lld"
+      musl_cc "$t" "" || return 2
       cargo build --locked --release --target "$t" || return 1
       # A test that was not run is not a pass: each path that runs less
       # than every test says what it left out and returns 2.

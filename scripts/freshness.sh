@@ -2,15 +2,16 @@
 # freshness.sh - open a pull request for each pinned download with a newer
 # upstream release, and for a newer stable Rust.
 #
-# The defect this exists to stop: errand-box falls behind errand, kage and
-# Rust, and nobody notices until a host needs the new version. It runs from
+# The defect this exists to stop: errand-box falls behind kage and Rust, and
+# nobody notices until a host needs the new version. errand is not watched:
+# it is errand-box's fork, built in (T-028). It runs from
 # .github/workflows/freshness.yml every week, and by hand.
 #
 # For each tool in pins.toml whose upstream latest release is not the pinned
 # latest, and for a stable Rust newer than rust-toolchain.toml's channel, it:
 #   1. makes the branch freshness/<tool>-<version> from the current commit;
 #   2. moves the pin (scripts/pins.sh bump, which checks each digest);
-#   3. runs the steps that cover the change: test, and errand-config for errand;
+#   3. runs the step that covers the change: test;
 #   4. commits, pushes the branch, and opens a pull request.
 # A branch that exists on origin already is left alone: its pull request is
 # open or was closed on purpose. When step 3 fails, the pull request says so
@@ -95,7 +96,6 @@ while read -r tool; do
     continue
   fi
   steps="test"
-  [ "$tool" = errand ] && steps="test errand-config"
   update "$tool" "$up" "sh scripts/pins.sh bump $tool $up" "$steps" </dev/null || failed=1
 done < "$RUNNER_LOG.tools"
 

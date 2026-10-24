@@ -14,7 +14,7 @@ handles.
 | incusd | Incus 6.0 LTS on cgroup v1 hosts, the stable line elsewhere, from the Zabbly repository where it has a build | root |
 | incus-user | Part of Incus: gives each member of group `incus` one restricted project | root |
 | lxcfs | Gives each guest a /proc that matches its limits | root |
-| errand | The chat agent daemon (`errand run`), unchanged, from its release | the errand account |
+| errand | The chat agent daemon (`errand run`): errand-box's hard fork in `errand/`, built into the errand-box binary, which answers as `errand` when setup's link starts it | the errand account |
 | kage | The coding agent. errand needs a host copy on its PATH; the guest image has its own | errand account (host copy); agent user (guest copy) |
 | the guest image | Debian 13 with systemd, Docker, podman, FUSE tools, build tools and kage (`image/provision.sh`) | in Incus |
 | a supervisor | systemd units where systemd is PID 1, else s6 (`s6-svscan`) | root |
@@ -148,10 +148,11 @@ request when an upstream release appears. The Incus line follows the host:
 - It does not make a guest a VM. The guests share the host's kernel; a
   kernel exploit inside a guest is a host compromise. On a host with KVM,
   Incus can run VMs instead; errand-box does not offer that yet.
-- It does not change errand. Where errand's own behaviour limits the
-  sandbox, this page and [edge-cases.md](edge-cases.md) say so: errand's
-  broker connects to its targets directly, so a host whose only egress is
-  an HTTP proxy gives guests no egress through errand (E-22).
+- It does not yet carry its own sandbox backend in errand: errand calls it
+  as `bailey` (T-019). Where errand's behaviour limits the sandbox, this
+  page and [edge-cases.md](edge-cases.md) say so: errand's broker connects
+  to its targets directly, so a host whose only egress is an HTTP proxy
+  gives guests no egress through errand (E-22).
 - Rootless mode (`engine.mode = rootless`) is measured and specified in
   [research/rootless.md](research/rootless.md), and the shim already speaks
   to such a daemon, but `setup` does not install it yet.

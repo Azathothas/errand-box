@@ -10,6 +10,12 @@ publish = false
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
+[lib]
+name = "errand"
+path = "src/lib.rs"
+# The doc comments show configuration and shell, not Rust to compile.
+doctest = false
+
 [[bin]]
 name = "errand"
 path = "src/main.rs"

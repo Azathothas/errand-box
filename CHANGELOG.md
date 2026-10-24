@@ -9,6 +9,23 @@ errand.
 
 ## Unreleased
 
+### 2026-10-24: errand is errand-box's hard fork, built in
+
+**Record:** T-028 to T-034 in [TODO/errand.md](TODO/errand.md); the
+research in [docs/history/references/](docs/history/README.md). Not
+deployed and not released.
+
+- errand, imported at QaidVoid/errand `715e9b0b777a`, is the workspace
+  member `errand/`, and errand-box answers as `errand`: setup links it
+  instead of downloading errand. `[errand]` left `pins.toml`, and the
+  `errand.version` key has no effect.
+- A session could make errand's broker send the operator's provider key to
+  a host it named (T-029, errand#48). Fixed in the fork.
+- The static build compiles C now: install musl-tools to run the `musl`
+  step. Each release carries `LICENSE-errand`.
+- The gate's placeholder and public email rules are narrower, each with a
+  planted positive that still fails.
+
 ### 2026-10-23T15:30Z: errand's ruling on #41, the operator's rulings, and docs for a Windows-hosted session
 
 **Record:** T-019 to T-027 in [TODO/](TODO/INDEX.md); section 10 of

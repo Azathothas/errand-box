@@ -85,9 +85,39 @@ test code and one test helper.
 - errand-box's release profile sets `panic = "abort"`. errand has no
   `catch_unwind` and no `JoinError` handling, so a panic in a task now stops
   the daemon, and the supervisor restarts it.
-- A pinned errand release on a host that has one: setup must replace the
-  downloaded binary with the link, and `uninstall` must not delete
-  errand-box when it removes `errand`.
+- A host that has a downloaded errand: `link` removes the file at
+  `ERRAND_BIN` and puts the link there (`src/setup.rs`, `fn link`).
+  `uninstall` removes the whole `/usr/local/lib/errand-box`, links included.
+
+## Done, and open
+
+**Steps 1, 2, 3 and 5 done on 2026-10-24, step 6 in part.**
+
+- Step 2: errand is a library with `errand::main`
+  (`errand/src/lib.rs`); `errand/src/main.rs` calls it; errand-box
+  answers as `errand` (`src/main.rs`); setup links `ERRAND_BIN` to
+  `errand-box` and downloads only kage; `[errand]` left `pins.toml`, and
+  `freshness.sh` and its workflow no longer name errand; `errand.version`
+  is read, has no effect, and setup reports a value other than `latest`.
+  `tests/errand-config-test.sh` runs errand-box as `errand`, with no
+  network: PASS.
+- Step 3: the `musl` step exports `CC_<target>=musl-gcc` and checks that
+  the static binary answers as `errand`. Measured on this host: a cold
+  static release build in 238 s, 11.8 MB, static-pie. `gates.yml`,
+  `live.yml` and `release.yml` install musl-tools before it. The `cross`
+  step exits 2 with the reason when no `<arch>-linux-musl-gcc` exists.
+- Step 5: each release carries `LICENSE-errand`, errand's MIT notice.
+- Step 6: AGENTS.md, RULES.md, the README, docs/design.md, docs/tests.md,
+  docs/operations.md and docs/incus-backend.md.
+
+**Open:**
+
+- Step 4: the release carries no web bundle, so errand logs "continuing
+  without the web interface" (`errand/src/serve.rs:1360`). Build it with bun
+  in the release, or remove the interface: the operator's ruling on T-034.
+- The notices of the other crates the binary now links: errand-box
+  published none for its 22, and the lock now holds 280.
+- The prove's live test: no host with Incus has run setup with the fork.
 
 ## Prove
 

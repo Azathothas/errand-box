@@ -1,10 +1,11 @@
 # errand-box
 
-errand-box puts [errand](https://github.com/QaidVoid/errand) and its agent
-in a sandbox that is a whole Linux system. Each errand session gets its own
-Incus system container: systemd is PID 1, and Docker, podman and FUSE work
-inside it. errand runs unchanged. It calls errand-box through its `bailey`
-backend.
+errand-box puts errand and its agent in a sandbox that is a whole Linux
+system. Each errand session gets its own Incus system container: systemd is
+PID 1, and Docker, podman and FUSE work inside it. errand is errand-box's
+hard fork of [QaidVoid/errand](https://github.com/QaidVoid/errand), in
+[errand/](errand/README.md), built into the errand-box binary. It calls
+errand-box through its `bailey` backend.
 
 `bootstrap.sh` installs the release binary for this machine, after it checks
 the digest, and one command sets up the host:
@@ -15,8 +16,9 @@ sh bootstrap.sh
 errand-box setup --config ./errand-box.toml --env ./errand-box.env --creds ./creds.env
 ```
 
-It installs Incus, builds the guest image, installs errand and kage at
-pinned digests, writes errand's configuration and starts the daemons. Run it
+It installs Incus, builds the guest image, links errand to errand-box,
+installs kage at a pinned digest, writes errand's configuration and starts
+the daemons. Run it
 again at any time: a second run changes nothing. After a host restart, run
 `errand-box up`.
 

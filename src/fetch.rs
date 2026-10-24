@@ -114,15 +114,17 @@ mod tests {
                 }
             }
         }
-        let (v, a) = asset("errand", "latest", "x86_64").unwrap();
-        assert_eq!(v, all["errand"].latest);
+        let (v, a) = asset("kage", "latest", "x86_64").unwrap();
+        assert_eq!(v, all["kage"].latest);
         assert!(a.url.contains("x86_64"));
         assert!(
-            asset("errand", "v0.0.0", "x86_64")
+            asset("kage", "v0.0.0", "x86_64")
                 .unwrap_err()
                 .contains("not in pins.toml")
         );
-        assert!(asset("errand", "latest", "mips").is_err());
+        assert!(asset("kage", "latest", "mips").is_err());
+        // errand is built into errand-box, so nothing downloads it (T-028).
+        assert!(!all.contains_key("errand"));
     }
 
     #[test]

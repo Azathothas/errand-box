@@ -417,6 +417,7 @@ dependencies = [
 name = "errand-box"
 version = "0.1.0"
 dependencies = [
+ "errand",
  "libc",
  "serde",
  "serde_json",

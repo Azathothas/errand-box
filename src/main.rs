@@ -1,5 +1,7 @@
-//! errand-box: one program with three faces.
+//! errand-box: one program with four faces.
 //! - `errand-box <command>`: the operator's tool (`errand-box help`).
+//! - `errand <command>`: the chat daemon, errand-box's fork in `errand/`;
+//!   setup links this program as `errand`.
 //! - `bailey <verb>`: what errand runs; setup links this program as
 //!   `bailey` on errand's PATH (src/shim.rs).
 //! - `errand-box __watchdog`, `__as` and `__wait`: started by errand-box
@@ -33,13 +35,18 @@ mod up;
 use report::{Report, St};
 use std::path::{Path, PathBuf};
 
-fn main() {
+fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let argv0 = args.first().map(String::as_str).unwrap_or("errand-box");
     let name = Path::new(argv0)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("errand-box");
+    // Setup links this program as errand on errand's PATH: the daemon is the
+    // fork in errand/, built into this binary (T-028).
+    if name == "errand" {
+        return errand::main();
+    }
     let runner = run::System;
     let code = if name == "bailey" {
         shim::main(&args[1..], &runner)

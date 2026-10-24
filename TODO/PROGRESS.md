@@ -20,9 +20,9 @@ evidence, each listed in [`docs/history/README.md`](../docs/history/README.md).
 The operator ruled on the recommendation the same day:
 
 1. **errand is errand-box's hard fork, in `errand/`** (T-028). Imported byte
-   for byte at `715e9b0b777a`; no upstream release is taken after it. The
-   import builds and passes its tests in the workspace and the gate.
-   errand-box does not ship it yet: setup still installs the pinned v0.3.1.
+   for byte at `715e9b0b777a`; no upstream release is taken after it. It
+   builds and passes its tests in the workspace and the gate, and it is
+   built into errand-box, which setup links as `errand`.
 2. **The corpus is deleted.** The write-ups stay; each names the commit it
    read, and `git clone` with
    [`scripts/fetch-tracker.sh`](../scripts/fetch-tracker.sh) fetches it again.
@@ -31,10 +31,10 @@ The operator ruled on the recommendation the same day:
 
 New entries: T-028 to T-034, in [`errand.md`](errand.md). T-019 is open, not
 blocked: its backend is errand-box's to build in the fork. T-029, a P0, is
-live in the errand v0.3.1 that `pins.toml` installs today. Until T-028 ships
-the fork, an operator can keep it from reaching the key by giving
-`ERRAND_PROVIDER_BASE_URL` a path, where the provider allows one: read, not
-tested.
+fixed in the fork. A host installed from v0.1.0 still runs errand v0.3.1,
+which has it, until it takes a release with the fork; until then an operator
+can keep it from reaching the key by giving `ERRAND_PROVIDER_BASE_URL` a
+path, where the provider allows one: read, not tested.
 
 ---
 
@@ -137,9 +137,10 @@ Candidates that a measurement refuted:
 
 ## What is in progress
 
-T-028, the fork: imported and gated. Not reached yet: shipping it from
-errand-box's binary, the static build's C compiler, the web bundle, and the
-pages that still say errand is installed from its release.
+T-028, the fork: imported, gated, and built into errand-box, which setup
+links as `errand`. Open: the web bundle (T-034's ruling), the other crates'
+notices, and a live run of setup on a host with Incus. T-029 is fixed in the
+fork and reaches a host with that live run.
 
 ---
 

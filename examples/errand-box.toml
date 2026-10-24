@@ -20,7 +20,8 @@ stop_seconds = 4         # clean stop before a forced one; keep below errand's g
 [errand]
 user = "errand"
 home = "/var/lib/errand" # errand's projects and state live under it
-version = "latest"       # latest pinned in pins.toml, or e.g. v0.3.1
+# errand is built into errand-box. An older file's `version` key here is
+# still read, and has no effect.
 
 [kage]
 version = "latest"

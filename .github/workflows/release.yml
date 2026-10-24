@@ -61,12 +61,19 @@ jobs:
             git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null || rc=$?
             [ "$rc" = 2 ] || { echo "the tag $TAG exists, or the remote did not answer (git ls-remote exit $rc)"; exit 1; }
           fi
+      - name: a musl C compiler, for the C that errand's crates build (T-028)
+        run: |
+          sudo apt-get -qq update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y musl-tools
       - name: build and run the static binary
         run: sh scripts/ci-local.sh --step musl
       - name: name the asset
         run: |
           mkdir -p dist
           cp "target/${{ matrix.arch }}-unknown-linux-musl/release/errand-box" "dist/errand-box-${{ matrix.arch }}-linux-musl"
+          # The binary carries errand, which is MIT OR Apache-2.0; taken under
+          # MIT, its notice goes with every copy.
+          cp errand/LICENSE-MIT dist/LICENSE-errand
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: errand-box-${{ matrix.arch }}
@@ -99,5 +106,5 @@ jobs:
           # A pushed tag must exist; a dispatch creates the tag on the commit it built.
           if [ "$EVENT" = workflow_dispatch ]; then set -- --target "$SHA"; else set -- --verify-tag; fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" "$@" \
-            --notes "Static binaries for x86_64 and aarch64 Linux, and their SHA-256 digests. Install with bootstrap.sh; see docs/operations.md." \
-            dist/errand-box-x86_64-linux-musl dist/errand-box-aarch64-linux-musl dist/SHA256SUMS
+            --notes "Static binaries for x86_64 and aarch64 Linux, and their SHA-256 digests. Each carries errand, errand-box's fork, whose MIT notice is LICENSE-errand. Install with bootstrap.sh; see docs/operations.md." \
+            dist/errand-box-x86_64-linux-musl dist/errand-box-aarch64-linux-musl dist/SHA256SUMS dist/LICENSE-errand

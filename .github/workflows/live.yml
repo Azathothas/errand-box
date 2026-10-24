@@ -34,6 +34,10 @@ jobs:
           persist-credentials: false
       - name: probe the runner
         run: sh scripts/doctor/doctor.sh --fast
+      - name: a musl C compiler, for the C that errand's crates build (T-028)
+        run: |
+          sudo apt-get -qq update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y musl-tools
       - name: build and run the static binary
         run: sh scripts/ci-local.sh --step musl
       - name: a CONNECT proxy on loopback, and the test tools

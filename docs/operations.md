@@ -183,7 +183,7 @@ no longer runs afterwards.
 | `/etc/errand-box/errand-box.toml` | the configuration setup used |
 | `/etc/errand-box/runtime.toml` | what setup decided, for the shim |
 | `/etc/errand-box/proxy.env` | the egress proxy for incusd and errand, from `HTTPS_PROXY` |
-| `/usr/local/lib/errand-box/` | errand-box, errand, kage, and the `bailey` link |
+| `/usr/local/lib/errand-box/` | errand-box, kage, and the `errand` and `bailey` links to errand-box |
 | `/var/lib/errand-box/s6/` | the s6 service directories (hosts with no init) |
 | `/var/lib/errand-box/cache/` | downloads, named by their SHA-256 |
 | `/var/lib/errand-box/applied.toml` | the configuration the last setup applied; `up`'s fallback |

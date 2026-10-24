@@ -6,7 +6,7 @@ exits 0 only when every check passed. Read the exit code unpiped.
 | kind | needs | command |
 | --- | --- | --- |
 | 1. unit and integration tests | cargo, on Linux | `cargo test --locked` |
-| 2. the local CI steps | cargo, shellcheck, curl, the network for one step, on Linux | `sh scripts/ci-local.sh` |
+| 2. the local CI steps | cargo, shellcheck, and musl-tools for the static build, on Linux | `sh scripts/ci-local.sh` |
 | 3. the live tests | root on a host where `errand-box setup` finished | `sh tests/live/live.sh` |
 | 4. other kinds of host | root on a host where Incus runs | `sh tests/hosts/host.sh NAME IMAGE` |
 | 5. as a user, on a host you are given | sudo on that host, and a release | section 5 |
@@ -47,9 +47,9 @@ checked there.
 | `fmt`, `clippy` | format, and clippy with warnings as errors |
 | `test` | section 1 |
 | `pins` | `tests/pins-test.sh`: `scripts/pins.sh` against releases on `file://` URLs. A bump writes both digests and moves `latest`; a digest that differs from upstream's `.sha256` changes nothing |
-| `errand-config` | `tests/errand-config-test.sh`: the pinned errand accepts the config errand-box writes. It downloads errand (digest checked) and runs it against the config from `tests/data/`. This step caught `output.postImages`, a key that errand v0.3.1 refuses |
-| `musl` | the static release binary builds for this machine and runs |
-| `cross` | the static binary builds for the other architecture (x86_64 or aarch64) with `rust-lld`, and the unit and integration tests pass there under qemu-user. It needs `qemu-<arch>-static`, and a `binfmt_misc` handler for that architecture, because `tests/shim.rs` starts the shim as a child. Without the handler it runs the unit tests and exits 2; without qemu it only builds and exits 2 |
+| `errand-config` | `tests/errand-config-test.sh`: the errand built into errand-box accepts the config errand-box writes. It runs errand-box under the name `errand` against the config from `tests/data/`. This step caught `output.postImages`, a key that errand v0.3.1 refused |
+| `musl` | the static release binary builds for this machine, runs, and answers as `errand`. errand's crates compile C (T-028), so it needs `musl-gcc` from musl-tools, or `CC_<target>` set; without one it exits 2 |
+| `cross` | the static binary builds for the other architecture (x86_64 or aarch64) with `rust-lld`, and the unit and integration tests pass there under qemu-user. It needs a musl C compiler for that architecture (`<arch>-linux-musl-gcc`, or `CC_<target>`), `qemu-<arch>-static`, and a `binfmt_misc` handler for that architecture, because `tests/shim.rs` starts the shim as a child. Without the C compiler it exits 2 before it builds; without the handler it runs the unit tests and exits 2; without qemu it only builds and exits 2 |
 
 ## 3. The live tests
 

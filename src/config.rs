@@ -92,8 +92,9 @@ pub struct Errand {
     /// Its home. errand's `projectRoot` and `stateDir` live under it, which
     /// is also the only tree its Incus project may attach.
     pub home: String,
-    /// `latest` (the newest version in pins.toml) or a version such as
-    /// `v0.3.1`.
+    /// Read and not used: errand is built into errand-box (T-028). An older
+    /// file that names it still parses, and setup reports a value other than
+    /// `latest`.
     pub version: String,
 }
 

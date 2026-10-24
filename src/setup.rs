@@ -680,6 +680,16 @@ fn binaries(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report, cach
         }
     }
     c |= link("../bin/errand-box", &Path::new(SHIM_DIR).join("bailey")).unwrap_or(false);
+    // errand is the fork in errand/, built into this program (T-028). The
+    // link replaces the errand an earlier setup downloaded. A failure is
+    // reported on this row: `up`'s errand row replaces any row named errand.
+    match link("errand-box", Path::new(ERRAND_BIN)) {
+        Ok(x) => c |= x,
+        Err(e) => {
+            r.add("errand-box", St::Failed, e);
+            return;
+        }
+    }
     c |= link(SELF_BIN, Path::new("/usr/local/bin/errand-box")).unwrap_or(false);
     // An earlier bootstrap.sh installed a copy in /usr/local/sbin, which
     // comes first on root's PATH and would shadow every later version.
@@ -690,12 +700,21 @@ fn binaries(cfg: &Config, host: &Host, runner: &dyn Runner, r: &mut Report, cach
     r.add(
         "errand-box",
         if c { St::Changed } else { St::Ok },
-        format!("{SELF_BIN}; `bailey` for errand is {SHIM_DIR}/bailey"),
+        format!("{SELF_BIN}; errand is {ERRAND_BIN}, and its `bailey` is {SHIM_DIR}/bailey"),
     );
-    for (tool, version, bin) in [
-        ("errand", &cfg.errand.version, "errand"),
-        ("kage", &cfg.kage.version, "kage"),
-    ] {
+    if cfg.errand.version != "latest" {
+        r.add(
+            "errand.version",
+            St::Skipped,
+            format!(
+                "{:?} has no effect: errand is built into errand-box; remove the key",
+                cfg.errand.version
+            ),
+        );
+    }
+    // kage is still downloaded: errand needs a host copy on its PATH.
+    {
+        let (tool, version, bin) = ("kage", &cfg.kage.version, "kage");
         let res = (|| -> Result<(String, bool), String> {
             let (v, a) = fetch::asset(tool, version, &host.arch)?;
             let archive = fetch::fetch(runner, &a, cache)?;

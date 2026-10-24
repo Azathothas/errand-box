@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "0BSD"
-description = "Sets up Incus, a guest image, kage and errand on a Linux host, and gives errand a bailey that runs each session in an Incus system container"
+description = "Sets up Incus, a guest image, kage and errand on a Linux host, runs errand, and gives it a bailey that runs each session in an Incus system container"
 repository = "https://github.com/Azathothas/errand-box"
 publish = false
 
@@ -16,6 +16,9 @@ name = "errand-box"
 path = "src/main.rs"
 
 [dependencies]
+# errand, the chat daemon: errand-box's hard fork, run when this program is
+# started under the name `errand`.
+errand = { path = "errand" }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1,5 +1,5 @@
-# Open a pull request for each newer upstream: errand, kage (pins.toml) and
-# stable Rust (rust-toolchain.toml). scripts/freshness.sh does the work and
+# Open a pull request for each newer upstream: kage (pins.toml) and stable
+# Rust (rust-toolchain.toml). errand is errand-box's fork and is not watched. scripts/freshness.sh does the work and
 # runs the same way by hand; read its header.
 #
 # Each update is one branch, freshness/<tool>-<version>, and one pull
