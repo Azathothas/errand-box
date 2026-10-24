@@ -12,10 +12,11 @@ holds the bot token, and every agent is started as that same account.
 ## Restarting
 
 errand-box's supervisor restarts the daemon after every exit, a refusal
-included. Exit 2, 3 and 4 are decisions the daemon made, and a restart only
-logs the same line again; 4 means another daemon already serves this state
-directory. See [getting started](start.md) for what each code means.
-errand-box does not yet leave a refusal stopped.
+included, two seconds later. Exit 2, 3 and 4 are decisions the daemon made,
+and a restart repeats one whose cause has not changed. Not every cause stays:
+a sandbox that does not answer yet, while Incus starts, is also exit 2, and
+it passes on its own. See [getting started](start.md) for what each code
+means.
 
 ## Seeing more in the log
 

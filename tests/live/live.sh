@@ -363,6 +363,13 @@ t_errand() {
   fi
   case $state in up* | active*) r=0 ;; *) r=1 ;; esac
   check errand "$r" "service errand: $(printf '%s' "$state" | cut -c1-60)"
+  # errand is a library errand-box runs (T-028): no errand program, and the
+  # service starts errand-box serve.
+  if [ -d "$scan" ]; then run=$(cat "$scan/errand/run" 2>&1); else run=$(systemctl cat errand-box-errand.service 2>&1); fi
+  case $run in *"/errand-box serve"*) r=0 ;; *) r=1 ;; esac
+  check errand "$r" "the service runs errand-box serve"
+  if [ -e /usr/local/lib/errand-box/bin/errand ] || [ -L /usr/local/lib/errand-box/bin/errand ]; then r=1; else r=0; fi
+  check errand "$r" "no errand program in /usr/local/lib/errand-box/bin"
   case $log in *ConfigError*) r=1 ;; *) r=0 ;; esac
   check errand "$r" "errand accepts the config setup wrote"
   case $log in *"this backend enforces every configured guarantee on this host"*) r=0 ;; *) r=1 ;; esac

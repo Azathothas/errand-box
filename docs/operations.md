@@ -56,7 +56,7 @@ stopped.
 | the errand account | a system account (default `errand`, home `/var/lib/errand`), in group `incus`; the groups `incus` and `incus-admin` are made where the package did not (E-35) |
 | subordinate ids | root may delegate `1000000:1000000000`, and errand's uid and gid, to guests; the report says how many isolated instances root's ranges hold (E-53) |
 | boot | systemd: the units are enabled. OpenRC: `/etc/local.d/errand-box.start` runs `errand-box up` (E-36). No init: nothing, reported |
-| programs | errand-box in `/usr/local/lib/errand-box/bin`, linked as `bailey` in `/usr/local/lib/errand-box/shim`; errand and kage from `pins.toml`, digests checked |
+| programs | errand-box in `/usr/local/lib/errand-box/bin`, linked as `bailey` in `/usr/local/lib/errand-box/shim`; errand is built in and runs as `errand-box serve`, and an `errand` an earlier release downloaded is removed; kage from `pins.toml`, its digest checked |
 | errand's config | `~errand/.config/errand/config.json`, mode 0600, from the two env files |
 | daemons | through `errand-box up` |
 | storage | a btrfs pool `errand-box` on a thin loop file (half the free space, and at least three times `box.disk`, unless `engine.pool_size` says otherwise) |
@@ -103,6 +103,10 @@ program a package upgrade replaced), the pool and the host disk (degraded
 at 85 % used), whether the image is current, the golden instance, and the
 sessions. `setup`, `up`, `status`, `doctor` and `image` take `--json`.
 
+`errand-box threads` lists the threads errand remembers and what each
+session left on disk; `errand-box threads help` names the commands that
+remove them. Run as root, it runs as the errand account.
+
 ## Change a setting
 
 Edit `/etc/errand-box/errand-box.toml` (or the file you pass with
@@ -115,9 +119,9 @@ session instance at its next start.
 errand-box does not upgrade Incus: setup installs with `--no-upgrade`, so
 that running it again does not restart incusd under live sessions (E-45).
 Upgrade the packages yourself when no session runs, then run `errand-box
-up`. A new errand-box, errand or kage arrives with `errand-box setup`; the
-daemons that run them restart because their run script or unit carries a
-digest of what they run (E-49).
+up`. A new errand-box, which carries errand, or a new kage arrives with
+`errand-box setup`; the daemons that run them restart because their run
+script or unit carries a digest of what they run (E-49).
 
 ## Rebuild the guest image
 

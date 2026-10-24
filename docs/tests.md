@@ -82,7 +82,7 @@ or `up`. Name tests to run some of them: `sh tests/live/live.sh session inside`.
 | `reap` | with the launcher and its watchdog both killed, `errand-box reap` stops the instance | E-27 |
 | `maint` | `maint --once`, with fstrim | E-25 |
 | `up` | every daemon stopped through s6, device modes reset to 0600, then `errand-box up`: every service up, a second `up` changes nothing, the probe passes | E-01, E-02, E-03, E-33 |
-| `errand` | errand runs under the supervisor, accepts its config, and its own probe of the shim says the backend enforces every guarantee | |
+| `errand` | errand runs under the supervisor as `errand-box serve`, with no `errand` program installed, accepts its config, and its own probe of the shim says the backend enforces every guarantee | |
 
 ### The last run
 
@@ -100,6 +100,13 @@ fix, a row in [edge-cases.md](edge-cases.md), and a test:
 
 The run after the fixes passed every check, 52 of 52:
 [`tests/live/2026-10-23.txt`](../tests/live/2026-10-23.txt) is its output.
+
+errand as a library errand-box runs, 2026-10-24, on a host of the same kind
+with Incus 6.0.7: the static binary of `9b27e60` ran setup (30 changed, 0
+failed; a second run changed nothing) and passed every check, 54 of 54,
+two of them new for the library:
+[`tests/live/2026-10-24-errand-library.txt`](../tests/live/2026-10-24-errand-library.txt).
+The tests ran in two calls, the first three tests and then the rest.
 
 The release v0.1.0 passed every check, 52 of 52, on a second host of the
 same kind with nothing installed before: `bootstrap.sh` from the tag

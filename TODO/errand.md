@@ -100,9 +100,11 @@ musl C compiler when zig is present.
   `uninstall` removes the whole `/usr/local/lib/errand-box`, links included.
 - Found on 2026-10-24: errand-box's supervisor restarts the daemon after
   every exit (`Restart=always`, `src/supervise.rs:162`; the s6 run script
-  likewise), and errand's exits 2, 3 and 4 are refusals that a restart only
-  repeats. errand's own service files did not restart them. Proposed to the
-  operator as an entry; not filed.
+  likewise), and errand's exits 2, 3 and 4 are refusals that a restart
+  repeats every 2 s. errand's own service files did not restart them. Not
+  restarting is not the fix either: a sandbox that does not answer yet is
+  also exit 2 (`errand/src/serve.rs:818`), which is E-34's race at boot.
+  Proposed to the operator as an entry, with a backoff; not filed.
 
 ## Done, and open
 
@@ -160,13 +162,30 @@ nothing. `tests/live/live.sh`: 51 of 52, the one failure `t_reap`, which
 T-026 names; alone it passed 2 of 2. Then with the binary of the T-031
 change: setup 0 failed, and live 52 of 52.
 
+**The live prove of the library shape, 2026-10-24**, on the same kind of
+host, after a full teardown of the first: setup with the static binary of
+`9b27e60`, 30 changed and 0 failed, reporting errand-box "which runs errand
+as `serve`"; a second setup changed nothing. The errand service's run
+script execs `errand-box __as errand -- errand-box serve`, and
+`/usr/local/lib/errand-box/bin` holds errand-box and kage only.
+`tests/live/live.sh`: 54 of 54, two of them the new checks of that shape
+([output](../tests/live/2026-10-24-errand-library.txt)). `errand-box
+threads` as root ran as errand and answered "no threads are remembered".
+Torn down after: uninstall, the 87 packages the run added (the purge
+simulated first and compared with the list), the accounts, the bridges, the
+dnsmasq that T-036 names (stopped by PID), the subordinate ids, the device
+modes and the Zabbly repository; the package list matches the one before.
+
 ## Prove
 
 ```sh
 sh scripts/ci-local.sh            # every step, errand included
-sh tests/live/live.sh             # errand runs from errand-box's own binary
-readlink /usr/local/lib/errand-box/bin/errand   # errand-box
+sh tests/live/live.sh             # errand runs as errand-box serve
 ```
+
+The prove first named `readlink /usr/local/lib/errand-box/bin/errand`, for
+the link shape the rulings replaced; `live.sh`'s `errand` test now checks
+that no `errand` program is there.
 
 ---
 
