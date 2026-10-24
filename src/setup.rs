@@ -1825,7 +1825,8 @@ mod tests {
         .unwrap();
         let (uid, gid) = (paths::euid(), unsafe { libc::getegid() });
         assert_eq!(drop_web(&p, uid, gid), Ok(true));
-        let kept: serde_json::Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
+        let kept: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
         assert!(kept.get("web").is_none());
         assert_eq!(kept["chat"]["channelId"], "1");
         assert_eq!(drop_web(&p, uid, gid), Ok(false));

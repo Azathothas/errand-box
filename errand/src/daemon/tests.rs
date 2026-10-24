@@ -2231,3 +2231,6 @@ async fn a_command_asked_in_a_thread_is_answered_there() {
     )
     .await;
 }
+
+/// The chat path against the Discord stand-in.
+mod stand_in;

@@ -19,6 +19,7 @@ use serenity::model::id::ChannelId;
 use crate::agent::protocol::AgentImage;
 use crate::chat::commands::TranslatedCommand;
 use crate::chat::commands::register_commands;
+use crate::chat::endpoint::Endpoint;
 use crate::chat::gateway::{Gateway, GatewayHandlers};
 use crate::chat::render::{
     MESSAGE_LIMIT, models_refreshed, split_message, usage_table, when_relative, when_relative_plain,
@@ -933,8 +934,28 @@ async fn run(
         log.clone(),
     );
 
+    // Discord, unless the environment names a local stand-in for a test.
+    // Refused before any request when the stand-in's guard does not hold.
+    let endpoint = match Endpoint::from_environment(&host_environment(), &config.chat.token) {
+        Ok(endpoint) => endpoint,
+        Err(refused) => {
+            log.error(&refused.to_string(), &fields([]));
+            return Exit::Refused;
+        }
+    };
+    if let Some(warning) = endpoint.warning() {
+        log.warn(&warning, &fields([]));
+    }
+    let builder = match endpoint.builder(&config.chat.token, Gateway::intents()) {
+        Ok(builder) => builder,
+        Err(refused) => {
+            log.error(&refused.to_string(), &fields([]));
+            return Exit::Refused;
+        }
+    };
+
     // A real serenity client owns the socket; the gateway is its handler.
-    let mut client = match serenity::Client::builder(&config.chat.token, Gateway::intents())
+    let mut client = match builder
         .event_handler(GatewayHandler(Arc::clone(&gateway)))
         .await
     {
@@ -954,6 +975,11 @@ async fn run(
             return Exit::Failed;
         }
     };
+    // Before the socket opens: a stand-in's gateway must be on loopback too.
+    if let Err(refused) = endpoint.confirm(&client).await {
+        log.error(&refused.to_string(), &fields([]));
+        return Exit::Refused;
+    }
     let http = Arc::clone(&client.http);
     tokio::spawn(async move {
         if let Err(error) = client.start().await {
@@ -1094,53 +1120,7 @@ async fn run(
         }))
     };
 
-    let chat_threads = {
-        struct FactoryAdapter(Arc<ChatThreadFactory>);
-        impl ThreadFactory for FactoryAdapter {
-            fn create(
-                self: Arc<Self>,
-                message: IncomingMessage,
-                name: String,
-            ) -> Pin<Box<dyn Future<Output = Result<CreatedThread, String>> + Send>> {
-                let starter = serenity::model::id::MessageId::new(message.id.parse().unwrap_or(0));
-                let factory = Arc::clone(&self.0);
-                Box::pin(async move {
-                    let (id, thread) = factory.create(starter, &name).await?;
-                    Ok(CreatedThread {
-                        id,
-                        view: Arc::new(thread) as Arc<dyn SessionView>,
-                    })
-                })
-            }
-
-            fn open(
-                self: Arc<Self>,
-                name: String,
-                opener: String,
-            ) -> Pin<Box<dyn Future<Output = Result<CreatedThread, String>> + Send>> {
-                let factory = Arc::clone(&self.0);
-                Box::pin(async move {
-                    let (id, thread) = factory.open(&name, &opener).await?;
-                    Ok(CreatedThread {
-                        id,
-                        view: Arc::new(thread) as Arc<dyn SessionView>,
-                    })
-                })
-            }
-
-            fn port_for(self: Arc<Self>, thread_id: String) -> FoundView {
-                let factory = Arc::clone(&self.0);
-                Box::pin(async move {
-                    let id = thread_id.parse().ok()?;
-                    factory
-                        .port_for(id)
-                        .await
-                        .map(|thread| Arc::new(thread) as Arc<dyn SessionView>)
-                })
-            }
-        }
-        Arc::new(FactoryAdapter(thread_factory)) as Arc<dyn ThreadFactory>
-    };
+    let chat_threads = Arc::new(FactoryAdapter(thread_factory)) as Arc<dyn ThreadFactory>;
     // Work asked for on GitHub runs in a chat thread like any other, and the
     // issue it came from is answered beside it.
     let issue_router = issue_threads.as_ref().map(|issues| {
@@ -1417,9 +1397,58 @@ async fn run(
     Exit::Served
 }
 
+/// Gives the daemon threads on the chat service, from the factory that makes
+/// them. The daemon's tests against the Discord stand-in use it as `run`
+/// does.
+pub(crate) struct FactoryAdapter(pub(crate) Arc<ChatThreadFactory>);
+
+impl ThreadFactory for FactoryAdapter {
+    fn create(
+        self: Arc<Self>,
+        message: IncomingMessage,
+        name: String,
+    ) -> Pin<Box<dyn Future<Output = Result<CreatedThread, String>> + Send>> {
+        let starter = serenity::model::id::MessageId::new(message.id.parse().unwrap_or(0));
+        let factory = Arc::clone(&self.0);
+        Box::pin(async move {
+            let (id, thread) = factory.create(starter, &name).await?;
+            Ok(CreatedThread {
+                id,
+                view: Arc::new(thread) as Arc<dyn SessionView>,
+            })
+        })
+    }
+
+    fn open(
+        self: Arc<Self>,
+        name: String,
+        opener: String,
+    ) -> Pin<Box<dyn Future<Output = Result<CreatedThread, String>> + Send>> {
+        let factory = Arc::clone(&self.0);
+        Box::pin(async move {
+            let (id, thread) = factory.open(&name, &opener).await?;
+            Ok(CreatedThread {
+                id,
+                view: Arc::new(thread) as Arc<dyn SessionView>,
+            })
+        })
+    }
+
+    fn port_for(self: Arc<Self>, thread_id: String) -> FoundView {
+        let factory = Arc::clone(&self.0);
+        Box::pin(async move {
+            let id = thread_id.parse().ok()?;
+            factory
+                .port_for(id)
+                .await
+                .map(|thread| Arc::new(thread) as Arc<dyn SessionView>)
+        })
+    }
+}
+
 /// Hands the gateway to the chat library, which holds handlers behind an Arc
 /// of its own.
-struct GatewayHandler(Arc<Gateway>);
+pub(crate) struct GatewayHandler(pub(crate) Arc<Gateway>);
 
 #[serenity::async_trait]
 impl SerenityEventHandler for GatewayHandler {

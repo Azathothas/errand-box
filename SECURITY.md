@@ -71,6 +71,11 @@ Never in a chat, an issue, or a file in a repository.
 3. **No unverified download runs.** Every fetched archive is checked against
    `pins.toml` before use.
 4. **A session gets no network device.** Its only way out is errand's broker.
+5. **errand's chat service is Discord outside a test.** Only the variable
+   `ERRAND_DISCORD_MOCK_URL` points errand at a local stand-in, and errand
+   refuses it unless the URL and the stand-in's gateway are loopback IP
+   addresses and the token begins with `mock.`
+   (`errand/src/chat/endpoint.rs`). Nothing errand-box writes sets it.
 
 ## Degraded on some hosts
 

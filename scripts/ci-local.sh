@@ -12,8 +12,11 @@
 #   sh scripts/ci-local.sh --step NAME     one step
 #   sh scripts/ci-local.sh --list          the step names
 #
-# Steps: gate kill-by-name shellcheck fmt clippy test pins errand-config musl
-# cross. `musl` builds the static release binary for this machine's
+# Steps: gate kill-by-name shellcheck fmt clippy test discord-contract pins
+# errand-config musl cross. `discord-contract` checks the Discord stand-in's
+# answers against Discord's spec (scripts/discord-spec.sh); it needs python3
+# with python3-jsonschema, and exits 2 without the module.
+# `musl` builds the static release binary for this machine's
 # architecture. `cross` builds for the other architecture (x86_64 and
 # aarch64) and runs the unit and integration tests there under qemu-user.
 # It needs qemu-<arch>-static, and a binfmt_misc handler for the integration
@@ -21,14 +24,15 @@
 # The live tests (tests/live/live.sh) need a host with Incus and are not a
 # step here; docs/tests.md says when to run them.
 #
-# Needs: cargo (the toolchain of rust-toolchain.toml), shellcheck, curl.
+# Needs: cargo (the toolchain of rust-toolchain.toml), shellcheck, curl,
+# python3 with python3-jsonschema.
 # CARGO_BUILD_JOBS defaults to 4.
 # Exit codes: 0 every step passed, 1 a step failed, 2 could not run.
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root" || exit 2
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
-STEPS="gate kill-by-name shellcheck fmt clippy test pins errand-config musl cross"
+STEPS="gate kill-by-name shellcheck fmt clippy test discord-contract pins errand-config musl cross"
 
 # The shell files this repository ships. research/ is a record of what was
 # run and is not linted.
@@ -37,7 +41,7 @@ shell_files() {
     tests/pins-test.sh tests/errand-config-test.sh tests/live/live.sh scripts/ci-local.sh scripts/pins.sh \
     scripts/check-no-kill-by-name.sh scripts/check-todo.sh scripts/track-issue.sh \
     scripts/freshness.sh scripts/watch-upstreams.sh scripts/build-image.sh scripts/fetch-tracker.sh scripts/notices.sh tests/hosts/host.sh \
-    tests/setup-failed-only-errand.sh
+    tests/setup-failed-only-errand.sh scripts/discord-spec.sh
 }
 
 # The C compiler for target $1, exported as the cc crate reads it, or a
@@ -107,6 +111,7 @@ step() {
     fmt) cargo fmt --all -- --check ;;
     clippy) cargo clippy --locked --workspace --all-targets -- -D warnings ;;
     test) cargo test --locked --workspace ;;
+    discord-contract) sh scripts/discord-spec.sh --check ;;
     pins) sh tests/pins-test.sh ;;
     # Runs errand-box as errand against the config errand-box writes.
     errand-config) cargo build --locked && sh tests/errand-config-test.sh ;;

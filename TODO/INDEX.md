@@ -68,15 +68,15 @@ retires the `bailey` stand-in.
 
 ## Counts
 
-**36 items. 17 open, 5 partial, 1 blocked, 13 done.**
+**36 items. 16 open, 6 partial, 1 blocked, 13 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 4 | 3 | 1 | 6 | 14 |
+| P1 | 3 | 4 | 1 | 6 | 14 |
 | P2 | 9 | 2 | 0 | 3 | 14 |
 | P3 | 4 | 0 | 0 | 0 | 4 |
-| **All** | 17 | 5 | 1 | 13 | 36 |
+| **All** | 16 | 6 | 1 | 13 | 36 |
 
 ---
 
@@ -118,5 +118,5 @@ retires the `bailey` stand-in.
 | [T-032](errand.md) | P2 | errand | open | The broker's provider route: the smaller defects errand's tracker names |
 | [T-033](errand.md) | P2 | errand | open | Files the daemon reads from a session are read whole, and an upload is not redacted |
 | [T-034](errand.md) | P3 | errand | open | Remove from the fork what errand-box does not run |
-| [T-035](errand.md) | P1 | errand | open | A Discord stand-in, so errand's chat path is tested without Discord |
+| [T-035](errand.md) | P1 | errand | partial | A Discord stand-in, so errand's chat path is tested without Discord |
 | [T-036](setup.md) | P3 | setup | open | `uninstall` stops incusd under s6 and leaves its dnsmasq running |

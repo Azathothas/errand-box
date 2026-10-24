@@ -6,7 +6,7 @@ exits 0 only when every check passed. Read the exit code unpiped.
 | kind | needs | command |
 | --- | --- | --- |
 | 1. unit and integration tests | cargo, on Linux | `cargo test --locked` |
-| 2. the local CI steps | cargo, shellcheck, and musl-tools for the static build, on Linux | `sh scripts/ci-local.sh` |
+| 2. the local CI steps | cargo, shellcheck, python3 with python3-jsonschema, and musl-tools for the static build, on Linux | `sh scripts/ci-local.sh` |
 | 3. the live tests | root on a host where `errand-box setup` finished | `sh tests/live/live.sh` |
 | 4. other kinds of host | root on a host where Incus runs | `sh tests/hosts/host.sh NAME IMAGE` |
 | 5. as a user, on a host you are given | sudo on that host, and a release | section 5 |
@@ -30,6 +30,17 @@ exact Incus calls a function makes.
 A test named in [edge-cases.md](edge-cases.md) as `module::test` is one of
 these.
 
+errand's chat path is tested against `discord-mock/`, a local stand-in for
+the part of Discord errand reaches (T-035). It runs in process, in the tests
+and in CI only. errand reaches it only through
+`errand/src/chat/endpoint.rs`, when `ERRAND_DISCORD_MOCK_URL` names a
+loopback `http://` URL and the bot token begins with `mock.`. The stand-in's
+own tests check serenity's handshake, Discord's thread rules, uploads, and
+that every gateway event parses in serenity and in twilight-model; errand's
+`chat::endpoint` and `daemon::tests::stand_in` tests drive errand's own code
+against it. A route or a body field it does not implement answers 501 and
+fails the test.
+
 ## 2. The local CI steps
 
 [`scripts/ci-local.sh`](../scripts/ci-local.sh) runs the steps that
@@ -46,6 +57,7 @@ checked there.
 | `shellcheck` | every shell script this repository ships |
 | `fmt`, `clippy` | format, and clippy with warnings as errors |
 | `test` | section 1 |
+| `discord-contract` | `scripts/discord-spec.sh --check`: the Discord stand-in answers the fifteen REST operations errand reaches in the shapes of Discord's OpenAPI spec, `discord/discord-api-spec` at a pinned commit. It refuses a snapshot whose digest is not the pinned one. Without python3-jsonschema it exits 2 |
 | `pins` | `tests/pins-test.sh`: `scripts/pins.sh` against releases on `file://` URLs. A bump writes both digests and moves `latest`; a digest that differs from upstream's `.sha256` changes nothing |
 | `errand-config` | `tests/errand-config-test.sh`: the errand built into errand-box accepts the config errand-box writes. It runs errand-box under the name `errand` against the config from `tests/data/`. This step caught `output.postImages`, a key that errand v0.3.1 refused |
 | `musl` | the static release binary builds for this machine, runs, and answers as `errand`. errand's crates compile C (T-028), so it needs `musl-gcc` from musl-tools, or `CC_<target>` set; without one it exits 2 |

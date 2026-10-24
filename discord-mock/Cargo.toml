@@ -1,0 +1,52 @@
+[package]
+name = "discord-mock"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "0BSD"
+description = "A local stand-in for the part of Discord that errand reaches, for tests only"
+repository = "https://github.com/Azathothas/errand-box"
+publish = false
+
+[lib]
+name = "discord_mock"
+path = "src/lib.rs"
+
+[[bin]]
+name = "discord-mock"
+path = "src/main.rs"
+
+# Every version below is one Cargo.lock already held before this crate, apart
+# from what `axum`'s multipart feature and `twilight-model` add. The plan's
+# table, docs/history/references/2026-10-24-discord-mock.md, says why each one.
+[dependencies]
+# The REST router. `multipart` reads the `files[N]` and `payload_json` parts
+# of an upload; it adds `multer` and `spin`.
+axum = { version = "0.8.9", features = ["multipart"] }
+# zlib payload compression, which IDENTIFY asks for with `compress: true`.
+flate2 = "1.1.10"
+# The gateway's socket halves.
+futures-util = "0.3.34"
+# Session ids, interaction tokens, and the `hm` of a signed attachment URL.
+getrandom = "0.4.3"
+# ISO 8601 timestamps in Discord's own shape.
+jiff = "0.2.37"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+# The gateway server, the same version serenity's client uses.
+tokio-tungstenite = "0.21.0"
+
+[dev-dependencies]
+# serenity's own REST client, built with `.no_proxy()` so a proxy in the
+# environment cannot carry a loopback request away. serenity locks this
+# version, so it adds no crate.
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
+# The client under test, with errand's features.
+serenity = { version = "0.12.5", default-features = false, features = ["builder", "client", "gateway", "model", "http", "rustls_backend", "cache"] }
+# A second gateway deserializer, written apart from serenity's.
+twilight-model = "0.17.1"
+
+# The root crate's lints: the gate's clippy step denies every warning.
+[lints.rust]
+unsafe_code = "forbid"

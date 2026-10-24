@@ -84,6 +84,12 @@ jobs:
         run: sh scripts/ci-local.sh --step clippy
       - name: test
         run: sh scripts/ci-local.sh --step test
+      - name: python3-jsonschema, for the Discord contract check (T-035)
+        run: |
+          sudo apt-get -qq update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -qq install -y python3-jsonschema
+      - name: the Discord stand-in answers in the shapes of Discord's spec
+        run: sh scripts/ci-local.sh --step discord-contract
       - name: the pin mover
         run: sh scripts/ci-local.sh --step pins
       - name: the pinned errand accepts the config errand-box writes

@@ -7,6 +7,8 @@ pub mod chars;
 pub mod commands;
 /// Renders a patch small enough for a message.
 pub mod diff;
+/// Where the chat client connects: Discord, or a guarded local stand-in.
+pub mod endpoint;
 /// The connection to the chat service, and what it reports.
 pub mod gateway;
 /// Decides whether an arriving message is for this daemon.

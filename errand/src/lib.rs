@@ -135,11 +135,7 @@ fn project_of(state_dir: &str, root: &str) -> Option<Project> {
         })
 }
 
-async fn thread_command(
-    args: &[String],
-    env: &Vars,
-    level: LogLevel,
-) -> Result<i32, ConfigError> {
+async fn thread_command(args: &[String], env: &Vars, level: LogLevel) -> Result<i32, ConfigError> {
     let (_path, config) = load(env)?;
     let log = logger(level);
     let registry = Arc::new(Mutex::new(ThreadRegistry::new(
