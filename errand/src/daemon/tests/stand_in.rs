@@ -147,7 +147,6 @@ async fn serve_the_stand_in(mock: &MockHandle) -> Served {
         power_off: None,
         describe_usage: None,
         refresh_models: None,
-        public_url: None,
         catalog: crate::provider::discover::Catalog::default(),
         delegate_base_url: None,
         operator_ids: None,

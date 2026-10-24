@@ -67,11 +67,14 @@ musl_cc() {
 # ziglang package of pip (`python3 -m ziglang`). It writes two wrappers under
 # target/zig, because the cc crate names a compiler with one path, and drops
 # the Rust triple the cc crate passes as --target, which zig does not read.
+# zig turns on UBSan below -O1, and aws-lc builds jitterentropy at -O0; its
+# runtime is zig's to link, and rust-lld links here, so the wrapper turns it
+# off.
 zig_cc() {
   if command -v zig >/dev/null 2>&1; then
-    zig=zig
+    zig=$(command -v zig)
   elif python3 -m ziglang version >/dev/null 2>&1; then
-    zig="python3 -m ziglang"
+    zig="$(command -v python3) -m ziglang"
   else
     return 1
   fi
@@ -82,7 +85,7 @@ zig_cc() {
   {
     printf '#!/bin/sh\n# Written by scripts/ci-local.sh: %s cc for %s.\n' "$zig" "$zt"
     printf 'for a in "$@"; do shift; case $a in --target=*) ;; *) set -- "$@" "$a" ;; esac; done\n'
-    printf 'exec %s cc -target %s "$@"\n' "$zig" "$zt"
+    printf 'exec %s cc -target %s -fno-sanitize=undefined "$@"\n' "$zig" "$zt"
   } >"$d/$zt-cc" || return 1
   printf '#!/bin/sh\nexec %s ar "$@"\n' "$zig" >"$d/$zt-ar" || return 1
   chmod +x "$d/$zt-cc" "$d/$zt-ar" || return 1

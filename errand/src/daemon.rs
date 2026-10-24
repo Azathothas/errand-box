@@ -247,8 +247,6 @@ pub struct DaemonOptions {
     pub describe_images: Option<DescribeImages>,
     /// Draws a picture with the image model, or none when the host cannot.
     pub draw_image: Option<DrawImage>,
-    /// Where the interface is published, when it is.
-    pub public_url: Option<String>,
     /// The provider definitions sessions launch with and the models `!model`
     /// can switch to.
     pub catalog: Catalog,
@@ -310,7 +308,6 @@ impl Daemon {
             memory: options.memory.clone(),
             describe_images: options.describe_images.clone(),
             draw_image: options.draw_image.clone(),
-            public_url: options.public_url.clone(),
             catalog: options.catalog.clone(),
             delegate_base_url: options.delegate_base_url.clone(),
             now: None,

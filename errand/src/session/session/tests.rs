@@ -824,7 +824,6 @@ async fn with_session(
         open_pull_request: case.open_pull_request.clone(),
         thread_id: None,
         guild_id: None,
-        public_url: None,
         catalog: case.catalog.clone().unwrap_or_else(|| {
             Catalog::new(
                 config.agent.providers.clone(),

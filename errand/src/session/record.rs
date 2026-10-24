@@ -12,7 +12,7 @@
 //! whole and anything under it comes with it.
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Value, json};
 
@@ -22,25 +22,6 @@ use crate::session::transcript::TRANSCRIPT_FILENAME;
 /// The directory holding a session's record, given its state directory.
 pub fn record_dir(state_dir: &str) -> String {
     format!("{state_dir}.record")
-}
-
-/// The transcript to read, preferring the record directory.
-///
-/// A session written before the record directory existed kept its transcript
-/// in the state directory, and that history is still worth showing, so the
-/// older place is read when the newer one holds nothing. Writing always goes
-/// to the newer one, which [`prepare_record_dir`] has moved anything older
-/// into.
-pub fn transcript_path(state_dir: &str) -> PathBuf {
-    let placed = Path::new(&record_dir(state_dir)).join(TRANSCRIPT_FILENAME);
-    if placed.is_file() {
-        return placed;
-    }
-    // Never follows: the legacy file sits where the session writes, so a link
-    // planted at the name is skipped rather than read through.
-    let legacy = Path::new(state_dir).join(TRANSCRIPT_FILENAME);
-    let legacy_is_file = std::fs::symlink_metadata(&legacy).is_ok_and(|meta| meta.is_file());
-    if legacy_is_file { legacy } else { placed }
 }
 
 /// Makes the record directory, moving a transcript left in the older place.

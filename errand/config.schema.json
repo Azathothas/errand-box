@@ -354,29 +354,6 @@
         "allowedUserIds"
       ]
     },
-    "web": {
-      "type": "object",
-      "description": "The web interface, or none when one is not served.",
-      "additionalProperties": false,
-      "properties": {
-        "host": {
-          "type": "string",
-          "description": "Address to bind to. Must be loopback, private, or a tailnet address."
-        },
-        "port": {
-          "type": "number",
-          "description": "Port to listen on."
-        },
-        "observer": {
-          "type": "boolean",
-          "description": "When true the interface may watch and read but not start, prompt, or control anything."
-        },
-        "publicUrl": {
-          "type": "string",
-          "description": "Where the interface is reachable from outside, such as behind a tunnel."
-        }
-      }
-    },
     "limits": {
       "type": "object",
       "description": "Bounds on how much work exists at once.",

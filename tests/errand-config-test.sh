@@ -12,7 +12,7 @@
 # is brokered"); with no bailey on PATH it then stops.
 #
 # Environment: ERRAND_BOX, the errand-box binary (default target/debug).
-# Needs: ln, timeout. No network.
+# Needs: timeout. No network.
 # Exit codes: 0 errand accepts the config, 1 it refuses it, 2 could not run.
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)

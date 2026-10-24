@@ -295,53 +295,14 @@ fn a_shutdown_list_that_is_not_a_list_of_accounts_is_refused() {
     ));
 }
 
+/// The web interface left the fork (T-034): a config that still names it is
+/// refused, as any key errand does not read. errand-box takes the section out
+/// of a config it keeps.
 #[test]
-fn a_daemon_with_no_interface_configured_serves_none() {
-    let config = validate_config(&valid(json!({}))).expect("resolves");
-    assert_eq!(config.web, None);
-}
-
-#[test]
-fn an_interface_takes_its_address_port_and_role() {
-    let web = validate_config(&valid(json!({
-        "web": { "host": "100.64.0.2", "port": 9000, "observer": true,
-                 "publicUrl": "https://errand.example" },
-    })))
-    .expect("resolves")
-    .web;
-
-    assert_eq!(
-        web.as_ref().map(|web| web.host.as_str()),
-        Some("100.64.0.2")
-    );
-    assert_eq!(web.as_ref().map(|web| web.port), Some(9000));
-    assert_eq!(web.as_ref().map(|web| web.observer), Some(true));
-    assert_eq!(
-        web.and_then(|web| web.public_url),
-        Some("https://errand.example".to_owned())
-    );
-}
-
-#[test]
-fn an_interface_that_says_only_that_it_exists_gets_the_defaults() {
-    let web = validate_config(&valid(json!({ "web": {} })))
-        .expect("resolves")
-        .web;
-
-    assert_eq!(
-        web.as_ref().map(|web| web.host.as_str()),
-        Some(defaults::WEB_HOST)
-    );
-    assert_eq!(web.as_ref().map(|web| web.port), Some(defaults::WEB_PORT));
-    assert_eq!(web.as_ref().map(|web| web.observer), Some(false));
-    assert_eq!(web.and_then(|web| web.public_url), None);
-}
-
-#[test]
-fn an_interface_port_that_is_not_a_port_is_refused() {
+fn a_web_section_is_no_longer_a_setting() {
     assert!(problems_contain(
-        &valid(json!({ "web": { "port": "8080" } })),
-        "web.port must be a number greater than zero"
+        &valid(json!({ "web": { "host": "127.0.0.1", "port": 8787 } })),
+        "web is not a setting"
     ));
 }
 

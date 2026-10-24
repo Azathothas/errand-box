@@ -98,6 +98,11 @@ musl C compiler when zig is present.
 - A host that has a downloaded errand: `link` removes the file at
   `ERRAND_BIN` and puts the link there (`src/setup.rs`, `fn link`).
   `uninstall` removes the whole `/usr/local/lib/errand-box`, links included.
+- Found on 2026-10-24: errand-box's supervisor restarts the daemon after
+  every exit (`Restart=always`, `src/supervise.rs:162`; the s6 run script
+  likewise), and errand's exits 2, 3 and 4 are refusals that a restart only
+  repeats. errand's own service files did not restart them. Proposed to the
+  operator as an entry; not filed.
 
 ## Done, and open
 
@@ -127,6 +132,22 @@ musl C compiler when zig is present.
   in the release, or remove the interface: the operator's ruling on T-034.
 - The notices of the other crates the binary now links: errand-box
   published none for its 22, and the lock now holds 280.
+
+**Changed by the rulings, 2026-10-24.** The list above is the link shape,
+kept as it was done. Since then: errand is a library with `errand::serve`
+and `errand::threads` (`errand/src/lib.rs`) and no bin target;
+`src/main.rs` runs them as `errand-box serve` and `errand-box threads`; the
+supervisor runs `errand-box serve` (`src/up.rs`); setup removes a
+downloaded `errand` or the old link (`src/setup.rs`), and takes `web` out of
+a kept config (`fn drop_web`). `tests/errand-config-test.sh` runs
+`errand-box serve`, and the `musl` step checks that the static binary
+carries `serve`. Both open items above are closed: step 4 by T-034's removal
+of the interface, and the notices by `scripts/notices.sh`, which a release
+runs (`.github/workflows/release.yml`). `cross` passed every step on this
+host with zig 0.16.0 from pip as the aarch64 C compiler, and qemu-user 8.2.2
+with a `binfmt_misc` handler: 112 unit and 6 integration tests ran on
+aarch64. zig needs `-fno-sanitize=undefined` there, because rust-lld does
+not link zig's UBSan runtime (`scripts/ci-local.sh`, `zig_cc`).
 
 **The live prove, 2026-10-24**, on this session's hosted container (Ubuntu
 24.04, kernel 6.18, x86_64, cgroup v1, no init, Incus 6.0.7 from Zabbly's
@@ -381,7 +402,7 @@ cargo test --locked -p errand files
 **Category:** errand
 **Priority:** P3
 **Effort:** M
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -404,6 +425,23 @@ The operator ruled on 2026-10-24: **remove the web interface** (`errand/web/`,
 Workers integration may come much later, as its own entry. **Move, do not
 remove, the thread commands**: they become `errand-box threads`, as T-028's
 correction says.
+
+## Done, and open
+
+**Done on 2026-10-24: the web interface and the thread commands.**
+`errand/web/`, `errand/src/web/`, `errand/build.rs` and
+`errand/docs/interface.md` are deleted. The `web` setting is gone from the
+schema, the example and the reference page, and a config that has one is
+refused ("web is not a setting"); errand-box no longer writes it, and setup
+removes it from a kept config. What only the interface read went with it:
+`publicUrl`, the transcript link in a pull request's footer, and the session
+manager's detached start, lookups by session and resumable list. The tests
+of those went too; `attach_view` stays for the tests that read a session's
+notices. The thread commands run as `errand-box threads` (T-028).
+
+**Open:** the podman backend and `errand/src/issues/`. The operator ruled on
+the interface and the thread commands only; the approach above still stands
+for these two.
 
 ## Prove
 

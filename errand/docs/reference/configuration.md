@@ -152,17 +152,6 @@ How much of the agent's activity reaches the thread.
 | `postDiffs` | `boolean` | `true` | Post a diff after the agent changes a file. |
 | `postImages` | `boolean` | `true` | Post each image the agent generates to the thread, as an upload with a caption. A turn posts at most four, and the rest stay in the project. |
 
-## web
-
-The local web interface.  Absent means no listener at all. There is no login: the address it binds to is the access control, and that address is checked rather than trusted.
-
-| field | type | default | what it does |
-| --- | --- | --- | --- |
-| `host` | `string` | `"127.0.0.1"` | Address to bind to. Must be loopback, private, or a tailnet address. |
-| `port` | `number` | `8787` | Port to listen on. |
-| `observer` | `boolean` | `false` | When true the interface may watch and read but not start, prompt, or control anything. |
-| `publicUrl` | `string or undefined` | none | Where the interface is reachable from outside, such as behind a tunnel. |
-
 ## shutdown
 
 Who may power off the host from a chat message.  Off unless the list has somebody in it. This is the one command that acts on the machine rather than on a session, so it is not covered by any session role.

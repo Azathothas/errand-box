@@ -512,24 +512,6 @@ pub struct OutputConfig {
     pub post_images: bool,
 }
 
-/// The local web interface.
-///
-/// Absent means no listener at all. There is no login: the address it binds
-/// to is the access control, and that address is checked rather than trusted.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebConfig {
-    /// Address to bind to. Must be loopback, private, or a tailnet address.
-    pub host: String,
-    /// Port to listen on.
-    pub port: u16,
-    /// When true the interface may watch and read but not start, prompt, or
-    /// control anything.
-    pub observer: bool,
-    /// Where the interface is reachable from outside, such as behind a tunnel.
-    pub public_url: Option<String>,
-}
-
 /// Bounds on how much work exists at once.
 #[expect(
     clippy::struct_field_names,
@@ -590,8 +572,6 @@ pub struct Config {
     pub output: OutputConfig,
     /// Who may power off the host. Empty means nobody, which is the default.
     pub shutdown: ShutdownConfig,
-    /// The web interface, or none when one is not served.
-    pub web: Option<WebConfig>,
     /// Bounds on how much work exists at once.
     pub limits: LimitsConfig,
     /// Deadlines that end or unblock a session.
@@ -687,13 +667,6 @@ pub mod defaults {
     pub const CUSTOM_PROVIDER_KINDS: [&str; 2] = ["openai", "anthropic"];
     /// The wire protocol a custom provider speaks when it names none.
     pub const CUSTOM_PROVIDER_KIND: &str = "openai";
-
-    /// The address the interface binds to.
-    pub const WEB_HOST: &str = "127.0.0.1";
-    /// The port the interface listens on.
-    pub const WEB_PORT: u16 = 8787;
-    /// Whether the interface may only watch.
-    pub const WEB_OBSERVER: bool = false;
 
     /// How long a session may sit idle before it ends.
     pub const IDLE_MS: u64 = 1_800_000;

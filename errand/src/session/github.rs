@@ -123,8 +123,6 @@ pub fn git_identity_env(github: &GithubConfig) -> BTreeMap<String, String> {
 pub struct SessionLinks {
     /// The chat thread the request was made in, when there is one.
     pub thread: Option<String>,
-    /// The session in the web interface, when the interface is published.
-    pub transcript: Option<String>,
 }
 
 /// The footer saying where the work came from, which every pull request ends
@@ -138,9 +136,6 @@ pub fn attribution_footer(requested_by: &str, links: &SessionLinks) -> String {
     if let Some(thread) = &links.thread {
         said.push(format!("Conversation: {thread}"));
     }
-    if let Some(transcript) = &links.transcript {
-        said.push(format!("Transcript: {transcript}"));
-    }
     said.join("\n")
 }
 
@@ -150,30 +145,6 @@ pub fn attribution_footer(requested_by: &str, links: &SessionLinks) -> String {
 /// it worth putting in a pull request at all.
 pub fn thread_link(guild_id: &str, thread_id: &str) -> String {
     format!("https://discord.com/channels/{guild_id}/{thread_id}")
-}
-
-/// Where the interface shows one session, when it is reachable from outside.
-pub fn transcript_link(public_url: &str, session_id: &str) -> String {
-    let base = public_url.trim_end_matches('/');
-    format!("{base}/?session={}", urlencoding_escape(session_id))
-}
-
-/// Percent-escapes what a query string cannot carry, as the chat service
-/// would. Session ids are letters and digits, so this passes them through.
-fn urlencoding_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            _ => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "%{byte:02X}");
-            }
-        }
-    }
-    out
 }
 
 /// What the agent is told about getting work reviewed.

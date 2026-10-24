@@ -76,8 +76,8 @@ is told plainly that it is reading a description. See [two models](models.md).
 ## Deleting a message
 
 Deleting a message in Discord withdraws it here too. Its text is taken out of
-the session's transcript and the web view, which show that a message was
-withdrawn rather than closing the gap silently, and out of the agent's own
+the session's transcript, which shows that a message was withdrawn rather
+than closing the gap silently, and out of the agent's own
 stored conversation, so a session resumed later never sends it to a model
 again. A session still running is told to disregard it.
 

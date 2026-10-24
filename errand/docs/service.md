@@ -1,50 +1,21 @@
 # As a service
 
-Definitions for OpenRC and systemd are in
-[`packaging/`](https://github.com/QaidVoid/errand/tree/main/packaging). Both run
-the binary as an ordinary account, not as root: the configuration file holds the
-bot token, and every agent is started as that same account, so files an agent
-writes in a project belong to the person whose project it is.
+errand-box runs the daemon. `errand-box setup` makes the account it runs as,
+writes the configuration to that account's `.config/errand/config.json` with
+mode 0600, and installs a service for `errand-box serve` under systemd or s6.
+`errand-box up` starts it on a host with no init. The commands are in
+[operations](https://github.com/Azathothas/errand-box/blob/main/docs/operations.md).
 
-## What to prepare
+The daemon runs as an ordinary account, not as root: the configuration file
+holds the bot token, and every agent is started as that same account.
 
-```sh
-useradd --system --home-dir /var/lib/errand --create-home errand
+## Restarting
 
-git clone https://github.com/QaidVoid/errand
-cd errand && cargo build --release
-install -m 0755 dist/errand /usr/local/bin/errand
-
-install -o errand -g errand -m 0700 -d /var/lib/errand/.config/errand
-install -o errand -g errand -m 0600 config.json \
-        /var/lib/errand/.config/errand/config.json
-```
-
-## OpenRC
-
-```sh
-install -m 0755 packaging/errand.initd /etc/init.d/errand
-install -m 0644 packaging/errand.confd /etc/conf.d/errand
-$EDITOR /etc/conf.d/errand
-rc-update add errand default
-rc-service errand start
-```
-
-## systemd
-
-```sh
-install -m 0644 packaging/errand.service /etc/systemd/system/errand.service
-$EDITOR /etc/systemd/system/errand.service
-systemctl daemon-reload
-systemctl enable --now errand
-```
-
-## Restarting, and not restarting
-
-Both definitions restart a crash and refuse to restart a refusal. Exit 2, 3, and
-4 are decisions the daemon made, and repeating them would only log the same line
-again; 4 would also mean fighting the daemon that is already serving. See
-[getting started](start.md) for what each code means.
+errand-box's supervisor restarts the daemon after every exit, a refusal
+included. Exit 2, 3 and 4 are decisions the daemon made, and a restart only
+logs the same line again; 4 means another daemon already serves this state
+directory. See [getting started](start.md) for what each code means.
+errand-box does not yet leave a refusal stopped.
 
 ## Seeing more in the log
 
@@ -59,19 +30,11 @@ command line adds a level:
 - `errand-box serve -vvv` also logs every line exchanged with the agent, verbatim.
   That includes prompts and tool output, so keep it to diagnosing a problem.
 
-Under systemd, put the flag on `ExecStart` and restart the service.
+errand-box writes the service without a flag, and rewrites it on every setup,
+so a flag is for a run by hand as the daemon's account.
 
 ## Limits
 
-Both apply memory, cpu, and process limits to the daemon and everything it
-starts, as one tree. That means one busy session can spend the whole budget.
-
-Limiting each session separately needs a cgroup the sandbox may create children
-in, named by `BAILEY_CGROUP_ROOT`, which the daemon passes through. Under
-systemd that is the service's own delegated cgroup (`Delegate=yes` with
-`DelegateSubgroup=supervisor`). Under OpenRC it has to be made and delegated by
-hand, because OpenRC puts the daemon directly in the service cgroup and a cgroup
-cannot both hold processes and hand its controllers to children.
-
-Without one, the daemon says so at startup rather than implying a limit it is
-not applying.
+Under errand-box each session is its own Incus guest, with the memory, CPU,
+process and disk limits of the `[box]` section of errand-box's configuration.
+Each limit bounds one session, not all of them together.

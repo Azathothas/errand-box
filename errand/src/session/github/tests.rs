@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::{
     REQUEST_FILENAME, SessionLinks, attribution_footer, gh_shim_contents, git_config_contents,
-    git_identity_env, review_instructions, thread_link, transcript_link,
+    git_identity_env, review_instructions, thread_link,
 };
 use crate::config::schema::GithubConfig;
 use crate::sandbox::backend::{AGENT_BIN, STATE_PATH};
@@ -76,7 +76,6 @@ fn the_footer_names_who_asked_and_mentions_nobody() {
         "amelia",
         &SessionLinks {
             thread: Some("https://discord.com/channels/1/2".to_owned()),
-            transcript: Some("https://errand.example/?session=abc".to_owned()),
         },
     );
 
@@ -99,10 +98,6 @@ fn the_links_are_the_addresses_a_reader_can_open() {
         thread_link("111", "222"),
         "https://discord.com/channels/111/222"
     );
-    assert_eq!(
-        transcript_link("https://errand.example/", "s 1"),
-        "https://errand.example/?session=s%201"
-    );
 }
 
 #[test]
@@ -112,7 +107,6 @@ fn the_instructions_carry_the_exact_footer_for_the_agent_to_copy() {
         "amelia",
         &SessionLinks {
             thread: Some("https://t/1".to_owned()),
-            transcript: None,
         },
     );
 
@@ -120,7 +114,6 @@ fn the_instructions_carry_the_exact_footer_for_the_agent_to_copy() {
         "amelia",
         &SessionLinks {
             thread: Some("https://t/1".to_owned()),
-            transcript: None,
         }
     )));
     assert!(instructions.contains("Open nothing unless you were asked to"));

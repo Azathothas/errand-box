@@ -13,13 +13,10 @@ const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 
 /// Characters of randomness in an id.
 ///
-/// Twelve gives about 62 bits. Collision alone would have been satisfied by
-/// half of that, so the length is chosen against guessing instead: where
-/// `web.publicUrl` is set the id is the entire address a transcript is served
-/// at, nothing authenticates that address, and those addresses get published
-/// in pull request descriptions. At twelve, a first collision is some 2.7
-/// billion sessions away and an id costs about 15 million years to find at ten
-/// thousand guesses a second.
+/// Twelve gives about 62 bits: a first collision is some 2.7 billion
+/// sessions away. The length was chosen against guessing, for transcript
+/// addresses the web interface published; the interface left the fork
+/// (T-034), and the length stayed so existing ids keep their shape.
 pub const TOKEN_LENGTH: usize = 12;
 
 /// Fresh randomness for one session.

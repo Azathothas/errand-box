@@ -342,9 +342,6 @@ fn defaults_table() -> BTreeMap<&'static str, Value> {
             serde_json::json!(defaults::MAX_QUEUE_WAIT_MS),
         ),
         ("timeouts/idlems", serde_json::json!(defaults::IDLE_MS)),
-        ("web/host", Value::from(defaults::WEB_HOST)),
-        ("web/port", serde_json::json!(defaults::WEB_PORT)),
-        ("web/observer", Value::Bool(defaults::WEB_OBSERVER)),
     ])
 }
 
@@ -352,7 +349,7 @@ fn defaults_table() -> BTreeMap<&'static str, Value> {
 ///
 /// Ordered here rather than taken from the file, because what a reader needs
 /// first is not the order the types happen to be declared in.
-const KEYS: [(&str, &str); 13] = [
+const KEYS: [(&str, &str); 12] = [
     ("Root", "top level"),
     ("Chat", "chat"),
     ("Agent", "agent"),
@@ -362,7 +359,6 @@ const KEYS: [(&str, &str); 13] = [
     ("Egress", "sandbox.egress"),
     ("PolicyExtra", "sandbox.policyExtra"),
     ("Output", "output"),
-    ("Web", "web"),
     ("Shutdown", "shutdown"),
     ("Limits", "limits"),
     ("Timeouts", "timeouts"),

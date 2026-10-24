@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 
-use super::{
-    prepare_record_dir, record_dir, transcript_path, withdraw_from_agent_session,
-    withdraw_from_record,
-};
+use super::{prepare_record_dir, record_dir, withdraw_from_agent_session, withdraw_from_record};
 use crate::session::transcript::TRANSCRIPT_FILENAME;
 
 /// The state directory is handed to the session as `/state`, writable. What
@@ -24,20 +21,17 @@ fn a_transcript_left_in_the_older_place_is_moved_out_of_reach() {
     let legacy = state.join(TRANSCRIPT_FILENAME);
     std::fs::write(&legacy, "{\"turn\":1}\n").expect("the old transcript is written");
 
-    // Read before the move still finds the history.
-    assert_eq!(transcript_path(state.to_str().expect("a path")), legacy);
-
     prepare_record_dir(state.to_str().expect("a path"));
 
     let placed =
         PathBuf::from(record_dir(state.to_str().expect("a path"))).join(TRANSCRIPT_FILENAME);
-    assert_eq!(transcript_path(state.to_str().expect("a path")), placed);
     assert_eq!(
         std::fs::read_to_string(&placed).expect("the moved transcript reads"),
         "{\"turn\":1}\n"
     );
     // Gone from the directory the session can write.
-    assert!(!transcript_path(state.to_str().expect("a path")).starts_with(&state));
+    assert!(!legacy.exists());
+    assert!(!placed.starts_with(&state));
 }
 
 /// A session's two directories, with a prompt worth taking back in each.

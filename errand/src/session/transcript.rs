@@ -11,7 +11,7 @@
 //! removes its transcript with it. Appending is best effort: a session must
 //! never fail because its history could not be written.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 
@@ -42,13 +42,6 @@ pub const TRANSCRIPT_FILENAME: &str = "transcript.jsonl";
 /// A session that ran for hours can have written far more than is useful to
 /// reopen, and the most recent is the part worth showing.
 pub const MAX_REPLAYED: usize = 2_000;
-
-/// How much of a transcript is read when looking for what was first asked.
-///
-/// The opening prompt arrives within the first few lines, after a notice or
-/// two. Reading the whole file for it costs the length of the session, and it
-/// is read once per stopped session every time they are listed.
-pub const OPENING_SCAN_BYTES: usize = 64 * 1024;
 
 /// What was read back, and what was left behind.
 #[derive(Debug, Clone, PartialEq)]
@@ -108,27 +101,6 @@ impl Transcript {
         }
     }
 
-    /// The first thing this session was asked to do.
-    ///
-    /// Read from here rather than from the thread index, which deliberately
-    /// holds no message content and exists only to find a session again.
-    ///
-    /// Only the head of the file is scanned. A session whose first prompt is
-    /// somehow beyond that is left unnamed, which costs a title, where reading
-    /// every transcript in full costs the length of every session.
-    ///
-    /// Returns None when the session was never asked anything, as when it
-    /// failed before its first prompt.
-    pub fn opening(&self) -> Option<String> {
-        let head = self.read_head(OPENING_SCAN_BYTES).ok()?;
-        journaled(&head)
-            .into_iter()
-            .find_map(|held| match held.entry {
-                SessionEvent::Prompt { text, .. } => Some(text.trim().to_owned()),
-                _ => None,
-            })
-    }
-
     /// Reads the most recent entries. A missing or unreadable file reads
     /// empty.
     pub fn read(&self) -> StoredTranscript {
@@ -156,21 +128,6 @@ impl Transcript {
             entries: parsed.split_off(dropped),
             dropped,
         }
-    }
-
-    /// The first bytes of the file, cut back to the last whole line.
-    ///
-    /// Cutting back matters: a read that lands mid-line would otherwise hand a
-    /// truncated JSON object to the parser, which would drop the entry it was
-    /// halfway through even though the file holds it in full.
-    fn read_head(&self, bytes: usize) -> std::io::Result<String> {
-        let mut file = std::fs::File::open(&self.path)?;
-        let mut buffer = vec![0; bytes];
-        let read = file.read(&mut buffer)?;
-        buffer.truncate(read);
-        let text = String::from_utf8_lossy(&buffer);
-        let cut = text.rfind('\n').unwrap_or(text.len());
-        Ok(text[..cut].to_owned())
     }
 }
 

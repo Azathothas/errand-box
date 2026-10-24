@@ -488,7 +488,6 @@ async fn with_daemon(
         power_off: case.power_off.clone(),
         describe_usage: case.describe_usage.clone(),
         refresh_models: case.refresh_models.clone(),
-        public_url: None,
         catalog: case.catalog.clone().unwrap_or_default(),
         delegate_base_url: None,
         operator_ids: None,

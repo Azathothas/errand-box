@@ -36,7 +36,9 @@ use crate::session::session::{
     OpenPullRequest, RunningBox, SessionHandle, SessionOptions,
 };
 use crate::session::transcript::{TRANSCRIPT_FILENAME, Transcript};
-use crate::session::views::{Attached, DEFAULT_TRANSCRIPT_LIMIT, Held, SessionView, ViewFanOut};
+#[cfg(test)]
+use crate::session::views::Attached;
+use crate::session::views::{DEFAULT_TRANSCRIPT_LIMIT, Held, SessionView, ViewFanOut};
 
 /// How a request to start a session turned out.
 pub enum StartOutcome {
@@ -45,11 +47,6 @@ pub enum StartOutcome {
 }
 
 impl StartOutcome {
-    /// Whether a session came of it.
-    pub fn is_started(&self) -> bool {
-        matches!(self, StartOutcome::Started { .. })
-    }
-
     /// The refusal's words, for a test's sake.
     #[allow(
         dead_code,
@@ -166,8 +163,6 @@ pub struct ManagerOptions {
     pub describe_images: Option<DescribeImages>,
     /// Draws a picture with the image model, or none when the host cannot.
     pub draw_image: Option<DrawImage>,
-    /// Where the interface is published, when it is.
-    pub public_url: Option<String>,
     /// The provider definitions sessions launch with and the models `!model`
     /// can switch to.
     pub catalog: Catalog,
@@ -186,7 +181,6 @@ struct Shared {
     memory: Option<Arc<MemoryStore>>,
     describe_images: Option<DescribeImages>,
     draw_image: Option<DrawImage>,
-    public_url: Option<String>,
     catalog: Catalog,
     delegate_base_url: Option<String>,
     unavailable: Option<Unavailable>,
@@ -224,7 +218,6 @@ impl SessionManager {
             memory: options.memory.clone(),
             describe_images: options.describe_images.clone(),
             draw_image: options.draw_image.clone(),
-            public_url: options.public_url.clone(),
             catalog: options.catalog.clone(),
             delegate_base_url: options.delegate_base_url.clone(),
             unavailable: options.unavailable.clone(),
@@ -296,25 +289,6 @@ impl SessionManager {
             .cloned()
     }
 
-    /// The session with this identifier, if it is live.
-    pub fn for_session(&self, session_id: &str) -> Option<SessionHandle> {
-        self.sessions()
-            .into_iter()
-            .find(|session| session.id() == session_id)
-    }
-
-    /// Whether a turn is running for the named live session.
-    ///
-    /// The state lives on the session's fan-out, which the manager already
-    /// holds, so the interface can list sessions without each one having to
-    /// answer a question mid-turn.
-    pub fn is_busy(&self, session_id: &str) -> bool {
-        let views = self.state.views.lock().expect("the views map lock");
-        views
-            .get(session_id)
-            .is_some_and(|fan_out| fan_out.state().busy)
-    }
-
     /// True when the thread once held a session that has since ended.
     pub fn is_finished_thread(&self, thread_id: &str) -> bool {
         self.state
@@ -359,44 +333,7 @@ impl SessionManager {
         // the session.
         let project = select_project(&message.content, &project_root, &token);
         let id = session_id(&project, &token);
-        self.launch(id, project, message, ThreadKind::Created).await
-    }
-
-    /// Starts a session that no message created.
-    ///
-    /// Used by the interface. The thread is opened rather than hung off an
-    /// existing message, so a session started at a keyboard is still
-    /// announced in the channel and still notifies a phone when it finishes.
-    pub async fn start_detached(&self, request: DetachedRequest) -> StartOutcome {
-        let token = self.next_id();
-        let named = if request.project.trim().is_empty() {
-            String::new()
-        } else {
-            format!("{}: ", request.project.trim())
-        };
-        let message = IncomingMessage {
-            id: format!("web-{token}"),
-            author_id: request.owner_id.clone(),
-            // The interface is not a channel, so there is nowhere to answer
-            // but the thread this is about to open.
-            channel_id: String::new(),
-            author_name: request.owner_name.clone(),
-            content: request.prompt.clone(),
-            attachments: Vec::new(),
-        };
-
-        let project = select_project(
-            &format!("{named}{}", request.prompt),
-            &self.options.config.get().project_root,
-            &token,
-        );
-        self.launch(
-            session_id(&project, &token),
-            project,
-            message,
-            ThreadKind::Opened,
-        )
-        .await
+        self.launch(id, project, message).await
     }
 
     /// A model named as `--model` names one, with the provider that serves it.
@@ -472,7 +409,6 @@ impl SessionManager {
         id: String,
         mut project: ProjectSelection,
         message: IncomingMessage,
-        kind: ThreadKind,
     ) -> StartOutcome {
         // The opening message may name the model, because by the time there
         // is a thread to type `!model` in, the session has already started on
@@ -583,22 +519,11 @@ impl SessionManager {
                     .map_err(|error| error.to_string())
             }) {
             Err(error) => Err(error),
-            Ok(()) => match kind {
-                ThreadKind::Created => {
-                    Arc::clone(&self.shared.threads)
-                        .create(message.clone(), thread_name(&project.name, &project.prompt))
-                        .await
-                }
-                ThreadKind::Opened => {
-                    let name = thread_name(&project.name, &project.prompt);
-                    Arc::clone(&self.shared.threads)
-                        .open(
-                            name.clone(),
-                            format!("Session started from the interface: {name}"),
-                        )
-                        .await
-                }
-            },
+            Ok(()) => {
+                Arc::clone(&self.shared.threads)
+                    .create(message.clone(), thread_name(&project.name, &project.prompt))
+                    .await
+            }
         };
         let thread = match thread {
             Err(error) => {
@@ -660,7 +585,6 @@ impl SessionManager {
             open_pull_request: Some(daemon_open_pull_request()),
             thread_id: Some(thread.id.clone()),
             guild_id: self.shared.guild_id.lock().expect("the guild lock").clone(),
-            public_url: self.shared.public_url.clone(),
             catalog: self.shared.catalog.clone(),
             delegate_base_url: self.shared.delegate_base_url.clone(),
             unavailable: self.shared.unavailable.clone(),
@@ -865,7 +789,6 @@ impl SessionManager {
             open_pull_request: Some(daemon_open_pull_request()),
             thread_id: Some(record.thread_id.clone()),
             guild_id: self.shared.guild_id.lock().expect("the guild lock").clone(),
-            public_url: self.shared.public_url.clone(),
             catalog: self.shared.catalog.clone(),
             delegate_base_url: self.shared.delegate_base_url.clone(),
             unavailable: self.shared.unavailable.clone(),
@@ -942,6 +865,10 @@ impl SessionManager {
     }
 
     /// Attaches a view to a live session and shows it what it missed.
+    ///
+    /// The tests read what a session said through it; the daemon attaches the
+    /// thread's view when it launches the session.
+    #[cfg(test)]
     pub async fn attach_view(
         &self,
         session_id: &str,
@@ -955,33 +882,6 @@ impl SessionManager {
             .get(session_id)
             .cloned()?;
         Some(fan_out.attach(view).await)
-    }
-
-    /// The thread a session belongs to, whether it is running or only
-    /// remembered.
-    ///
-    /// A surface uses it to link back to the conversation, where the same
-    /// session is also being shown.
-    pub fn thread_id_for(&self, session_id: &str) -> Option<String> {
-        for (thread_id, session) in self
-            .state
-            .by_thread
-            .lock()
-            .expect("the thread map lock")
-            .iter()
-        {
-            if session.id() == session_id {
-                return Some(thread_id.clone());
-            }
-        }
-        self.options
-            .registry
-            .lock()
-            .expect("the registry lock")
-            .all()
-            .into_iter()
-            .find(|record| record.session_id == session_id)
-            .map(|record| record.thread_id)
     }
 
     /// Reconciles a withdrawn message, live session or not.
@@ -1014,28 +914,6 @@ impl SessionManager {
         };
         session.handle(message).await;
         true
-    }
-
-    /// Delivers a message to a session by its own identifier.
-    ///
-    /// The interface knows sessions, not threads: a thread is one of the
-    /// surfaces showing a session, and the browser never sees it. Writing to
-    /// a session that has stopped resumes it, which is what sending to it is
-    /// asking for.
-    pub async fn deliver_to_session(&self, session_id: &str, message: IncomingMessage) -> bool {
-        if let Some(session) = self.for_session(session_id) {
-            session.handle(message).await;
-            return true;
-        }
-
-        let Some(record) = self
-            .resumable()
-            .into_iter()
-            .find(|candidate| candidate.session_id == session_id)
-        else {
-            return false;
-        };
-        self.resume(&record.thread_id, message).await.is_started()
     }
 
     /// Ends the session bound to a thread, if any.
@@ -1073,42 +951,6 @@ impl SessionManager {
                 .get(thread_id)
                 .is_some()
     }
-
-    /// Sessions that are not running but could be picked up again.
-    ///
-    /// A session that idled out is not over: the agent's history outlives its
-    /// sandbox, so it is listed rather than forgotten.
-    pub fn resumable(&self) -> Vec<ThreadRecord> {
-        let live = self.state.by_thread.lock().expect("the thread map lock");
-        self.options
-            .registry
-            .lock()
-            .expect("the registry lock")
-            .all()
-            .into_iter()
-            .filter(|record| !live.contains_key(&record.thread_id))
-            .collect()
-    }
-}
-
-/// Which of the two ways a thread comes into being.
-enum ThreadKind {
-    /// Hung on the message that asked for the session.
-    Created,
-    /// Opened with a post of its own, for a session nobody typed to.
-    Opened,
-}
-
-/// A request to start a session with no message to hang it on.
-pub struct DetachedRequest {
-    /// The project the session should work in.
-    pub project: String,
-    /// What to ask it first.
-    pub prompt: String,
-    /// Whose session it is.
-    pub owner_id: String,
-    /// What to call them, when the service said.
-    pub owner_name: Option<String>,
 }
 
 /// Keeps the model a session moved to, so a restart comes back on it.

@@ -14,7 +14,7 @@ handles.
 | incusd | Incus 6.0 LTS on cgroup v1 hosts, the stable line elsewhere, from the Zabbly repository where it has a build | root |
 | incus-user | Part of Incus: gives each member of group `incus` one restricted project | root |
 | lxcfs | Gives each guest a /proc that matches its limits | root |
-| errand | The chat agent daemon (`errand run`): errand-box's hard fork in `errand/`, built into the errand-box binary, which answers as `errand` when setup's link starts it | the errand account |
+| errand | The chat agent daemon: errand-box's hard fork in `errand/`, a library built into the errand-box binary and run as `errand-box serve`; `errand-box threads` lists what past sessions left | the errand account |
 | kage | The coding agent. errand needs a host copy on its PATH; the guest image has its own | errand account (host copy); agent user (guest copy) |
 | the guest image | Debian 13 with systemd, Docker, podman, FUSE tools, build tools and kage (`image/provision.sh`) | in Incus |
 | a supervisor | systemd units where systemd is PID 1, else s6 (`s6-svscan`) | root |

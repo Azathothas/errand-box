@@ -10,9 +10,7 @@ use crate::sandbox::backend::STATE_PATH;
 use crate::sandbox::paths;
 use crate::session::commands::pull_request_args;
 use crate::session::event::ReactionOutcome;
-use crate::session::github::{
-    ASKED_FILENAME, REQUEST_FILENAME, SessionLinks, thread_link, transcript_link,
-};
+use crate::session::github::{ASKED_FILENAME, REQUEST_FILENAME, SessionLinks, thread_link};
 use crate::session::pr;
 use crate::session::record::{prepare_record_dir, record_dir};
 
@@ -72,11 +70,6 @@ impl Running {
                 .as_ref()
                 .zip(self.options.guild_id.as_ref())
                 .map(|(thread, guild)| thread_link(guild, thread)),
-            transcript: self
-                .options
-                .public_url
-                .as_ref()
-                .map(|url| transcript_link(url, &self.options.id)),
         }
     }
 

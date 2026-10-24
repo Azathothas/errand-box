@@ -119,7 +119,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB, no
 Incus. The earlier hosts and their results are in git history.
 
-**36 entries: 13 done, 6 partial, 1 blocked, 16 open.**
+**36 entries: 13 done, 7 partial, 1 blocked, 15 open.**
 
 ---
 
@@ -148,11 +148,11 @@ Candidates that a measurement refuted:
 
 ## What is in progress
 
-T-028, the fork: imported, gated, built into errand-box, which setup links
-as `errand`, and shown live, 52 of 52. Open: the web bundle (T-034's
-ruling) and the other crates' notices. T-035, the Discord stand-in: handed
-to an implementing agent in this session; its result is in the git log or
-in RESUME.md.
+T-028, the fork: a library errand-box runs as `errand-box serve` and
+`errand-box threads`; the web interface is removed (T-034, partial); a
+release carries `THIRD-PARTY-NOTICES`; `cross` passes with zig. The live
+test of this shape, the merge into `main` and v0.1.1 are next in this
+session. T-035, the Discord stand-in: merged, partial.
 
 ---
 

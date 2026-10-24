@@ -53,7 +53,7 @@ onMounted(() => {
 });
 watch(() => route.path, () => setTimeout(readOutline, 0));
 
-/** Which theme is shown. The interface remembers the same way. */
+/** Which theme is shown. */
 const chosen = ref<"light" | "dark" | "system">("system");
 
 function apply(choice: "light" | "dark" | "system"): void {

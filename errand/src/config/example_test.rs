@@ -8,7 +8,6 @@ use std::fs;
 
 use serde_json::Value;
 
-use super::schema::defaults;
 use super::validate::validate_config;
 use crate::test_util::crate_root;
 
@@ -39,7 +38,6 @@ fn the_example_configuration_is_one_the_daemon_accepts() {
             .map(|github| github.user_name)
             .is_some_and(|name| !name.is_empty())
     );
-    assert_eq!(config.web.map(|web| web.port), Some(defaults::WEB_PORT));
 }
 
 /// Every section the example shows should be one the daemon knows.

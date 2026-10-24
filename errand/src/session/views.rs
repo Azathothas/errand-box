@@ -238,11 +238,6 @@ impl ViewFanOut {
             .len()
     }
 
-    /// The session's current state, for a view that has just attached.
-    pub fn state(&self) -> ViewState {
-        self.inner.lock().expect("the view fan-out lock").state()
-    }
-
     /// Everything kept for replay, oldest first.
     #[allow(
         dead_code,
@@ -318,6 +313,10 @@ impl ViewFanOut {
     }
 
     /// Detaches a view without affecting the session or the other views.
+    #[allow(
+        dead_code,
+        reason = "detaching is read by the tests; the daemon keeps a view for the session's life"
+    )]
     pub fn detach(&self, view: &Arc<dyn SessionView>) {
         self.inner
             .lock()
@@ -529,6 +528,10 @@ impl ViewFanOut {
 ///
 /// Ending it takes the view out of the fan-out and nothing else: detaching
 /// never ends the session, however many views are left.
+#[allow(
+    dead_code,
+    reason = "detaching is read by the tests; the daemon keeps a view for the session's life"
+)]
 pub struct Attached {
     fan: Arc<ViewFanOut>,
     view: Arc<dyn SessionView>,
@@ -536,6 +539,10 @@ pub struct Attached {
 
 impl Attached {
     /// Detaches the view without affecting the session or the other views.
+    #[allow(
+        dead_code,
+        reason = "detaching is read by the tests; the daemon keeps a view for the session's life"
+    )]
     pub fn detach(self) {
         self.fan.detach(&self.view);
     }

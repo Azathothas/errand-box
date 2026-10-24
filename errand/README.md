@@ -26,7 +26,6 @@ directory. [docs/index.md](docs/index.md) says what errand does.
 | [docs/images.md](docs/images.md) | images a session generates |
 | [docs/memory.md](docs/memory.md) | what a session remembers |
 | [docs/instructions.md](docs/instructions.md) | instructions given to the agent |
-| [docs/interface.md](docs/interface.md) | the local web interface |
 | [docs/reference/configuration.md](docs/reference/configuration.md) | every configuration field, generated |
 | [docs/reference/commands.md](docs/reference/commands.md) | every chat command, generated |
 | [docs/reference/characters.md](docs/reference/characters.md) | every reaction and prefix, generated |
@@ -111,20 +110,6 @@ and is told how to use it; `!status` reports what it cost and how much it kept
 out. To have the cheaper model do the work rather than describe it, use
 `!model` instead.
 
-## The interface
-
-An optional local web interface reads a session as it happens, browses the
-project, and starts new ones. It has no login: the address it binds to is the
-access control, and a public bind is refused rather than warned about. Build it
-once (`cd web && bun install && bun run build`, then
-`cargo build --release`), then add a `web` section to the configuration:
-
-```json
-{ "web": { "host": "127.0.0.1", "port": 8787 } }
-```
-
-Set `"observer": true` to serve one that can watch and read but change nothing.
-
 ## In a thread
 
 `!help` lists what can be typed, `!usage` says how much of the provider's usage
@@ -170,8 +155,9 @@ errand-box supervises errand under systemd or s6:
 
 ## Status
 
-Early, but complete enough to run: chat, sandboxed sessions, the interface, and
-service definitions for both init systems.
+Early, but complete enough to run: chat and sandboxed sessions, with
+errand-box as the sandbox and the supervisor. The local web interface was taken
+out of the fork; a session is read and driven from its thread.
 
 ## Development
 

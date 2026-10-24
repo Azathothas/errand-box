@@ -345,8 +345,6 @@ pub struct SessionOptions {
     pub thread_id: Option<String>,
     /// The guild the thread is in, which a thread link needs.
     pub guild_id: Option<String>,
-    /// Where the interface is published, when it is.
-    pub public_url: Option<String>,
     /// The provider definitions a launch is given and the models a session
     /// can switch to, shared so a refresh reaches every session.
     pub catalog: Catalog,
@@ -442,11 +440,10 @@ enum Signal {
     Guests {
         reply: oneshot::Sender<Vec<String>>,
     },
+    /// Only the tests ask whether a session has ended.
+    #[cfg(test)]
     Ended {
         reply: oneshot::Sender<bool>,
-    },
-    LastActive {
-        reply: oneshot::Sender<i64>,
     },
     Timer {
         timer: SessionTimer,
@@ -511,7 +508,6 @@ enum Signal {
 pub struct SessionHandle {
     id: String,
     project: ProjectSelection,
-    owner_id: String,
     commands: mpsc::Sender<Signal>,
 }
 
@@ -521,7 +517,6 @@ impl SessionHandle {
         let (commands, receiver) = mpsc::channel::<Signal>(256);
         let id = options.id.clone();
         let project = options.project.clone();
-        let owner_id = options.owner_id.clone();
         let timers: Arc<dyn Timers> = match options.timers.take() {
             Some(injected) => injected,
             None => Arc::new(SystemTimers::new(commands.clone())),
@@ -532,7 +527,6 @@ impl SessionHandle {
         Self {
             id,
             project,
-            owner_id,
             commands,
         }
     }
@@ -545,16 +539,6 @@ impl SessionHandle {
     /// The project this session works in.
     pub fn project(&self) -> &ProjectSelection {
         &self.project
-    }
-
-    /// The account that started this session.
-    pub fn owner_id(&self) -> &str {
-        &self.owner_id
-    }
-
-    /// What this session was first asked to do, for naming it.
-    pub fn opening(&self) -> String {
-        self.project.prompt.trim().to_owned()
     }
 
     /// Starts the sandbox and waits for the agent to answer.
@@ -628,26 +612,13 @@ impl SessionHandle {
     }
 
     /// True once the session has finished, by any path.
+    #[cfg(test)]
     pub async fn is_ended(&self) -> bool {
         let (reply, answer) = oneshot::channel();
         if self.commands.send(Signal::Ended { reply }).await.is_err() {
             return true;
         }
         answer.await.unwrap_or(true)
-    }
-
-    /// When this session last did or was told anything.
-    pub async fn last_active_at(&self) -> i64 {
-        let (reply, answer) = oneshot::channel();
-        if self
-            .commands
-            .send(Signal::LastActive { reply })
-            .await
-            .is_err()
-        {
-            return 0;
-        }
-        answer.await.unwrap_or(0)
     }
 }
 
@@ -835,11 +806,9 @@ impl Running {
                 Signal::Guests { reply } => {
                     let _ = reply.send(self.guests.iter().cloned().collect::<Vec<_>>());
                 }
+                #[cfg(test)]
                 Signal::Ended { reply } => {
                     let _ = reply.send(self.ended);
-                }
-                Signal::LastActive { reply } => {
-                    let _ = reply.send(self.last_active);
                 }
                 Signal::Timer { timer, handle } => self.on_timer(timer, handle).await,
                 Signal::Admitted {
@@ -1168,17 +1137,9 @@ impl Running {
         // belongs.
         let opening = self.opening_line();
 
-        // Offered once, when the thread is new. A thread shows the
-        // conversation and the interface shows the work behind it, and
-        // somebody reading on a phone has no other way to find the second
-        // from the first.
-        let transcript = self.session_links().transcript;
         self.views
             .send(SessionEvent::Notice {
-                text: match transcript {
-                    None => connection_line(&opening),
-                    Some(link) => format!("{}\n{link}", connection_line(&opening)),
-                },
+                text: connection_line(&opening),
                 level: NoticeLevel::Started,
             })
             .await;

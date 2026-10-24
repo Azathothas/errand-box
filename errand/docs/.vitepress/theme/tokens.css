@@ -1,10 +1,6 @@
 /*
- * The interface's own palette, so the documentation and the thing it
- * documents are visibly one product.
- *
- * Mirrors web/src/styles/app.css. Kept as its own copy rather than imported
- * across the two builds, because that file also carries the interface's
- * layout, which a documentation page has no use for.
+ * The documentation's palette. It was the web interface's, which has left
+ * the fork; the documentation keeps it.
  */
 
 :root {

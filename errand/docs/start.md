@@ -5,19 +5,15 @@
 - A chat bot token, and one channel for it to serve.
 - A credential for a model provider.
 - Linux, with either [bailey](https://github.com/QaidVoid/bailey) or rootless
-  podman. The sandbox is not optional, so one of them has to be there.
+  podman. The sandbox is not optional, so one of them has to be there. Under
+  errand-box, `bailey` is errand-box itself.
 
-## Build it
+## Install it
 
-```sh
-git clone https://github.com/QaidVoid/errand
-cd errand
-cargo build --release
-```
-
-That produces `dist/errand`: one binary carrying the web interface and its own
-runtime, with what it may do compiled into it. A host that runs it needs neither
-a checkout nor a toolchain.
+errand is built into errand-box; there is no program of its own to build.
+`errand-box setup` installs errand-box, makes the account the daemon runs as,
+writes the configuration below from errand-box's own input files, and
+supervises the daemon: [operations](https://github.com/Azathothas/errand-box/blob/main/docs/operations.md).
 
 ## Configure it
 

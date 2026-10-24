@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use super::{
-    CreatedThread, DetachedRequest, FoundView, MadeThread, ManagerOptions, SandboxPool,
-    SessionManager, StartOutcome, ThreadFactory,
+    CreatedThread, FoundView, MadeThread, ManagerOptions, SandboxPool, SessionManager,
+    StartOutcome, ThreadFactory,
 };
 use crate::admission::scheduler::{Clock, Scheduler, Timer};
 use crate::agent::client::AgentProcess;
@@ -573,7 +573,6 @@ async fn with_models(
         }),
         describe_images: None,
         draw_image: None,
-        public_url: None,
         catalog,
         delegate_base_url: None,
         now: Some(Arc::new(|| 1_000)),
@@ -609,7 +608,7 @@ async fn starting_a_session_creates_its_thread_project_and_state() {
                 .start(message("demo: fix the parser", "m1"))
                 .await;
 
-            assert!(outcome.is_started());
+            assert!(outcome.session().is_some());
             assert_eq!(harness.threads.made(), ["demo: fix the parser"]);
             assert!(harness.root.path().join("projects").join("demo").is_dir());
             assert_eq!(
@@ -665,7 +664,7 @@ async fn a_project_that_already_has_a_session_is_refused_a_second_one() {
 
             let second = harness.manager.start(message("demo: second", "m2")).await;
 
-            assert!(!second.is_started());
+            assert!(second.session().is_none());
             assert!(refused_reason(&second).contains("already has a live session"));
         })
     })
@@ -679,7 +678,7 @@ async fn two_different_projects_run_side_by_side() {
             harness.manager.start(message("one: work", "m1")).await;
             let second = harness.manager.start(message("two: work", "m2")).await;
 
-            assert!(second.is_started());
+            assert!(second.session().is_some());
             assert_eq!(harness.manager.sessions().len(), 2);
         })
     })
@@ -695,7 +694,7 @@ async fn no_thread_means_no_sandbox_and_the_slot_is_given_back() {
 
             let outcome = harness.manager.start(message("demo: go", "m1")).await;
 
-            assert!(!outcome.is_started());
+            assert!(outcome.session().is_none());
             assert!(harness.sandbox.launched.lock().unwrap().is_empty());
             assert!(harness.manager.sessions().is_empty());
             // The slot came back, so the next start is not refused for want
@@ -706,7 +705,8 @@ async fn no_thread_means_no_sandbox_and_the_slot_is_given_back() {
                     .manager
                     .start(message("demo: go", "m2"))
                     .await
-                    .is_started()
+                    .session()
+                    .is_some()
             );
         })
     })
@@ -725,7 +725,7 @@ async fn a_spent_window_refuses_before_a_thread_or_a_sandbox_exists() {
             Box::pin(async move {
                 let outcome = harness.manager.start(message("demo: go", "m1")).await;
 
-                assert!(!outcome.is_started());
+                assert!(outcome.session().is_none());
                 assert!(refused_reason(&outcome).contains("come back at nine"));
                 assert!(harness.threads.made().is_empty());
                 assert!(harness.sandbox.launched.lock().unwrap().is_empty());
@@ -746,7 +746,7 @@ async fn more_sessions_than_the_host_allows_are_refused_with_a_reason() {
 
                 let second = harness.manager.start(message("two: work", "m2")).await;
 
-                assert!(!second.is_started());
+                assert!(second.session().is_none());
                 assert!(refused_reason(&second).contains("session"));
             })
         },
@@ -807,7 +807,6 @@ async fn a_session_that_ends_lets_go_of_its_thread_and_can_be_resumed() {
                 Some("demo-s1".to_owned())
             );
             assert!(harness.manager.can_resume("thread-1"));
-            assert_eq!(harness.manager.resumable().len(), 1);
         })
     })
     .await;
@@ -828,7 +827,6 @@ async fn a_session_that_was_stopped_is_not_offered_for_resuming() {
 
             assert!(harness.registry.lock().unwrap().get("thread-1").is_none());
             assert!(!harness.manager.can_resume("thread-1"));
-            assert!(harness.manager.resumable().is_empty());
         })
     })
     .await;
@@ -850,7 +848,7 @@ async fn resuming_picks_the_thread_up_where_it_stopped() {
                 .resume("thread-1", message("carry on", "m2"))
                 .await;
 
-            assert!(outcome.is_started());
+            assert!(outcome.session().is_some());
             assert_eq!(started(&outcome).id(), "demo-s1");
             let launched = harness.sandbox.launched.lock().unwrap();
             assert!(launched[1].resume);
@@ -913,7 +911,7 @@ async fn a_thread_this_daemon_never_saw_is_not_resumed() {
                 .resume("thread-404", message("carry on", "m1"))
                 .await;
 
-            assert!(!outcome.is_started());
+            assert!(outcome.session().is_none());
             assert!(refused_reason(&outcome).contains("not one of mine to resume"));
         })
     })
@@ -931,7 +929,7 @@ async fn a_thread_that_already_has_a_session_is_not_resumed_on_top_of_it() {
                 .resume("thread-1", message("again", "m2"))
                 .await;
 
-            assert!(!outcome.is_started());
+            assert!(outcome.session().is_none());
             assert!(refused_reason(&outcome).contains("already has a live session"));
         })
     })
@@ -991,59 +989,6 @@ async fn who_was_invited_survives_the_session_ending_and_coming_back() {
     .await;
 }
 
-#[tokio::test]
-async fn a_view_can_be_attached_to_a_live_session_and_detached_again() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            harness.manager.start(message("demo: go", "m1")).await;
-            let watcher = harness.threads.view() as Arc<dyn SessionView>;
-
-            let attached = harness
-                .manager
-                .attach_view("demo-s1", watcher.clone())
-                .await;
-            assert!(attached.is_some());
-            assert!(
-                harness
-                    .manager
-                    .attach_view("nobody", watcher)
-                    .await
-                    .is_none()
-            );
-            if let Some(attached) = attached {
-                attached.detach();
-            }
-        })
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn the_thread_a_session_belongs_to_is_known_live_or_remembered() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            harness.manager.start(message("demo: go", "m1")).await;
-            assert_eq!(
-                harness.manager.thread_id_for("demo-s1"),
-                Some("thread-1".to_owned())
-            );
-
-            harness
-                .manager
-                .end_thread("thread-1", EndReason::Idle)
-                .await;
-            settle().await;
-
-            assert_eq!(
-                harness.manager.thread_id_for("demo-s1"),
-                Some("thread-1".to_owned())
-            );
-            assert_eq!(harness.manager.thread_id_for("s404"), None);
-        })
-    })
-    .await;
-}
-
 /// A crashed daemon must not leave containers running against a project.
 #[tokio::test]
 async fn sandboxes_left_by_a_previous_run_are_swept_before_anything_starts() {
@@ -1077,110 +1022,6 @@ async fn shutting_down_ends_every_live_session() {
                 *harness.threads.closed.lock().unwrap(),
                 [EndReason::Shutdown, EndReason::Shutdown]
             );
-        })
-    })
-    .await;
-}
-
-/// A session begun at a keyboard is still announced where a phone will see it.
-#[tokio::test]
-async fn a_session_started_with_no_message_still_gets_a_thread() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            let outcome = harness
-                .manager
-                .start_detached(DetachedRequest {
-                    project: "demo".to_owned(),
-                    prompt: "fix the parser".to_owned(),
-                    owner_id: "web-interface".to_owned(),
-                    owner_name: Some("the interface".to_owned()),
-                })
-                .await;
-
-            assert!(outcome.is_started());
-            assert_eq!(harness.threads.made(), ["demo: fix the parser"]);
-            assert_eq!(
-                harness
-                    .registry
-                    .lock()
-                    .unwrap()
-                    .get("thread-1")
-                    .map(|record| record.owner_id.clone()),
-                Some("web-interface".to_owned())
-            );
-        })
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn a_session_started_with_no_project_named_gets_one_of_its_own() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            let outcome = harness
-                .manager
-                .start_detached(DetachedRequest {
-                    project: String::new(),
-                    prompt: "have a look at this".to_owned(),
-                    owner_id: "web-interface".to_owned(),
-                    owner_name: None,
-                })
-                .await;
-
-            assert_eq!(
-                outcome
-                    .session()
-                    .map(|session| session.project().name.clone()),
-                Some("s1".to_owned())
-            );
-        })
-    })
-    .await;
-}
-
-/// The browser knows sessions, not threads: a thread is one of the surfaces.
-#[tokio::test]
-async fn a_session_can_be_written_to_by_its_own_identifier() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            harness.manager.start(message("demo: go", "m1")).await;
-
-            assert!(
-                harness
-                    .manager
-                    .deliver_to_session("demo-s1", message("more", "m2"))
-                    .await
-            );
-            assert!(
-                !harness
-                    .manager
-                    .deliver_to_session("s404", message("more", "m3"))
-                    .await
-            );
-        })
-    })
-    .await;
-}
-
-/// Sending to a stopped session is asking for it back.
-#[tokio::test]
-async fn writing_to_a_session_that_stopped_picks_it_up_again() {
-    with_manager(|harness| {
-        Box::pin(async move {
-            harness.manager.start(message("demo: go", "m1")).await;
-            harness
-                .manager
-                .end_thread("thread-1", EndReason::Idle)
-                .await;
-            settle().await;
-
-            assert!(
-                harness
-                    .manager
-                    .deliver_to_session("demo-s1", message("carry on", "m2"))
-                    .await
-            );
-            assert_eq!(harness.manager.sessions().len(), 1);
         })
     })
     .await;
@@ -1440,7 +1281,7 @@ async fn a_thread_force_stopped_for_not_answering_can_still_be_resumed() {
                 .manager
                 .resume("thread-1", message("carry on", "m2"))
                 .await;
-            assert!(outcome.is_started());
+            assert!(outcome.session().is_some());
         })
     })
     .await;
@@ -1463,7 +1304,7 @@ async fn a_deliberate_stop_still_ends_the_thread_for_good() {
                 .manager
                 .resume("thread-1", message("carry on", "m2"))
                 .await;
-            assert!(!outcome.is_started());
+            assert!(outcome.session().is_none());
         })
     })
     .await;
@@ -1501,7 +1342,7 @@ async fn a_model_switch_inside_a_resumed_thread_is_remembered_too() {
                     .manager
                     .resume("thread-1", message("carry on", "m2"))
                     .await;
-                assert!(resumed.is_started());
+                assert!(resumed.session().is_some());
                 assert_eq!(
                     harness.sandbox.launched.lock().unwrap()[1].model,
                     Some("one".to_owned())
@@ -1576,7 +1417,7 @@ async fn a_spent_default_provider_does_not_refuse_another_provider() {
                     .manager
                     .start(message("demo: -m meta/muse explain yourself", "m1"))
                     .await;
-                assert!(started_session.is_started());
+                assert!(started_session.session().is_some());
                 assert_eq!(harness.sandbox.launched.lock().unwrap()[0].provider, "meta");
             })
         },
@@ -1687,7 +1528,7 @@ async fn a_spent_provider_still_refuses_a_prompt_that_would_use_it() {
         |harness| {
             Box::pin(async move {
                 let refused = harness.manager.start(message("demo: just go", "m1")).await;
-                assert!(!refused.is_started());
+                assert!(refused.session().is_none());
                 assert!(refused_reason(&refused).contains("usage window is spent"));
             })
         },
@@ -1735,7 +1576,7 @@ async fn a_thread_whose_provider_is_gone_resumes_on_the_configured_model() {
                     .resume("thread-1", message("carry on", "m2"))
                     .await;
 
-                assert!(resumed.is_started());
+                assert!(resumed.session().is_some());
                 let launched = harness.sandbox.launched.lock().unwrap()[1].clone();
                 assert_eq!(launched.provider, "anthropic");
                 assert_eq!(launched.model, None);

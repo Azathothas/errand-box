@@ -16,9 +16,12 @@ research in [docs/history/references/](docs/history/README.md). Not
 deployed and not released.
 
 - errand, imported at QaidVoid/errand `715e9b0b777a`, is the workspace
-  member `errand/`, and errand-box answers as `errand`: setup links it
-  instead of downloading errand. `[errand]` left `pins.toml`, and the
+  member `errand/`, a library: `errand-box serve` is the daemon and
+  `errand-box threads` its thread command. setup removes a downloaded
+  errand instead of fetching one. `[errand]` left `pins.toml`, and the
   `errand.version` key has no effect.
+- errand's local web interface is gone, and setup takes `web` out of a
+  kept errand config (T-034).
 - A session could make errand's broker send the operator's provider key to
   a host it named (T-029, errand#48). Fixed in the fork.
 - The static build compiles C now: install musl-tools to run the `musl`

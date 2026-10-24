@@ -14,7 +14,7 @@ use crate::config::discover::Discovery;
 use crate::config::schema::{
     self, AgentConfig, ChatConfig, Config, ConfigError, DelegateConfig, EgressConfig, EgressMode,
     GithubConfig, GithubTrigger, LimitsConfig, NetworkMode, OutputConfig, PluginConfig,
-    PolicyExtraConfig, SandboxBackend, SandboxConfig, ShutdownConfig, TimeoutsConfig, WebConfig,
+    PolicyExtraConfig, SandboxBackend, SandboxConfig, ShutdownConfig, TimeoutsConfig,
 };
 use crate::config::size::parse_size;
 use crate::config::usage::UsageShape;
@@ -22,7 +22,7 @@ use crate::config::usage::UsageShape;
 /// Variables the policy sets itself, and so refuses to take from a file.
 const SET_BY_THE_POLICY: [&str; 2] = ["PATH", "HOME"];
 
-const KNOWN_ROOT: [&str; 12] = [
+const KNOWN_ROOT: [&str; 11] = [
     // Not a setting: it is how an editor finds the schema to check the file
     // against, and refusing it would make the file uncheckable.
     "$schema",
@@ -34,7 +34,6 @@ const KNOWN_ROOT: [&str; 12] = [
     "sandbox",
     "output",
     "shutdown",
-    "web",
     "limits",
     "timeouts",
 ];
@@ -92,7 +91,6 @@ const KNOWN_SANDBOX: [&str; 20] = [
 const KNOWN_EGRESS: [&str; 3] = ["mode", "allow", "allowInternal"];
 const KNOWN_POLICY_EXTRA: [&str; 3] = ["read", "write", "execute"];
 const KNOWN_SHUTDOWN: [&str; 1] = ["allowedUserIds"];
-const KNOWN_WEB: [&str; 4] = ["host", "port", "observer", "publicUrl"];
 const KNOWN_OUTPUT: [&str; 7] = [
     "forwardToolOutput",
     "maxToolOutputChars",
@@ -1391,31 +1389,6 @@ fn validate_shutdown(raw: &Map<String, Value>, problems: &mut Problems) -> Shutd
     }
 }
 
-/// Reads the interface's settings, when one is configured at all.
-///
-/// The address is not checked here. Whether it is one worth serving over is
-/// the interface's own rule, and it is applied where the listener is opened so
-/// that a refusal names the listener.
-fn validate_web(raw: &Map<String, Value>, problems: &mut Problems) -> Option<WebConfig> {
-    raw.get("web")?;
-    let source = section(raw, "web");
-    reject_unknown(&source, &KNOWN_WEB, "web", problems);
-
-    Some(WebConfig {
-        host: optional_string(&source, "host", "web", problems)
-            .unwrap_or_else(|| schema::defaults::WEB_HOST.to_owned()),
-        port: positive_as(&source, "port", schema::defaults::WEB_PORT, "web", problems),
-        observer: flag(
-            &source,
-            "observer",
-            schema::defaults::WEB_OBSERVER,
-            "web",
-            problems,
-        ),
-        public_url: optional_string(&source, "publicUrl", "web", problems),
-    })
-}
-
 fn validate_limits(raw: &Map<String, Value>, problems: &mut Problems) -> LimitsConfig {
     let source = section(raw, "limits");
     reject_unknown(&source, &KNOWN_LIMITS, "limits", problems);
@@ -1509,7 +1482,6 @@ pub fn validate_config(parsed: &Value) -> Result<Config, ConfigError> {
     let sandbox = validate_sandbox(raw, &mut problems);
     let output = validate_output(raw, &mut problems);
     let shutdown = validate_shutdown(raw, &mut problems);
-    let web = validate_web(raw, &mut problems);
     let limits = validate_limits(raw, &mut problems);
     let timeouts = validate_timeouts(raw, &mut problems);
 
@@ -1543,7 +1515,6 @@ pub fn validate_config(parsed: &Value) -> Result<Config, ConfigError> {
             sandbox,
             output,
             shutdown,
-            web,
             limits,
             timeouts,
         })

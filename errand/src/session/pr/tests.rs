@@ -440,7 +440,6 @@ fn the_body_carries_the_summary_and_ends_with_the_attribution() {
         "amelia",
         &SessionLinks {
             thread: Some("https://t/1".to_owned()),
-            transcript: None,
         },
     );
 

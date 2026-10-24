@@ -38,7 +38,6 @@ mod provider;
 mod sandbox;
 mod serve;
 mod session;
-mod web;
 
 #[cfg(test)]
 mod docs;

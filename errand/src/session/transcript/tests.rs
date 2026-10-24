@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-use super::{OPENING_SCAN_BYTES, Transcript};
+use super::Transcript;
 use crate::log::{LogFields, LogLevel, Logger, Sink};
-use crate::session::event::{NoticeLevel, SessionEvent};
+use crate::session::event::SessionEvent;
 
 /// A temp directory with a transcript in it, and the lines its log caught.
 struct Keep {
@@ -76,7 +76,6 @@ fn a_session_with_no_transcript_reads_empty_rather_than_failing() {
 
     assert_eq!(stored.entries.len(), 0);
     assert_eq!(stored.dropped, 0);
-    assert_eq!(missing.opening(), None);
 }
 
 /// A crash mid-write tears the last line; the rest of the session survives.
@@ -147,93 +146,6 @@ fn an_entry_with_no_turn_is_still_an_entry() {
 
     assert_eq!(stored.entries[0].turn, None);
     assert_eq!(stored.entries[0].entry, post("old"));
-}
-
-#[test]
-fn what_a_session_was_first_asked_is_read_from_its_transcript() {
-    let keep = keep();
-    let transcript = keep.transcript();
-    transcript.append_at(
-        &SessionEvent::Notice {
-            text: "ready".to_owned(),
-            level: NoticeLevel::Started,
-        },
-        Some(0),
-        1_000,
-    );
-    transcript.append_at(
-        &SessionEvent::Prompt {
-            author: "amelia".to_owned(),
-            text: "  cache the secret  ".to_owned(),
-            id: None,
-            withdrawn: false,
-        },
-        Some(1),
-        2_000,
-    );
-    transcript.append_at(
-        &SessionEvent::Prompt {
-            author: "amelia".to_owned(),
-            text: "and then this".to_owned(),
-            id: None,
-            withdrawn: false,
-        },
-        Some(2),
-        3_000,
-    );
-
-    assert_eq!(transcript.opening().as_deref(), Some("cache the secret"));
-}
-
-#[test]
-fn a_session_that_was_never_asked_anything_has_no_opening() {
-    let keep = keep();
-    let transcript = keep.transcript();
-    transcript.append_at(
-        &SessionEvent::Notice {
-            text: "started".to_owned(),
-            level: NoticeLevel::Started,
-        },
-        Some(0),
-        1_000,
-    );
-    transcript.append_at(
-        &SessionEvent::Notice {
-            text: "it failed".to_owned(),
-            level: NoticeLevel::Ended,
-        },
-        Some(0),
-        2_000,
-    );
-
-    assert_eq!(transcript.opening(), None);
-}
-
-/// Proof that the scan is bounded: a prompt past the head is not found. It is
-/// read once per stopped session whenever they are listed, so reading the
-/// whole file would cost the length of every session.
-///
-/// A read landing mid-line must also not hand a half-entry to the parser.
-#[test]
-fn only_the_head_is_scanned_cut_back_to_the_last_whole_line() {
-    let keep = keep();
-    let transcript = keep.transcript();
-    let filler = "y".repeat(OPENING_SCAN_BYTES);
-    transcript.append_at(&post(&filler), Some(0), 1_000);
-    transcript.append_at(
-        &SessionEvent::Prompt {
-            author: "amelia".to_owned(),
-            text: "after the big one".to_owned(),
-            id: None,
-            withdrawn: false,
-        },
-        Some(1),
-        2_000,
-    );
-
-    // The prompt is past the scanned head, so it is not found, and nothing
-    // half-read is mistaken for an entry.
-    assert_eq!(transcript.opening(), None);
 }
 
 #[test]
