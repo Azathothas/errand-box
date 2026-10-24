@@ -453,29 +453,43 @@ five tests that section names.
 
 ## Done, and open
 
-**The stand-in, the plan's steps 1 to 4 and test 5, done on 2026-10-24.**
-The errand patch, tests 1 to 4 and the gate step are next.
+**The stand-in, the plan's steps 1 to 4, the errand patch and tests 1, 2,
+3 and 5, done on 2026-10-24.** Test 4 and its gate step are next.
 
-- `discord-mock/`, a workspace member (0BSD, `publish = false`).
-  `src/state.rs` is the one store, whose changes return the dispatches they
-  cause; `src/rest.rs` serves the fifteen operations, the attachment CDN
-  with signed URLs, and answers 501 for any other route, method or body
-  field; `src/gateway.rs` holds sessions, `seq`, replay on RESUME, intents,
-  the content intent, zlib payload compression, the 120-sends limit and the
-  faults; `src/journal.rs` records every call and frame; `src/control.rs`
-  is what a person or a moderator does; `src/main.rs` is the binary. A
-  handle dropped with an unread gap fails its test. New crate names:
-  `multer` and `spin` (axum's multipart), `twilight-model` and five of its
-  own, dev only: the plan's measured 8.
-- `cargo test --locked -p discord-mock`: 26 tests pass, test 5 among them
-  (`tests/dispatch.rs`). With `channel_id` dropped from the message,
-  serenity read MESSAGE_CREATE as `Event::Unknown`; with the replay one
-  dispatch short, `s` rose by two. Both failed, exit 101, and were restored.
+- `discord-mock/`, a workspace member (0BSD, `publish = false`), a
+  dev-dependency of errand only. `src/state.rs` is the one store, whose
+  changes return the dispatches they cause; `src/rest.rs` serves the
+  fifteen operations, the attachment CDN with signed URLs, and answers 501
+  for any other route, method or body field; `src/gateway.rs` holds
+  sessions, `seq`, replay on RESUME, intents, the content intent, zlib
+  payload compression, the 120-sends limit and the faults;
+  `src/journal.rs` records every call and frame; `src/control.rs` is what
+  a person or a moderator does; `src/main.rs` is the binary. A handle
+  dropped with an unread gap fails its test. New crate names: `multer` and
+  `spin` (axum's multipart), `twilight-model` and five of its own, dev
+  only: the plan's measured 8.
+- The errand patch: `errand/src/chat/endpoint.rs`, called where
+  `serve.rs` built the client, with the three-part guard and one
+  `WARNING:` line while the stand-in is in force; unset, the builder is
+  `serenity::Client::builder` as before. `FactoryAdapter` moved out of
+  `run` so the tests use the adapter `run` uses. `reqwest012` is serenity's
+  own reqwest 0.12.28: no crate added. `grep -rn DISCORD_MOCK src image
+  bootstrap.sh examples tests` finds nothing: errand-box never sets it.
+- `cargo test --locked -p discord-mock`, 26 tests pass;
+  `cargo test --locked -p errand --lib -- endpoint stand_in`, 13 pass.
+
+Each test was seen to fail, the exit code read unpiped, then restored:
+condition 2 switched off let a real token's shape through (test 1); errand
+asking for `GUILD_MESSAGE_TYPING` too gave intents 35329 (test 2); the
+thread post without `SUPPRESS_EMBEDS` had `flags` 0 (test 3); `channel_id`
+dropped from the message made serenity read MESSAGE_CREATE as
+`Event::Unknown`, and a replay one short made `s` rise by two (test 5).
+Each exited 101.
 
 ## Prove
 
 ```sh
 cargo test --locked -p discord-mock
-cargo test --locked -p errand endpoint   # the guard refuses each bad pair; a planted defect fails it
+cargo test --locked -p errand --lib -- endpoint stand_in   # the guard, the handshake, a thread, a command
 sh scripts/ci-local.sh
 ```

@@ -30,6 +30,17 @@ exact Incus calls a function makes.
 A test named in [edge-cases.md](edge-cases.md) as `module::test` is one of
 these.
 
+errand's chat path is tested against `discord-mock/`, a local stand-in for
+the part of Discord errand reaches (T-035). It runs in process, in the tests
+and in CI only. errand reaches it only through
+`errand/src/chat/endpoint.rs`, when `ERRAND_DISCORD_MOCK_URL` names a
+loopback `http://` URL and the bot token begins with `mock.`. The stand-in's
+own tests check serenity's handshake, Discord's thread rules, uploads, and
+that every gateway event parses in serenity and in twilight-model; errand's
+`chat::endpoint` and `daemon::tests::stand_in` tests drive errand's own code
+against it. A route or a body field it does not implement answers 501 and
+fails the test.
+
 ## 2. The local CI steps
 
 [`scripts/ci-local.sh`](../scripts/ci-local.sh) runs the steps that

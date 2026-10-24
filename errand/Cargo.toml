@@ -29,6 +29,10 @@ jiff = "0.2.37"
 jsonc-parser = { version = "0.33.2", features = ["serde"] }
 nix = { version = "0.31.3", features = ["signal", "process", "fs"] }
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
+# serenity's own reqwest, so `src/chat/endpoint.rs` can hand serenity a REST
+# client built with `.no_proxy()` for the local stand-in. serenity already
+# locks this version with this feature, so it adds no crate.
+reqwest012 = { package = "reqwest", version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
@@ -37,6 +41,10 @@ tempfile = "3.27.0"
 thiserror = "2.0.20"
 url = "2.5.8"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "io-util", "net", "fs", "signal"] }
+
+[dev-dependencies]
+# The local Discord stand-in the chat path is tested against (T-035).
+discord-mock = { path = "../discord-mock" }
 
 [lints.rust]
 unsafe_code = "forbid"
