@@ -546,3 +546,46 @@ sh scripts/check-todo.sh
 Each file holds the host's `doctor` output and the live result, or the step
 where the run stopped and the entry filed for it. Every finding has a row
 in INDEX.md.
+
+---
+
+# T-036: `uninstall` stops incusd under s6 and leaves its dnsmasq running
+
+**Source:** the teardown of 2026-10-24, on the session's hosted container
+(no init, s6, Incus 6.0.7)
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+After `errand-box uninstall --purge --yes` reported every daemon stopped,
+three `dnsmasq` processes still ran as the account `incus`, one per Incus
+bridge (`incusbr-0`, `incusbr-994`, `incusbr0`), and the bridges stayed up.
+The account `incus` could not be deleted while they ran. `uninstall` keeps
+Incus by design, but these processes outlive the incusd that started them.
+
+## Premise
+
+Measured once, by `ps -u incus` after the uninstall. Read, not measured:
+under systemd, stopping `incus.service` ends every process in its cgroup;
+under s6, a signal to incusd does not reach the dnsmasq it forked, so they
+survive. Whether `up` after a host restart meets a stale dnsmasq was not
+measured; the live tests, which stop and start the daemons through s6,
+passed 52 of 52 on the same host.
+
+## Approach
+
+Measure first: on a host with no init, stop incusd through s6 and list the
+processes of the account `incus`. Then either stop incusd with `incus admin
+shutdown` before the supervisor's stop, which takes the networks down, or
+have `uninstall` stop the remaining processes of the account `incus` by pid.
+Never by name (E-12).
+
+## Prove
+
+```sh
+errand-box uninstall --purge --yes
+ps -u incus -o pid= | wc -l   # 0
+```
