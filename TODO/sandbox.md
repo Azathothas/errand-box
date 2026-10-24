@@ -350,6 +350,12 @@ which runs T-027 on three hosts and this entry on each one that passes. The
 steps of this plan are the list the operator follows. Unblock: the files of
 step 4 on the host, and the preflight passing there.
 
+**Correction, 2026-10-24: the chat half can be tested without Discord.**
+The research of 2026-10-24 finds that serenity can be pointed at a local
+stand-in with no serenity patch, which reverses route C above for the chat
+half. T-035 builds it. The model half still needs a gateway errand-box can
+configure.
+
 ## Prove
 
 A message in the channel starts a session; the agent edits a file in the

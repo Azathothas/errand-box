@@ -117,7 +117,17 @@ test code and one test helper.
   in the release, or remove the interface: the operator's ruling on T-034.
 - The notices of the other crates the binary now links: errand-box
   published none for its 22, and the lock now holds 280.
-- The prove's live test: no host with Incus has run setup with the fork.
+
+**The live prove, 2026-10-24**, on this session's hosted container (Ubuntu
+24.04, kernel 6.18, x86_64, cgroup v1, no init, Incus 6.0.7 from Zabbly's
+6.0 LTS line): setup with the static binary of `1d184d3`, 31 changed and 0
+failed; `readlink /usr/local/lib/errand-box/bin/errand` printed
+`errand-box`; the errand service ran `/usr/local/lib/errand-box/bin/errand
+run`, passed its config check and its probe of the shim, and stopped at the
+chat connection, as T-015's test token makes it. A second setup changed
+nothing. `tests/live/live.sh`: 51 of 52, the one failure `t_reap`, which
+T-026 names; alone it passed 2 of 2. Then with the binary of the T-031
+change: setup 0 failed, and live 52 of 52.
 
 ## Prove
 
@@ -136,7 +146,7 @@ readlink /usr/local/lib/errand-box/bin/errand   # errand-box
 **Category:** errand
 **Priority:** P0
 **Effort:** S
-**Status:** partial
+**Status:** done
 
 ## Problem
 
@@ -188,8 +198,9 @@ With the old match and the old join planted back, the end-to-end test
 fails: the steered request answered `HTTP/1.1 200 OK` and the second
 stand-in provider received the key.
 
-**Open:** hosts run the downloaded errand v0.3.1 until T-028 ships the fork.
-Close this entry when T-028's live test runs the fork's errand.
+**Closed 2026-10-24.** T-028's live test ran the fork's errand from
+errand-box's own binary: 52 of 52. A host installed from v0.1.0 runs errand
+v0.3.1 until it takes a release that carries the fork.
 
 ---
 
@@ -200,7 +211,7 @@ Close this entry when T-028's live test runs the fork's errand.
 **Category:** errand
 **Priority:** P1
 **Effort:** S
-**Status:** partial
+**Status:** done
 
 ## Problem
 
@@ -237,8 +248,7 @@ anywhere in it, the git directory itself included. Two new tests in
 `errand/src/session/pr/tests.rs`; the prove passed, 35 tests. With the
 check switched off, both new tests fail.
 
-**Open:** as T-029, a host runs this fix once it runs a release that
-carries the fork (T-028).
+**Closed 2026-10-24**, as T-029: T-028's live test ran the fork, 52 of 52.
 
 ---
 
@@ -248,7 +258,7 @@ carries the fork (T-028).
 **Category:** errand
 **Priority:** P2
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -269,6 +279,15 @@ the shape to avoid: lens-sandbox-core issue 57, in
 ```sh
 cargo test --locked relay   # a refused target produces one log line naming it
 ```
+
+## Closing
+
+**Closed 2026-10-24.** `Refusals` in `src/relay.rs` writes one line to
+stderr at the first failed connect, naming the target and the error, then
+at most one line every 10 s with the count since the last; never to stdout,
+which carries the agent protocol in the shim. The prove passed, 5 relay
+tests. With the line silenced, the new test fails. Live: 52 of 52 with this
+binary.
 
 ---
 
@@ -379,4 +398,61 @@ and the interface is on loopback only.
 ```sh
 sh scripts/ci-local.sh
 grep -rn 'Podman' errand/src | wc -l   # 0
+```
+
+---
+
+# T-035: A Discord stand-in, so errand's chat path is tested without Discord
+
+**Source:** the operator, 2026-10-24: "we will need this to test errand-box
+and it must be quite close to the real discord apis/backend"; the research
+of that day,
+[2026-10-24-discord-mock.md](../docs/history/references/2026-10-24-discord-mock.md)
+**Category:** errand
+**Priority:** P1
+**Effort:** L
+**Status:** open
+
+## Problem
+
+Nothing tests errand's chat path. T-015 needs a real Discord application,
+and the live tests stop errand at the chat connection, so a defect between
+a message and a session's reply reaches an operator first.
+
+## Premise
+
+Read in serenity 0.12.5 and errand, not run, in the research above; seven
+of its citations were opened again at their lines and hold. errand reaches
+15 REST operations, one attachment fetch, 4 client opcodes, 6 server opcodes
+and 11 dispatch types, with intents 33281. serenity takes another REST base
+through `HttpBuilder::proxy` with its rate limiter off, and takes the
+gateway URL from `GET /gateway`, which falls back to
+`wss://gateway.discord.gg` when that call fails (`client/mod.rs:364-370`).
+
+## Approach
+
+The research's "Implementation plan", in its order: the workspace member
+`discord-mock/`, a dev-dependency of errand only; one store with REST and
+gateway projections, and a 501 for any route it does not implement; the
+errand patch in `errand/src/chat/endpoint.rs`, switched by the environment
+variable `ERRAND_DISCORD_MOCK_URL`, with the three-part guard; then the first
+five tests that section names.
+
+## Decision
+
+- **A focused Rust mock, not Spacebar or fauxcord.** Spacebar needs Node and
+  Postgres and answers every RESUME with INVALID_SESSION; fauxcord has no
+  licence.
+- **An environment variable, not a config key**, so errand-box's setup and
+  `up` never write it, and a guard that refuses a real token and a non-local
+  gateway before any request.
+- **Open for the operator:** where the binary lives on a test host. The
+  recommendation is a release asset `setup` and `bootstrap.sh` never install.
+
+## Prove
+
+```sh
+cargo test --locked -p discord-mock
+cargo test --locked -p errand endpoint   # the guard refuses each bad pair; a planted defect fails it
+sh scripts/ci-local.sh
 ```

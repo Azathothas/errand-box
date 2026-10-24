@@ -29,12 +29,17 @@ The operator ruled on the recommendation the same day:
 3. **The eight projects are ideas only.** The mechanisms worth taking are in
    the write-ups and in T-029 to T-033.
 
-New entries: T-028 to T-034, in [`errand.md`](errand.md). T-019 is open, not
-blocked: its backend is errand-box's to build in the fork. T-029, a P0, is
-fixed in the fork. A host installed from v0.1.0 still runs errand v0.3.1,
-which has it, until it takes a release with the fork; until then an operator
-can keep it from reaching the key by giving `ERRAND_PROVIDER_BASE_URL` a
-path, where the provider allows one: read, not tested.
+New entries: T-028 to T-035, in [`errand.md`](errand.md). T-019 is open, not
+blocked: its backend is errand-box's to build in the fork. T-029, T-030 and
+T-031 are closed in the fork, and T-028's live run carried them. A host
+installed from v0.1.0 still runs errand v0.3.1, which has T-029's defect,
+until it takes a release with the fork; until then an operator can keep it
+from reaching the key by giving `ERRAND_PROVIDER_BASE_URL` a path, where the
+provider allows one: read, not tested.
+
+4. **A Discord stand-in** (T-035), asked for on 2026-10-24: researched, and
+   the plan is verified at seven citations. It goes to an implementing
+   session.
 
 ---
 
@@ -108,7 +113,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB, no
 Incus. The earlier hosts and their results are in git history.
 
-**34 entries: 10 done, 7 partial, 1 blocked, 16 open.**
+**35 entries: 13 done, 5 partial, 1 blocked, 16 open.**
 
 ---
 
@@ -137,18 +142,20 @@ Candidates that a measurement refuted:
 
 ## What is in progress
 
-T-028, the fork: imported, gated, and built into errand-box, which setup
-links as `errand`. Open: the web bundle (T-034's ruling), the other crates'
-notices, and a live run of setup on a host with Incus. T-029 is fixed in the
-fork and reaches a host with that live run.
+T-028, the fork: imported, gated, built into errand-box, which setup links
+as `errand`, and shown live, 52 of 52. Open: the web bundle (T-034's
+ruling) and the other crates' notices. T-035, the Discord stand-in: handed
+to an implementing agent in this session; its result is in the git log or
+in RESUME.md.
 
 ---
 
 ## Start here next session
 
-1. T-029 in the fork, then T-028's shipping steps, so the fix reaches a host.
-2. T-030, then T-031 to T-033.
-3. On the Windows machine: the mandated task above.
+1. T-035, the Discord stand-in, if this session did not finish it.
+2. Release v0.1.1, so a host gets the fork and T-029's fix: on the Windows
+   machine, the mandated task above, which releases first.
+3. T-032, T-033, then T-028's open items.
 4. T-020, then T-019's backend in the fork, which retires the `bailey`
    stand-in. Read the adopted mechanisms in the 2026-10-24 write-ups first.
 5. T-024, then T-021, then T-022, which waits on T-020's link.
@@ -160,9 +167,12 @@ fork and reaches a host with that live run.
 
 1. **T-034**: keep or remove errand's web interface and its `errand threads`
    command. The recommendation is to keep both.
-2. **Revoke the Daytona token** that was given to the session of
+2. **T-035**: where the stand-in's binary lives on a test host. The
+   recommendation is a release asset that `setup` and `bootstrap.sh` never
+   install.
+3. **Revoke the Daytona token** that was given to the session of
    2026-10-23: it is in a session transcript.
-3. **Create the credentials** T-015 and T-007 list. Put each in a file,
+4. **Create the credentials** T-015 and T-007 list. Put each in a file,
    never in the chat.
 
 ---

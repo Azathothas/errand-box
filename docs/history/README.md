@@ -52,6 +52,7 @@ concluded.
 | --- | --- |
 | [errand-unchanged.md](errand-unchanged.md) | the settled decision to leave errand unchanged behind `bailey`, word for word, and the ruling that replaced it |
 | [references/2026-10-24-brokers-a.md](references/2026-10-24-brokers-a.md) | a sweep of three credential brokers (agent-vault, claw-wrap, wardgate) against errand's broker and entries T-020 to T-023 |
+| [references/2026-10-24-discord-mock.md](references/2026-10-24-discord-mock.md) | how to test errand's chat path without Discord: the surface errand reaches, how serenity is pointed elsewhere, existing stand-ins, and an implementation plan |
 | [references/2026-10-24-errand-code.md](references/2026-10-24-errand-code.md) | errand's code measured for the choice between vendoring it and rewriting the parts errand-box needs: module sizes, patch list, build and churn |
 | [references/2026-10-24-errand-tracker.md](references/2026-10-24-errand-tracker.md) | errand's and bailey's trackers read for the same choice: every issue classified, the maintainer's rulings, the open defects a vendored copy inherits, and the closed fixes a rewrite would repeat |
 | [references/2026-10-24-runtimes.md](references/2026-10-24-runtimes.md) | a sweep of two agent runtimes (OpenShell, raxis) as replacements for errand, for errand-box, or as sources of mechanisms |

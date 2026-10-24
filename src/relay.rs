@@ -10,6 +10,46 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::thread;
+use std::time::{Duration, Instant};
+
+/// How often a relay that keeps failing says so again.
+const REPEAT: Duration = Duration::from_secs(10);
+
+/// Says why the relay closed a connection it could not carry: one line at the
+/// first failure, then at most one line every `REPEAT`, with the count since
+/// the last line. It writes to stderr, never stdout: in the shim, stdout
+/// carries errand's agent protocol (T-031).
+struct Refusals {
+    target: String,
+    out: Box<dyn io::Write + Send>,
+    last: Option<Instant>,
+    since: u64,
+}
+
+impl Refusals {
+    fn new(target: &str, out: Box<dyn io::Write + Send>) -> Self {
+        Refusals {
+            target: target.to_owned(),
+            out,
+            last: None,
+            since: 0,
+        }
+    }
+
+    fn failed(&mut self, error: &io::Error) {
+        self.since += 1;
+        if self.last.is_some_and(|t| t.elapsed() < REPEAT) {
+            return;
+        }
+        let _ = writeln!(
+            self.out,
+            "errand-box relay: cannot reach {}: {error}; closed {} connection(s)",
+            self.target, self.since
+        );
+        self.last = Some(Instant::now());
+        self.since = 0;
+    }
+}
 
 fn pump<A, B>(
     a: A,
@@ -56,17 +96,23 @@ impl TryClone for UnixStream {
 /// Serve `listener` until the process ends, relaying each connection to
 /// `target`. Runs in a background thread.
 pub fn unix_to_tcp(path: &Path, target: String) -> io::Result<()> {
+    unix_to_tcp_to(path, target, Box::new(io::stderr()))
+}
+
+fn unix_to_tcp_to(path: &Path, target: String, out: Box<dyn io::Write + Send>) -> io::Result<()> {
     let _ = std::fs::remove_file(path);
     let l = UnixListener::bind(path)?;
     thread::spawn(move || {
+        let mut refusals = Refusals::new(&target, out);
         for c in l.incoming().flatten() {
-            if let Ok(up) = TcpStream::connect(&target) {
-                pump(
+            match TcpStream::connect(&target) {
+                Ok(up) => pump(
                     c,
                     up,
                     |s: &UnixStream| drop(s.shutdown(Shutdown::Write)),
                     |s: &TcpStream| drop(s.shutdown(Shutdown::Write)),
-                );
+                ),
+                Err(e) => refusals.failed(&e),
             }
         }
     });
@@ -76,14 +122,16 @@ pub fn unix_to_tcp(path: &Path, target: String) -> io::Result<()> {
 /// Serve on `listen` (host:port) and relay to `target`, in the foreground.
 pub fn tcp_to_tcp(listen: &str, target: &str) -> io::Result<()> {
     let l = TcpListener::bind(listen)?;
+    let mut refusals = Refusals::new(target, Box::new(io::stderr()));
     for c in l.incoming().flatten() {
-        if let Ok(up) = TcpStream::connect(target) {
-            pump(
+        match TcpStream::connect(target) {
+            Ok(up) => pump(
                 c,
                 up,
                 |s: &TcpStream| drop(s.shutdown(Shutdown::Write)),
                 |s: &TcpStream| drop(s.shutdown(Shutdown::Write)),
-            );
+            ),
+            Err(e) => refusals.failed(&e),
         }
     }
     Ok(())
@@ -135,6 +183,50 @@ pub fn with_authority(url: &str, authority: &str) -> String {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+
+    /// A sink the test can read after the relay wrote to it.
+    #[derive(Clone, Default)]
+    struct Sink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl io::Write for Sink {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A target that refuses is reported once, with its address, and a
+    /// second refusal inside the repeat window adds no line (T-031).
+    #[test]
+    fn a_relay_says_why_it_closed_a_connection() {
+        let closed = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = closed.local_addr().unwrap().to_string();
+        drop(closed);
+        let dir = std::env::temp_dir().join(format!("eb-relay-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("r.sock");
+        let sink = Sink::default();
+        unix_to_tcp_to(&sock, target.clone(), Box::new(sink.clone())).unwrap();
+        for _ in 0..2 {
+            let mut c = UnixStream::connect(&sock).unwrap();
+            let mut got = Vec::new();
+            // The relay closes the connection it cannot carry.
+            let _ = c.read_to_end(&mut got);
+            assert!(got.is_empty());
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while sink.0.lock().unwrap().is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let text = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(text.lines().count(), 1, "{text}");
+        assert!(text.contains(&format!("cannot reach {target}")), "{text}");
+        assert!(text.contains("closed 1 connection(s)"), "{text}");
+    }
 
     #[test]
     fn a_relayed_proxy_keeps_its_credentials() {
