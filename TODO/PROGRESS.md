@@ -40,6 +40,12 @@ provider allows one: read, not tested.
 4. **A Discord stand-in** (T-035), asked for on 2026-10-24: researched, and
    the plan is verified at seven citations. It goes to an implementing
    session.
+5. **The rulings that settled the open questions**, the same day: errand is a
+   library errand-box runs as `errand-box serve`, with `errand-box threads`,
+   and no `errand` program; the web interface leaves the fork; the Discord
+   stand-in runs in CI and in-process tests only; a release carries
+   `THIRD-PARTY-NOTICES`; `cross` uses zig when present; and this session
+   merges its branch into `main` and releases v0.1.1. Each is in its entry.
 
 ---
 
@@ -165,14 +171,12 @@ in RESUME.md.
 
 ## Open questions for the operator
 
-1. **T-034**: keep or remove errand's web interface and its `errand threads`
-   command. The recommendation is to keep both.
-2. **T-035**: where the stand-in's binary lives on a test host. The
-   recommendation is a release asset that `setup` and `bootstrap.sh` never
-   install.
-3. **Revoke the Daytona token** that was given to the session of
+None open: the operator ruled on every question of 2026-10-24, each in its
+entry (T-028, T-034, T-035). Two things only the operator can do:
+
+1. **Revoke the Daytona token** that was given to the session of
    2026-10-23: it is in a session transcript.
-4. **Create the credentials** T-015 and T-007 list. Put each in a file,
+2. **Create the credentials** T-015 and T-007 list. Put each in a file,
    never in the chat.
 
 ---

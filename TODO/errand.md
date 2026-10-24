@@ -48,6 +48,16 @@ test code and one test helper.
   `bootstrap.sh`, for no property the operator asked for. The cost is a
   larger binary and a C compiler in the static build.
 
+**Correction, 2026-10-24: the operator's rulings change the shape.** errand
+stops being a program: no `errand` link and no `errand` bin target. The
+supervisor runs `errand-box serve`, which calls the errand library's daemon,
+and `errand-box threads` takes over errand's thread commands. A host then
+runs three external programs: errand-box, kage (or another agent harness)
+and Incus. The web interface leaves the fork (T-034), so step 4 below is
+moot. A release carries `THIRD-PARTY-NOTICES`, generated from `Cargo.lock`
+by a pinned cargo-about. The `cross` step uses a pinned zig as the aarch64
+musl C compiler when zig is present.
+
 ## Approach
 
 1. **Import and gate.** Done on 2026-10-24: the import commit, the
@@ -389,9 +399,11 @@ loopback, and the CLI until the operator rules on each.
 
 ## Decision
 
-Open for the operator: keep or remove the web interface and `errand
-threads`. The recommendation is to keep both: neither has an open defect,
-and the interface is on loopback only.
+The operator ruled on 2026-10-24: **remove the web interface** (`errand/web/`,
+`errand/src/web/`, and the `web` block errand-box writes); a Cloudflare
+Workers integration may come much later, as its own entry. **Move, do not
+remove, the thread commands**: they become `errand-box threads`, as T-028's
+correction says.
 
 ## Prove
 
@@ -446,8 +458,8 @@ five tests that section names.
 - **An environment variable, not a config key**, so errand-box's setup and
   `up` never write it, and a guard that refuses a real token and a non-local
   gateway before any request.
-- **Open for the operator:** where the binary lives on a test host. The
-  recommendation is a release asset `setup` and `bootstrap.sh` never install.
+- **The operator ruled on 2026-10-24: CI and in-process tests only.** No
+  release asset, and no test host runs it.
 
 ## Prove
 
