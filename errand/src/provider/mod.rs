@@ -1,0 +1,21 @@
+//! The provider modules: what the host knows about models, what is left of a
+//! metered window, and the one-question calls made beside a session.
+
+/// One question put to a model beside a session.
+pub mod ask;
+/// Asks providers which models they serve, and holds what sessions read.
+pub mod discover;
+/// Reads a metered window from a gateway that reports one.
+pub mod gateway;
+/// Draws a picture over the `OpenAI` Images API.
+pub mod images;
+/// Reads a usage window from wherever a provider's definition says it is.
+pub mod mapped;
+/// The host's model store: which models exist and what they cost.
+pub mod models;
+/// Holds a window answer so every session does not ask again.
+pub mod usage;
+/// Describes an image for a session whose model cannot see one.
+pub mod vision;
+/// Reads a metered window from z.ai's own endpoint.
+pub mod zai;

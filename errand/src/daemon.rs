@@ -1,0 +1,964 @@
+//! Wires configuration, backend, admission, sessions, and the connection
+//! together.
+//!
+//! Kept apart from the entry point so the whole daemon can be built and
+//! exercised in a test with no connection and no real sandbox.
+
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use crate::admission::scheduler::{Scheduler, SystemClock};
+use crate::chat::inbound::{InboundDecision, RawMessage};
+use crate::chat::render::grouped_by_provider;
+use crate::config::live::LiveConfig;
+use crate::config::redact::redact_config;
+use crate::config::schema::defaults::IMAGE;
+use crate::config::schema::{ALLOW_EVERY_USER, ChatConfig, Config, SandboxBackend};
+use crate::log::{LogValue, Logger, fields};
+use crate::memory::store::{MemoryStore, Scope};
+use crate::provider::discover::Catalog;
+use crate::provider::images::{Picture, endpoint_with_effort};
+use crate::sandbox::Backend;
+use crate::sandbox::backend::{CapabilityReport, SandboxUnavailableError};
+use crate::sandbox::bailey::BaileyOptions;
+use crate::sandbox::bailey::BaileySandbox;
+use crate::sandbox::bailey::ProviderBrokering;
+use crate::sandbox::bailey::run_bailey_arc;
+use crate::sandbox::podman::PodmanSandbox;
+use crate::sandbox::podman::run_podman_arc;
+use crate::session::attachments::RawAttachment;
+use crate::session::commands::image_args;
+use crate::session::commands::{
+    answer_without_session, argument_of, first_word, is_addressed_to_bot, is_aside, parse_user_id,
+};
+use crate::session::event::EndReason;
+use crate::session::manager::SandboxPool;
+use crate::session::manager::{
+    ManagerOptions, SessionManager, StartOutcome, ThreadFactory, Unavailable,
+};
+use crate::session::model::{configured_model, split_level};
+use crate::session::registry::ThreadRegistry;
+use crate::session::session::{DescribeImages, DrawImage, IncomingMessage};
+
+/// Raised when the backend cannot enforce what configuration demands.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "sandbox.requireFullEnforcement is set and the backend cannot enforce everything on this host:\n{}",
+    gaps.iter().map(|gap| format!("  - {gap}")).collect::<Vec<_>>().join("\n")
+)]
+pub struct EnforcementGapError {
+    /// What the backend could not enforce on this host.
+    pub gaps: Vec<String>,
+}
+
+/// Why the daemon could not be started, in the shape main reports.
+#[derive(Debug, thiserror::Error)]
+pub enum StartError {
+    /// The backend cannot run here at all.
+    #[error(transparent)]
+    Unavailable(#[from] SandboxUnavailableError),
+    /// The backend runs, but not everything is enforced, and configuration
+    /// forbids that.
+    #[error(transparent)]
+    EnforcementGap(#[from] EnforcementGapError),
+}
+
+/// Builds the backend named in configuration. Never falls back to the other.
+///
+/// `egress_proxy_port`, when given, is the host loopback port of the broker
+/// every session's egress is forced through under `egress.mode = proxy`. Only
+/// the bailey backend uses it; podman bounds the network by its own
+/// namespace. `built_in` is the host store's definitions of each defined
+/// provider's models, which either backend writes under an entry naming one.
+pub fn create_sandbox(
+    config: &Config,
+    log: Logger,
+    egress_proxy_port: Option<u16>,
+    brokering: Option<ProviderBrokering>,
+    built_in: BTreeMap<String, Vec<serde_json::Value>>,
+) -> Backend {
+    match config.sandbox.backend {
+        SandboxBackend::Podman => Backend::Podman(Arc::new(PodmanSandbox::new(
+            config.sandbox.clone(),
+            log,
+            run_podman_arc(),
+            built_in,
+        ))),
+        SandboxBackend::Bailey => Backend::Bailey(Arc::new(BaileySandbox::new(
+            config.sandbox.clone(),
+            log,
+            config.state_dir.clone(),
+            run_bailey_arc(),
+            BaileyOptions {
+                egress_proxy_port,
+                brokering,
+                built_in,
+                ..Default::default()
+            },
+        ))),
+    }
+}
+
+/// Settings the chosen backend will not read.
+///
+/// A setting that does nothing should say so rather than sit there looking
+/// effective. Only a value that differs from the default counts, since that
+/// is the only evidence available that somebody chose it deliberately.
+pub fn inert_settings(config: &Config) -> Vec<String> {
+    if config.sandbox.backend != SandboxBackend::Bailey {
+        return Vec::new();
+    }
+    if config.sandbox.image == IMAGE {
+        return Vec::new();
+    }
+    vec!["sandbox.image is set but only the podman backend uses it".to_owned()]
+}
+
+/// Renders what the chosen backend can and cannot enforce here.
+///
+/// A gap is always stated. Presenting a weaker boundary as if it were a
+/// stronger one is worse than the weaker boundary itself, because it removes
+/// the chance to decide about it.
+pub fn render_startup_report(
+    report: &CapabilityReport,
+    inert: &[String],
+    chat: Option<&ChatConfig>,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if let Some(chat) = chat
+        && chat
+            .allowed_user_ids
+            .iter()
+            .any(|id| id == ALLOW_EVERY_USER)
+    {
+        lines.push(
+            "ACCESS: the allowlist is open to everyone who can post in the served channel"
+                .to_owned(),
+        );
+        lines.push(
+            "  anyone who can post there can run code in a sandbox with write access to the project root"
+                .to_owned(),
+        );
+        lines.push("  set chat.allowedUserIds to specific account ids to close it".to_owned());
+    }
+
+    if let Some(chat) = chat
+        && !chat.blocked_user_ids.is_empty()
+    {
+        lines.push(format!(
+            "ACCESS: {} blocked, refused before every other rule",
+            chat.blocked_user_ids.len()
+        ));
+    }
+
+    lines.push(format!("sandbox backend: {}", report.backend));
+    for note in &report.notes {
+        lines.push(format!("  {note}"));
+    }
+
+    if report.gaps.is_empty() {
+        lines.push("  this backend enforces every configured guarantee on this host".to_owned());
+    } else {
+        lines.push(format!(
+            "  {} guarantee(s) cannot be enforced on this host:",
+            report.gaps.len()
+        ));
+        for gap in &report.gaps {
+            lines.push(format!("    - {gap}"));
+        }
+    }
+
+    for setting in inert {
+        lines.push(format!("  {setting}"));
+    }
+    lines
+}
+
+/// A slash command run against the daemon.
+pub struct SlashCommand {
+    /// The thread the command was used in, or none when used outside one.
+    pub thread_id: Option<String>,
+    /// Who ran it.
+    pub user_id: String,
+    /// What to call them in the answer.
+    pub user_name: String,
+    /// The command as text, exactly as an in-thread message would have been.
+    pub content: String,
+}
+
+/// What powers the host off, or says why it could not.
+pub type PowerOff =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Option<String>> + Send>> + Send + Sync>;
+
+/// Says what is left of the provider's usage window.
+///
+/// The flag asks the providers again rather than answering from what the
+/// daemon already holds, for a window that changed before its expiry.
+pub type DescribeUsage =
+    Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
+
+/// Asks the providers for their models again, and says what came of it.
+pub type RefreshModels =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
+
+/// Posts a refusal back to the channel, outside any thread.
+pub type ReplyInChannel =
+    Arc<dyn Fn(IncomingMessage, String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+/// Posts a file back to the channel, outside any thread, with its caption.
+pub type ReplyWithFile = Arc<
+    dyn Fn(IncomingMessage, String, Vec<u8>, String) -> Pin<Box<dyn Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// The one command that starts work from the channel itself.
+const IMAGE_GENERATION: &str = "!gen-image";
+
+/// Everything the daemon needs, with the transport injected for testability.
+pub struct DaemonOptions {
+    /// The configuration every session is started from, and which a change to
+    /// the file may replace while the daemon runs.
+    pub config: LiveConfig,
+    /// The backend sessions are confined by.
+    pub sandbox: Arc<dyn SandboxPool>,
+    /// What makes a thread for a new session.
+    pub threads: Arc<dyn ThreadFactory>,
+    /// Where the daemon says what it is doing.
+    pub log: Logger,
+    /// Posts a refusal back to the channel, outside any thread.
+    pub reply_in_channel: ReplyInChannel,
+    /// Posts a file back to the channel, outside any thread.
+    pub reply_with_file: ReplyWithFile,
+    /// Memory, or none when it is switched off.
+    pub memory: Option<Arc<MemoryStore>>,
+    /// Powers the host off, or none when `!shutdown` is not offered.
+    pub power_off: Option<PowerOff>,
+    /// Says what is left of the provider window, or none when unmetered.
+    pub describe_usage: Option<DescribeUsage>,
+    /// Asks the providers for their models again, and says what they listed.
+    pub refresh_models: Option<RefreshModels>,
+    /// Describes an attached image for a session whose model cannot see one,
+    /// or none when every session's model can.
+    pub describe_images: Option<DescribeImages>,
+    /// Draws a picture with the image model, or none when the host cannot.
+    pub draw_image: Option<DrawImage>,
+    /// Where the interface is published, when it is.
+    pub public_url: Option<String>,
+    /// The provider definitions sessions launch with and the models `!model`
+    /// can switch to.
+    pub catalog: Catalog,
+    /// Where a delegated question is sent, read from the host's model store.
+    pub delegate_base_url: Option<String>,
+    /// Who may control any session, beyond the configured list.
+    pub operator_ids: Option<Vec<String>>,
+    /// Why nothing can run yet, or none when it can.
+    pub unavailable: Option<Unavailable>,
+}
+
+/// The running daemon.
+pub struct Daemon {
+    scheduler: Arc<Scheduler>,
+    sessions: Arc<SessionManager>,
+    accepting: AtomicBool,
+    registry: Arc<Mutex<ThreadRegistry>>,
+    options: DaemonOptions,
+}
+
+impl Daemon {
+    /// Builds the daemon over the given connections.
+    pub fn new(options: DaemonOptions) -> Self {
+        // The clock's callback reaches the scheduler it belongs to through a
+        // holder that is filled the moment the scheduler exists.
+        let holder: Arc<Mutex<Option<Arc<Scheduler>>>> = Arc::new(Mutex::new(None));
+        let clock = {
+            let holder = Arc::clone(&holder);
+            SystemClock::new(move |action| {
+                if let Some(scheduler) = holder.lock().expect("the clock holder lock").as_ref() {
+                    scheduler.timer_fired(action);
+                }
+            })
+        };
+        let starting = options.config.get();
+        let scheduler = Scheduler::start(
+            starting.limits.clone(),
+            Arc::new(clock),
+            5_000,
+            300_000,
+            750,
+        );
+        *holder.lock().expect("the clock holder lock") = Some(Arc::clone(&scheduler));
+
+        let registry = Arc::new(Mutex::new(ThreadRegistry::new(
+            ThreadRegistry::path_for(&starting.state_dir),
+            options.log.clone(),
+        )));
+        let sessions = SessionManager::new(ManagerOptions {
+            config: options.config.clone(),
+            sandbox: Arc::clone(&options.sandbox),
+            scheduler: Arc::clone(&scheduler),
+            threads: Arc::clone(&options.threads),
+            registry: Arc::clone(&registry),
+            log: options.log.clone(),
+            make_id: None,
+            unavailable: options.unavailable.clone(),
+            operator_ids: options.operator_ids.clone(),
+            memory: options.memory.clone(),
+            describe_images: options.describe_images.clone(),
+            draw_image: options.draw_image.clone(),
+            public_url: options.public_url.clone(),
+            catalog: options.catalog.clone(),
+            delegate_base_url: options.delegate_base_url.clone(),
+            now: None,
+        });
+        Self {
+            scheduler,
+            sessions: Arc::new(sessions),
+            accepting: AtomicBool::new(false),
+            registry,
+            options,
+        }
+    }
+
+    /// The session manager, for the interface and the wiring.
+    pub fn sessions(&self) -> Arc<SessionManager> {
+        Arc::clone(&self.sessions)
+    }
+
+    /// True once startup finished and messages may be acted on.
+    pub fn is_accepting(&self) -> bool {
+        self.accepting.load(Ordering::SeqCst)
+    }
+
+    /// Checks the backend and reports what it can enforce here.
+    ///
+    /// Fails with [`StartError`] when the backend cannot run here, or when
+    /// gaps exist and configuration forbids them.
+    pub async fn probe(&self) -> Result<CapabilityReport, StartError> {
+        let config = self.options.config.get();
+        probe_sandbox(self.options.sandbox.as_ref(), &config, &self.options.log).await
+    }
+
+    /// Probes the backend, loads the thread index, and sweeps orphans.
+    ///
+    /// Nothing is accepted until this finishes, so a crashed previous daemon
+    /// cannot leave sandboxes running against a project while new ones start.
+    pub async fn start(
+        &self,
+        probed: Option<CapabilityReport>,
+    ) -> Result<CapabilityReport, StartError> {
+        let starting = self.options.config.get();
+        let _ = std::fs::create_dir_all(&starting.state_dir);
+        self.options.log.info(
+            "effective configuration",
+            &fields([(
+                "config",
+                LogValue::from(redact_config(&starting).to_string()),
+            )]),
+        );
+
+        let report = match probed {
+            Some(report) => report,
+            None => self.probe().await?,
+        };
+        self.registry.lock().expect("the registry lock").load();
+        let threads = self.registry.lock().expect("the registry lock").size();
+        self.options.log.info(
+            "thread index loaded",
+            &fields([("threads", LogValue::from(threads))]),
+        );
+        self.sessions.sweep_orphans().await;
+        self.accepting.store(true, Ordering::SeqCst);
+        Ok(report)
+    }
+
+    /// Whether this account is an operator under the configuration in force.
+    ///
+    /// Read from the configuration rather than from a list held at startup, so
+    /// that adding somebody to `chat.operatorUserIds` takes effect on the next
+    /// command instead of the next restart. The read is one copy of the
+    /// configuration, which a command already needs for the rest of its answer.
+    fn is_operator(&self, author_id: &str) -> bool {
+        self.options
+            .config
+            .get()
+            .chat
+            .operator_user_ids
+            .iter()
+            .any(|id| id == author_id)
+    }
+
+    /// Turns the host off, if this person may.
+    ///
+    /// Answered here rather than in a session: whoever starts a thread owns
+    /// it, and owning a thread is no reason to be able to turn the computer
+    /// off. The only list that counts is the daemon's own.
+    async fn power_off_host(&self, content: &str, author_id: &str) -> Option<String> {
+        if first_word(content) != "!shutdown" {
+            return None;
+        }
+
+        let allowed = self.options.config.get().shutdown.allowed_user_ids;
+        if allowed.is_empty() {
+            return Some(
+                "nobody may power off this host; set shutdown.allowedUserIds to change that"
+                    .to_owned(),
+            );
+        }
+        if !allowed.iter().any(|id| id == author_id) {
+            return Some(
+                "you are not on the list of accounts that may power off this host".to_owned(),
+            );
+        }
+        let Some(power_off) = &self.options.power_off else {
+            return Some("this daemon cannot power off the host".to_owned());
+        };
+
+        self.options.log.warn(
+            "powering off on request",
+            &fields([("user", LogValue::from(author_id))]),
+        );
+        Some(
+            power_off()
+                .await
+                .unwrap_or_else(|| "powering off now".to_owned()),
+        )
+    }
+
+    /// Says what is left of the provider's usage window.
+    ///
+    /// `!usage refresh` asks the providers again instead of answering from
+    /// what the daemon holds. That is the only way past the gate, which stops
+    /// asking about a spent window until it rolls over: a provider that
+    /// resets or tops a window up early would otherwise leave the daemon
+    /// refusing work the window can now serve until it restarted. The reading
+    /// is open to anyone, and the asking is an operator's, since each refresh
+    /// is a request to every provider.
+    async fn describe_usage(&self, content: &str, author_id: &str) -> Option<String> {
+        if first_word(content) != "!usage" {
+            return None;
+        }
+        let refresh = match argument_of(content, "!usage") {
+            "" => false,
+            "refresh" => true,
+            _ => {
+                return Some(
+                    "say `!usage refresh` to ask the providers about their window again".to_owned(),
+                );
+            }
+        };
+        let Some(describe) = &self.options.describe_usage else {
+            return Some("this provider does not report a usage window".to_owned());
+        };
+        if refresh && !self.is_operator(author_id) {
+            return Some("only an operator may ask the providers again".to_owned());
+        }
+        Some(describe(refresh).await)
+    }
+
+    /// Asks the providers for their models again, for an operator.
+    ///
+    /// Reaches every session's `!model` at once. A running sandbox keeps what
+    /// it was launched with until its next launch.
+    async fn refresh_models(&self, content: &str, author_id: &str) -> Option<String> {
+        if first_word(content) != "!models" {
+            return None;
+        }
+        if argument_of(content, "!models") != "refresh" {
+            return Some(
+                "say `!models refresh` to ask the providers for their models again".to_owned(),
+            );
+        }
+        if !self.is_operator(author_id) {
+            return Some("only an operator may ask the providers again".to_owned());
+        }
+        match &self.options.refresh_models {
+            None => Some("no provider is set to be asked for its models".to_owned()),
+            Some(refresh) => Some(refresh().await),
+        }
+    }
+
+    /// Whatever the daemon answers itself, wherever it was typed.
+    async fn answer_as_daemon(
+        &self,
+        content: &str,
+        author_id: &str,
+        in_thread: bool,
+    ) -> Option<String> {
+        if let Some(answer) = self.power_off_host(content, author_id).await {
+            return Some(answer);
+        }
+        if let Some(answer) = self.describe_usage(content, author_id).await {
+            return Some(answer);
+        }
+        if let Some(answer) = self.refresh_models(content, author_id).await {
+            return Some(answer);
+        }
+        if let Some(answer) = self.list_models(content, in_thread) {
+            return Some(answer);
+        }
+        self.answer_about_memory(content, author_id, in_thread)
+    }
+
+    /// Lists the models this host serves, for a channel with no session in it.
+    ///
+    /// Which models exist is a property of the host rather than of a session,
+    /// so asking in the channel should not start one, and should not pay for
+    /// a sandbox and a model call to answer. Inside a thread the session
+    /// answers instead, because that is where a name given is acted on: a
+    /// session runs on one model at a time, and switching it needs the session
+    /// that would change.
+    fn list_models(&self, content: &str, in_thread: bool) -> Option<String> {
+        if first_word(content) != "!model" || in_thread {
+            return None;
+        }
+        if !argument_of(content, "!model").is_empty() {
+            return Some(
+                "a session runs on one model at a time, so switch it inside a session thread with `!model <name>`"
+                    .to_owned(),
+            );
+        }
+
+        let agent = self.options.config.get().agent;
+        let available = self.options.catalog.models();
+        let chosen = configured_model(&agent);
+        let provider = chosen
+            .as_ref()
+            .and_then(|chosen| chosen.provider.clone())
+            .unwrap_or_else(|| agent.provider.clone());
+        let running = chosen.map_or_else(|| agent.provider.clone(), |chosen| chosen.model);
+
+        Some(if available.is_empty() {
+            "this host lists no models to switch to".to_owned()
+        } else {
+            let mut lines = vec![format!(
+                "a new session runs on `{running}`. Switch with `!model <name>` in a session thread:"
+            )];
+            lines.extend(grouped_by_provider(
+                &available,
+                &provider,
+                &split_level(&running).0,
+                &self.options.catalog.aliases(),
+            ));
+            lines.join("\n")
+        })
+    }
+
+    /// Answers what is remembered, for somebody who is not in a thread.
+    ///
+    /// Memory is about a person and a project rather than about a session, so
+    /// asking should not need one. Inside a thread the session answers
+    /// instead: it knows which project `!facts project` means, and it knows
+    /// who was invited, neither of which is visible from here.
+    fn answer_about_memory(
+        &self,
+        content: &str,
+        author_id: &str,
+        in_thread: bool,
+    ) -> Option<String> {
+        let word = first_word(content);
+        if word != "!facts" && word != "!forget" {
+            return None;
+        }
+        if in_thread {
+            return None;
+        }
+
+        let memory = self.options.memory.as_ref()?;
+        let rest = content[word.len()..].trim();
+        if rest.to_lowercase() == "project" {
+            return Some("a project is a thread's own, so ask in one".to_owned());
+        }
+
+        if word == "!forget" {
+            // "Owner" means nothing in a channel, so this is the operator's,
+            // the way anything else acting beyond one session is.
+            if !self.is_operator(author_id) {
+                return Some(
+                    "only an operator may forget what is remembered from here; ask in a thread you own"
+                        .to_owned(),
+                );
+            }
+            if rest.is_empty() {
+                return Some("say who, as `!forget @somebody`".to_owned());
+            }
+            let Some(target) = parse_user_id(rest) else {
+                return Some("say who, as `!forget @somebody`".to_owned());
+            };
+            let gone = memory.forget(Scope::User, &target).unwrap_or(0);
+            return Some(if gone == 0 {
+                format!("nothing was remembered about <@{target}>")
+            } else {
+                format!(
+                    "forgot {gone} fact{} about <@{target}>",
+                    if gone == 1 { "" } else { "s" }
+                )
+            });
+        }
+
+        let subject = if rest.is_empty() {
+            author_id.to_owned()
+        } else {
+            parse_user_id(rest)?
+        };
+        let facts = memory
+            .facts_for(Scope::User, &subject, i64::MAX)
+            .unwrap_or_default();
+        if facts.is_empty() {
+            Some(format!("nothing is remembered about <@{subject}>"))
+        } else {
+            Some(format!(
+                "remembered about <@{subject}>:\n{}",
+                facts
+                    .iter()
+                    .map(|fact| format!("- {}", fact.fact))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        }
+    }
+
+    /// Acts on a message the gateway has already filtered.
+    pub async fn handle(&self, raw: RawMessage, decision: InboundDecision) {
+        if !self.is_accepting() {
+            self.options.log.warn(
+                "a message arrived before startup finished and was not acted on",
+                &fields([]),
+            );
+            return;
+        }
+
+        let message = IncomingMessage {
+            id: raw.id,
+            author_id: raw.author_id,
+            channel_id: raw.channel_id,
+            author_name: raw.author_name,
+            content: raw.content,
+            attachments: raw
+                .attachments
+                .into_iter()
+                .map(|file| RawAttachment {
+                    id: file.id,
+                    name: file.name,
+                    url: file.url,
+                    size: file.size,
+                    content_type: file.content_type,
+                })
+                .collect(),
+        };
+
+        // Before anything is routed. These are not session commands, and being
+        // in a thread is not a reason to be allowed to run one.
+        if let Some(answered) = self
+            .answer_as_daemon(
+                &message.content,
+                &message.author_id,
+                matches!(decision, InboundDecision::Thread { .. }),
+            )
+            .await
+        {
+            (self.options.reply_in_channel)(message, answered).await;
+            return;
+        }
+
+        if let InboundDecision::Thread { thread_id } = decision {
+            self.deliver_to_thread(&thread_id, message).await;
+            return;
+        }
+
+        self.start_from_channel(message).await;
+    }
+
+    async fn deliver_to_thread(&self, thread_id: &str, message: IncomingMessage) {
+        if self.sessions.deliver(thread_id, message.clone()).await {
+            return;
+        }
+
+        // A thread with no live session may still be resumable: the agent's
+        // history outlives the sandbox, so a restart does not end a
+        // conversation.
+        if self.sessions.can_resume(thread_id) {
+            let outcome = self.sessions.resume(thread_id, message.clone()).await;
+            if let StartOutcome::Refused { reason } = outcome {
+                (self.options.reply_in_channel)(message, reason).await;
+            }
+            return;
+        }
+
+        if self.sessions.is_finished_thread(thread_id) {
+            (self.options.reply_in_channel)(
+                message,
+                "this session has ended; post in the channel to start a new one".to_owned(),
+            )
+            .await;
+        }
+    }
+
+    async fn start_from_channel(&self, message: IncomingMessage) {
+        // An aside is people talking, not work to start. The channel is where
+        // they talk, so one here is left alone entirely: no session, no
+        // thread, and no reply, which would itself be noise in the
+        // conversation it was deliberately kept out of.
+        if is_aside(&message.content) {
+            return;
+        }
+
+        // Answered here rather than by starting a session: a command that only
+        // describes the system needs nothing running, and opening a thread and
+        // a sandbox to print a list is not an answer.
+        if let Some(listed) = answer_without_session(&message.content) {
+            (self.options.reply_in_channel)(message, listed).await;
+            return;
+        }
+
+        // A picture needs no conversation to live in, so the channel draws
+        // it here rather than opening a thread and a sandbox for one turn.
+        if first_word(&message.content) == IMAGE_GENERATION {
+            self.draw_into_channel(&message).await;
+            return;
+        }
+
+        // Another bot's command, or one of this system's that needs a session.
+        // Either way it is not work to start, and the channel is shared, so it
+        // is left alone rather than answered.
+        if is_addressed_to_bot(&message.content) {
+            return;
+        }
+
+        let outcome = self.sessions.start(message.clone()).await;
+        if let StartOutcome::Refused { reason } = outcome {
+            (self.options.reply_in_channel)(message, reason).await;
+        }
+    }
+
+    /// Draws a picture asked for in the channel, and posts it there.
+    ///
+    /// One request to the provider's images endpoint, answered as bytes and
+    /// posted as an upload. No session, no thread, and no sandbox: a picture
+    /// is one call, and opening a conversation to make one is what used to
+    /// send the prompt to a chat model instead.
+    async fn draw_into_channel(&self, message: &IncomingMessage) {
+        let asked = match image_args(argument_of(&message.content, IMAGE_GENERATION)) {
+            Ok(asked) => asked,
+            Err(refused) => {
+                (self.options.reply_in_channel)(message.clone(), refused).await;
+                return;
+            }
+        };
+        if asked.prompt.is_empty() {
+            (self.options.reply_in_channel)(
+                message.clone(),
+                "say what to generate, as `!gen-image [--effort <level>] <prompt>`".to_owned(),
+            )
+            .await;
+            return;
+        }
+        match self
+            .draw(asked.model, asked.effort.as_deref(), asked.prompt)
+            .await
+        {
+            Ok(drawn) => {
+                (self.options.reply_with_file)(
+                    message.clone(),
+                    drawn.name,
+                    drawn.bytes,
+                    drawn.caption,
+                )
+                .await;
+            }
+            Err(reason) => {
+                (self.options.reply_in_channel)(message.clone(), reason).await;
+            }
+        }
+    }
+
+    /// Draws one picture, with the model and effort it was asked for.
+    ///
+    /// The endpoint is resolved from the configuration in force rather than a
+    /// copy taken at startup, so a model or a provider changed in the file is
+    /// one this already draws with. A model named on the command beats the
+    /// configured one, and an effort asked for beats the level it carries.
+    async fn draw(
+        &self,
+        named: Option<&str>,
+        effort: Option<&str>,
+        prompt: &str,
+    ) -> Result<Picture, String> {
+        let config = self.options.config.get();
+        let configured = config
+            .agent
+            .image_gen
+            .as_deref()
+            .map(str::trim)
+            .filter(|named| !named.is_empty());
+        let Some(named) = named.or(configured) else {
+            return Err("no image model is configured; name one with `agent.imageGen`".to_owned());
+        };
+        let Some(draw_image) = self.options.draw_image.clone() else {
+            return Err("this host has no way to draw an image".to_owned());
+        };
+        let endpoint = endpoint_with_effort(
+            &config.agent,
+            &self.options.catalog.models(),
+            named,
+            &config.agent.aliases,
+            effort,
+        )
+        .map_err(|refused| refused.0)?;
+        let drawn = draw_image(endpoint.clone(), prompt.to_owned()).await?;
+        drawn
+            .into_picture(&endpoint.model, config.output.max_upload_bytes)
+            .map_err(|refused| refused.0)
+    }
+
+    /// Runs a slash command, which is the same command an in-thread message
+    /// runs. Returns a short line to acknowledge the interaction with.
+    pub async fn run_command(&self, command: &SlashCommand) -> String {
+        if !self.is_accepting() {
+            return "the daemon is still starting up".to_owned();
+        }
+
+        // A slash command is typed at the channel, never inside a thread.
+        if let Some(answered) = self
+            .answer_as_daemon(&command.content, &command.user_id, false)
+            .await
+        {
+            return answered;
+        }
+
+        // Some commands describe the system rather than act on a session, so
+        // they answer anywhere. The answer is the acknowledgement: it goes
+        // back to the person who ran it and nowhere else.
+        if let Some(listed) = answer_without_session(&command.content) {
+            return listed;
+        }
+
+        // A picture needs no session, so outside a thread it is drawn here
+        // and posted to the channel. The acknowledgement is the answer: the
+        // interaction was already claimed, and the picture follows in the
+        // channel it was asked in.
+        if command.thread_id.is_none() && first_word(&command.content) == IMAGE_GENERATION {
+            let asked = match image_args(argument_of(&command.content, IMAGE_GENERATION)) {
+                Ok(asked) => asked,
+                Err(refused) => return refused,
+            };
+            if asked.prompt.is_empty() {
+                return "say what to generate, as `/gen-image <prompt>`".to_owned();
+            }
+            let prompt = asked.prompt.to_owned();
+            let where_to = IncomingMessage {
+                id: format!("slash-{}", command.user_id),
+                author_id: command.user_id.clone(),
+                channel_id: String::new(),
+                author_name: Some(command.user_name.clone()),
+                content: command.content.clone(),
+                attachments: Vec::new(),
+            };
+            let drawing = self
+                .draw(asked.model, asked.effort.as_deref(), &prompt)
+                .await;
+            return match drawing {
+                Ok(drawn) => {
+                    (self.options.reply_with_file)(
+                        where_to,
+                        drawn.name,
+                        drawn.bytes,
+                        drawn.caption,
+                    )
+                    .await;
+                    "drew it; the picture is in the channel".to_owned()
+                }
+                Err(reason) => reason,
+            };
+        }
+
+        let Some(thread_id) = &command.thread_id else {
+            return "use this inside a session thread; post in the channel to start one".to_owned();
+        };
+
+        let delivered = self
+            .sessions
+            .deliver(
+                thread_id,
+                IncomingMessage {
+                    id: format!("slash-{thread_id}"),
+                    author_id: command.user_id.clone(),
+                    channel_id: thread_id.clone(),
+                    author_name: Some(command.user_name.clone()),
+                    content: command.content.clone(),
+                    attachments: Vec::new(),
+                },
+            )
+            .await;
+        if delivered {
+            return format!("ran {}", first_word(&command.content));
+        }
+
+        if self.sessions.can_resume(thread_id) {
+            return "this thread is asleep; post a message in it to wake the session first"
+                .to_owned();
+        }
+        "this thread has no session".to_owned()
+    }
+
+    /// Records which guild the served channel is in.
+    pub fn set_guild(&self, guild_id: String) {
+        self.sessions.set_guild(guild_id);
+    }
+
+    /// Ends the session bound to a thread that was closed from outside.
+    pub async fn thread_closed(&self, thread_id: &str) {
+        self.sessions
+            .end_thread(thread_id, EndReason::ThreadArchived)
+            .await;
+    }
+
+    /// Reconciles a message that was deleted in the chat.
+    ///
+    /// A deletion in the channel names no thread, but a thread started from a
+    /// message carries that message's own id, so the id is tried as one.
+    /// Nothing is started to do this: a session that has ended still has its
+    /// record reconciled, and that happens without bringing it back.
+    pub async fn withdraw(&self, message_id: &str, thread_id: Option<&str>) {
+        self.sessions
+            .withdraw(message_id, thread_id.unwrap_or(message_id))
+            .await;
+    }
+
+    /// Stops accepting, ends every session, and stops every timer.
+    pub async fn shutdown(&self) {
+        self.accepting.store(false, Ordering::SeqCst);
+        self.sessions.shutdown().await;
+        self.scheduler.shutdown();
+    }
+}
+
+/// Checks the backend and reports what it can enforce on this host.
+///
+/// Standalone so it can run before the connection is made: a missing image or
+/// an unenforceable guarantee should fail immediately, not after a login
+/// round trip.
+pub async fn probe_sandbox(
+    sandbox: &dyn SandboxPool,
+    config: &Config,
+    log: &Logger,
+) -> Result<CapabilityReport, StartError> {
+    let report = sandbox.probe().await?;
+    for line in render_startup_report(&report, &inert_settings(config), Some(&config.chat)) {
+        log.info(&line, &fields([]));
+    }
+
+    if !report.gaps.is_empty() && config.sandbox.require_full_enforcement {
+        return Err(StartError::EnforcementGap(EnforcementGapError {
+            gaps: report.gaps,
+        }));
+    }
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,1416 @@
+//! Tests for validation, ported from `validate_test.ts`.
+
+use serde_json::{Value, json};
+
+use super::validate_config;
+use crate::config::schema::EgressMode;
+use crate::config::schema::{ConfigError, defaults};
+
+fn valid(overrides: Value) -> Value {
+    let mut base = json!({
+        "chat": {
+            "token": "a.token.value",
+            "channelId": "111222333444555666",
+            "allowedUserIds": ["777888999000111222"],
+        },
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+            },
+        },
+        "projectRoot": "/tmp/errand/projects",
+        "stateDir": "/tmp/errand/state",
+    });
+    let Value::Object(fields) = &mut base else {
+        unreachable!()
+    };
+    let Value::Object(overrides) = overrides else {
+        unreachable!()
+    };
+    for (key, value) in overrides {
+        fields.insert(key, value);
+    }
+    base
+}
+
+fn problems_of(raw: &Value) -> Vec<String> {
+    match validate_config(raw) {
+        Err(ConfigError { problems }) => problems,
+        Ok(_) => panic!("the configuration was expected to be refused"),
+    }
+}
+
+fn problems_contain(raw: &Value, needle: &str) -> bool {
+    problems_of(raw)
+        .iter()
+        .any(|problem| problem.contains(needle))
+}
+
+#[test]
+fn a_minimal_file_resolves_with_the_documented_defaults_filled_in() {
+    let config = validate_config(&valid(json!({}))).expect("a minimal file resolves");
+
+    assert_eq!(config.chat.channel_id, "111222333444555666");
+    assert_eq!(config.agent.model, None);
+    assert_eq!(config.sandbox.backend, defaults::BACKEND);
+    assert_eq!(
+        config.limits.max_concurrent_turns,
+        defaults::MAX_CONCURRENT_TURNS
+    );
+    assert_eq!(config.timeouts.idle_ms, defaults::IDLE_MS);
+    assert_eq!(config.chat.blocked_user_ids, Vec::<String>::new());
+}
+
+#[test]
+fn every_problem_is_reported_not_only_the_first() {
+    let problems = problems_of(&json!({ "chat": {}, "agent": {} }));
+
+    assert!(problems.len() > 3);
+    let said = problems.join("\n");
+    assert!(said.contains("chat.token"));
+    assert!(said.contains("agent.provider"));
+    assert!(said.contains("projectRoot"));
+}
+
+/// A setting that takes no effect is worse than one that is rejected: the
+/// daemon then runs without a guarantee somebody believes they configured.
+#[test]
+fn a_misspelled_setting_is_refused_rather_than_ignored() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "requireFullEnforcment": false } })),
+        "sandbox.requireFullEnforcment is not a setting"
+    ));
+
+    assert!(problems_contain(
+        &valid(json!({ "projectRooot": "/tmp/x" })),
+        "config.projectRooot is not a setting"
+    ));
+}
+
+#[test]
+fn an_empty_allowlist_refuses_to_start_rather_than_admitting_everyone() {
+    assert!(problems_contain(
+        &valid(json!({ "chat": { "token": "t", "channelId": "c", "allowedUserIds": [] } })),
+        "allow-everyone"
+    ));
+}
+
+#[test]
+fn paths_must_be_absolute_and_neither_may_sit_inside_the_other() {
+    assert!(problems_contain(
+        &valid(json!({ "projectRoot": "./projects" })),
+        "projectRoot must be an absolute path"
+    ));
+    assert!(problems_contain(
+        &valid(json!({ "projectRoot": "/tmp/same", "stateDir": "/tmp/same" })),
+        "must be separate directories"
+    ));
+    // The record directory is `{stateDir}.record`, kept out of the agent's
+    // write grant on purpose. State inside the project puts it back in.
+    assert!(problems_contain(
+        &valid(json!({ "projectRoot": "/tmp/work", "stateDir": "/tmp/work/state" })),
+        "must be separate directories"
+    ));
+    // The other way round is no better: the project would be inside the
+    // state directory a session is also given.
+    assert!(problems_contain(
+        &valid(json!({ "projectRoot": "/tmp/state/projects", "stateDir": "/tmp/state" })),
+        "must be separate directories"
+    ));
+    // A sibling whose name merely starts with the other's is fine.
+    assert!(
+        validate_config(&valid(
+            json!({ "projectRoot": "/tmp/work", "stateDir": "/tmp/workspace" })
+        ))
+        .is_ok(),
+        "a sibling is not a nesting"
+    );
+}
+
+#[test]
+fn sizes_and_counts_are_checked_so_a_typo_cannot_become_a_limit() {
+    let problems = problems_of(&valid(json!({
+        "sandbox": { "memory": "four gigs", "cpus": 0 },
+        "limits": { "maxQueueLength": -3 },
+    })));
+
+    let said = problems.join("\n");
+    assert!(said.contains("sandbox.memory must be a size"));
+    assert!(said.contains("sandbox.cpus must be a number greater than zero"));
+    assert!(said.contains("limits.maxQueueLength"));
+}
+
+#[test]
+fn a_backend_that_does_not_exist_is_named_with_the_ones_that_do() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "backend": "docker" } })),
+        "sandbox.backend must be one of podman, bailey"
+    ));
+}
+
+#[test]
+fn anything_that_is_not_an_object_is_refused_with_one_clear_reason() {
+    assert_eq!(
+        problems_of(&json!([1, 2, 3])),
+        vec!["the configuration file must contain a JSON object"]
+    );
+    assert_eq!(
+        problems_of(&json!("nope")),
+        vec!["the configuration file must contain a JSON object"]
+    );
+}
+
+/// Inert under bailey, required under podman, and validated the same either way.
+#[test]
+fn the_container_image_defaults_and_is_refused_when_it_is_not_a_name() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.image, defaults::IMAGE);
+
+    let config = validate_config(&valid(
+        json!({ "sandbox": { "image": "localhost/mine:v2" } }),
+    ))
+    .expect("resolves");
+    assert_eq!(config.sandbox.image, "localhost/mine:v2");
+
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "image": 7 } })),
+        "sandbox.image must be a non-empty string"
+    ));
+}
+
+#[test]
+fn a_daemon_with_no_github_identity_is_configured_not_broken() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.github, None);
+}
+
+#[test]
+fn a_github_identity_is_taken_whole() {
+    let github = validate_config(&valid(json!({
+        "github": { "token": "ghp-value", "userName": "errand-bot", "userEmail": "bot@example.com" },
+    })))
+    .expect("resolves")
+    .github;
+
+    assert_eq!(
+        github.as_ref().map(|github| github.user_name.as_str()),
+        Some("errand-bot")
+    );
+    assert_eq!(
+        github.as_ref().map(|github| github.token.as_str()),
+        Some("ghp-value")
+    );
+}
+
+/// Pushing as half an identity is worse than not being able to push.
+#[test]
+fn a_github_section_missing_a_field_is_refused_not_half_filled() {
+    let problems = problems_of(&valid(json!({ "github": { "token": "ghp-value" } }))).join("\n");
+
+    assert!(problems.contains("github.userName is required"));
+    assert!(problems.contains("github.userEmail is required"));
+}
+
+#[test]
+fn a_misspelled_github_setting_is_refused_like_any_other() {
+    assert!(problems_contain(
+        &valid(json!({
+            "github": { "token": "t", "userName": "n", "userEmail": "e", "userNmae": "typo" },
+        })),
+        "github.userNmae is not a setting"
+    ));
+}
+
+#[test]
+fn what_reaches_a_thread_has_documented_defaults() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+
+    assert_eq!(
+        config.output.forward_tool_output,
+        defaults::FORWARD_TOOL_OUTPUT
+    );
+    assert_eq!(
+        config.output.max_tool_output_chars,
+        defaults::MAX_TOOL_OUTPUT_CHARS
+    );
+    assert_eq!(
+        config.output.max_attachment_bytes,
+        defaults::MAX_ATTACHMENT_BYTES
+    );
+    assert_eq!(
+        config.output.max_attachments_per_message,
+        defaults::MAX_ATTACHMENTS_PER_MESSAGE
+    );
+    assert_eq!(config.output.max_upload_bytes, defaults::MAX_UPLOAD_BYTES);
+    assert_eq!(config.output.post_diffs, defaults::POST_DIFFS);
+    assert_eq!(config.output.post_images, defaults::POST_IMAGES);
+}
+
+#[test]
+fn what_reaches_a_thread_can_be_turned_up_or_down() {
+    let config = validate_config(&valid(json!({
+        "output": { "forwardToolOutput": true, "postDiffs": false, "postImages": false, "maxToolOutputChars": 4000, "maxUploadBytes": 8_388_608 },
+    })))
+    .expect("resolves");
+
+    assert!(config.output.forward_tool_output);
+    assert!(!config.output.post_diffs);
+    assert!(!config.output.post_images);
+    assert_eq!(config.output.max_tool_output_chars, 4000);
+    assert_eq!(config.output.max_upload_bytes, 8_388_608);
+    assert_eq!(
+        config.output.max_attachments_per_message,
+        defaults::MAX_ATTACHMENTS_PER_MESSAGE
+    );
+}
+
+#[test]
+fn an_output_limit_that_is_not_a_number_is_refused() {
+    let problems = problems_of(&valid(json!({
+        "output": { "maxAttachmentBytes": "5mb", "postDiffs": "yes" },
+    })))
+    .join("\n");
+
+    assert!(problems.contains("output.maxAttachmentBytes must be a number"));
+    assert!(problems.contains("output.postDiffs must be true or false"));
+}
+
+/// Silence about a command that turns the machine off means nobody.
+#[test]
+fn nobody_may_power_off_the_host_unless_somebody_is_named() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.shutdown.allowed_user_ids, Vec::<String>::new());
+
+    let config = validate_config(&valid(json!({ "shutdown": { "allowedUserIds": ["777"] } })))
+        .expect("resolves");
+    assert_eq!(config.shutdown.allowed_user_ids, vec!["777"]);
+}
+
+#[test]
+fn a_shutdown_list_that_is_not_a_list_of_accounts_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "shutdown": { "allowedUserIds": "everyone" } })),
+        "shutdown.allowedUserIds must be a list of account ids"
+    ));
+}
+
+#[test]
+fn a_daemon_with_no_interface_configured_serves_none() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.web, None);
+}
+
+#[test]
+fn an_interface_takes_its_address_port_and_role() {
+    let web = validate_config(&valid(json!({
+        "web": { "host": "100.64.0.2", "port": 9000, "observer": true,
+                 "publicUrl": "https://errand.example" },
+    })))
+    .expect("resolves")
+    .web;
+
+    assert_eq!(
+        web.as_ref().map(|web| web.host.as_str()),
+        Some("100.64.0.2")
+    );
+    assert_eq!(web.as_ref().map(|web| web.port), Some(9000));
+    assert_eq!(web.as_ref().map(|web| web.observer), Some(true));
+    assert_eq!(
+        web.and_then(|web| web.public_url),
+        Some("https://errand.example".to_owned())
+    );
+}
+
+#[test]
+fn an_interface_that_says_only_that_it_exists_gets_the_defaults() {
+    let web = validate_config(&valid(json!({ "web": {} })))
+        .expect("resolves")
+        .web;
+
+    assert_eq!(
+        web.as_ref().map(|web| web.host.as_str()),
+        Some(defaults::WEB_HOST)
+    );
+    assert_eq!(web.as_ref().map(|web| web.port), Some(defaults::WEB_PORT));
+    assert_eq!(web.as_ref().map(|web| web.observer), Some(false));
+    assert_eq!(web.and_then(|web| web.public_url), None);
+}
+
+#[test]
+fn an_interface_port_that_is_not_a_port_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "web": { "port": "8080" } })),
+        "web.port must be a number greater than zero"
+    ));
+}
+
+#[test]
+fn no_extra_grant_is_the_same_as_no_policy_extra_section() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.policy_extra, None);
+}
+
+#[test]
+fn extra_grants_are_taken_as_absolute_paths() {
+    let extra = validate_config(&valid(json!({
+        "sandbox": {
+            "policyExtra": {
+                "read": ["/opt/toolchains"],
+                "write": ["/srv/output"],
+                "execute": ["/opt/toolchains/bin"],
+            },
+        },
+    })))
+    .expect("resolves")
+    .sandbox
+    .policy_extra;
+
+    assert_eq!(
+        extra.as_ref().map(|extra| extra.read.as_slice()),
+        Some(["/opt/toolchains".to_owned()].as_slice())
+    );
+    assert_eq!(
+        extra.as_ref().map(|extra| extra.write.as_slice()),
+        Some(["/srv/output".to_owned()].as_slice())
+    );
+    assert_eq!(
+        extra.as_ref().map(|extra| extra.execute.as_slice()),
+        Some(["/opt/toolchains/bin".to_owned()].as_slice())
+    );
+}
+
+/// There is no working directory to resolve one against after the pivot.
+#[test]
+fn a_relative_path_in_a_grant_is_refused_not_resolved() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "policyExtra": { "read": ["./shared", "/fine"] } } })),
+        "must be an absolute path"
+    ));
+}
+
+/// A section that grants nothing is a mistake worth naming.
+#[test]
+fn an_empty_grant_is_refused_rather_than_silently_doing_nothing() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "policyExtra": {} } })),
+        "grants nothing"
+    ));
+}
+
+#[test]
+fn a_misspelled_grant_list_is_refused_like_any_other_setting() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "policyExtra": { "reed": ["/opt"] } } })),
+        "sandbox.policyExtra.reed is not a setting"
+    ));
+}
+
+#[test]
+fn no_environment_section_is_the_same_as_no_variables() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.env, None);
+}
+
+#[test]
+fn variables_named_in_configuration_are_read() {
+    let env = validate_config(&valid(json!({
+        "sandbox": { "env": { "CARGO_HOME": "/var/cache/cargo", "RUSTUP_HOME": "/opt/rustup" } },
+    })))
+    .expect("resolves")
+    .sandbox
+    .env;
+
+    let env = env.expect("an environment was configured");
+    assert_eq!(
+        env.get("CARGO_HOME").map(String::as_str),
+        Some("/var/cache/cargo")
+    );
+    assert_eq!(
+        env.get("RUSTUP_HOME").map(String::as_str),
+        Some("/opt/rustup")
+    );
+    assert_eq!(env.len(), 2);
+}
+
+/// The policy sets both, to paths it places.
+#[test]
+fn a_variable_the_policy_sets_itself_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "env": { "HOME": "/somewhere" } } })),
+        "must not set HOME"
+    ));
+}
+
+/// Shadowing it would authenticate the agent with whatever was set here.
+#[test]
+fn the_variable_carrying_the_credential_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "env": { "ANTHROPIC_API_KEY": "not-the-real-one" } } })),
+        "carries a provider credential"
+    ));
+}
+
+#[test]
+fn a_name_no_shell_would_accept_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "env": { "CARGO HOME": "/var/cache" } } })),
+        "is not a variable name"
+    ));
+}
+
+#[test]
+fn a_value_that_is_not_a_string_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "env": { "CARGO_HOME": 7 } } })),
+        "must be a string"
+    ));
+}
+
+#[test]
+fn an_empty_environment_is_refused_rather_than_silently_doing_nothing() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "env": {} } })),
+        "names nothing"
+    ));
+}
+
+#[test]
+fn directories_added_to_the_path_are_taken_as_absolute_paths() {
+    let path_extra = validate_config(&valid(json!({
+        "sandbox": { "pathExtra": ["/opt/toolchains/bin"] },
+    })))
+    .expect("resolves")
+    .sandbox
+    .path_extra;
+
+    assert_eq!(path_extra, Some(vec!["/opt/toolchains/bin".to_owned()]));
+}
+
+#[test]
+fn a_relative_directory_on_the_path_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "pathExtra": ["bin"] } })),
+        "must be an absolute path"
+    ));
+}
+
+#[test]
+fn the_egress_ports_default_to_https_alone() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.egress_ports, vec![443]);
+}
+
+#[test]
+fn configured_egress_ports_are_read_in_order() {
+    let ports = validate_config(&valid(json!({ "sandbox": { "egressPorts": [80, 443] } })))
+        .expect("resolves")
+        .sandbox
+        .egress_ports;
+
+    assert_eq!(ports, vec![80, 443]);
+}
+
+#[test]
+fn a_port_outside_the_socket_range_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egressPorts": [80, 70000] } })),
+        "not a port between 1 and 65535"
+    ));
+}
+
+#[test]
+fn an_empty_egress_list_is_refused_rather_than_silencing_the_network() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egressPorts": [] } })),
+        "names no port"
+    ));
+}
+
+#[test]
+fn the_host_address_is_shown_to_a_session_by_default() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert!(!config.sandbox.hide_host_address);
+}
+
+#[test]
+fn hiding_the_host_address_is_read_as_a_flag() {
+    let hidden = validate_config(&valid(json!({ "sandbox": { "hideHostAddress": true } })))
+        .expect("resolves")
+        .sandbox
+        .hide_host_address;
+
+    assert!(hidden);
+}
+
+#[test]
+fn an_absolute_rules_path_is_kept_and_absent_stays_absent() {
+    let with_rules = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+            },
+            "rulesPath": "/etc/errand/AGENTS.md",
+        },
+    })))
+    .expect("resolves");
+    assert_eq!(
+        with_rules.agent.rules_path,
+        Some("/etc/errand/AGENTS.md".to_owned())
+    );
+
+    let without = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(without.agent.rules_path, None);
+}
+
+#[test]
+fn a_relative_rules_path_is_refused_rather_than_resolved_against_the_daemons_cwd() {
+    // Resolving it would make the same configuration name a different file
+    // depending on where the daemon happened to be started from.
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+                },
+                "rulesPath": "AGENTS.md",
+            },
+        })),
+        "agent.rulesPath must be an absolute path, got AGENTS.md"
+    ));
+}
+
+#[test]
+fn a_rules_path_that_is_not_a_path_at_all_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+                },
+                "rulesPath": "",
+            },
+        })),
+        "agent.rulesPath must be an absolute path"
+    ));
+}
+
+/// Brokered by default: it is what keeps the provider credential out of a
+/// sandbox, and a lone `*` restricts no host, so what it costs is the audit
+/// and the port, not reach.
+#[test]
+fn egress_defaults_to_a_brokered_pass_through() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.egress.mode, EgressMode::Proxy);
+    assert_eq!(config.sandbox.egress.allow, vec!["*"]);
+}
+
+#[test]
+fn proxy_mode_with_a_hostname_allowlist_is_accepted_and_lower_cased() {
+    let egress = validate_config(&valid(json!({
+        "sandbox": {
+            "egress": {
+                "mode": "proxy",
+                "allow": ["GitHub.com", "*.githubusercontent.com"],
+                "allowInternal": false,
+            },
+        },
+    })))
+    .expect("resolves")
+    .sandbox
+    .egress;
+
+    assert_eq!(
+        egress.allow,
+        vec![
+            "github.com".to_owned(),
+            "*.githubusercontent.com".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn a_lone_star_catch_all_is_accepted_as_an_allowlist_entry() {
+    let egress = validate_config(&valid(json!({
+        "sandbox": { "egress": { "mode": "proxy", "allow": ["*"], "allowInternal": false } },
+    })))
+    .expect("resolves")
+    .sandbox
+    .egress;
+
+    assert_eq!(egress.allow, vec!["*".to_owned()]);
+}
+
+#[test]
+fn an_unknown_egress_mode_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egress": { "mode": "wideopen" } } })),
+        "sandbox.egress.mode must be one of open, proxy"
+    ));
+}
+
+#[test]
+fn a_malformed_allowlist_entry_is_refused_rather_than_handed_to_the_broker() {
+    // A broker told to permit "http://x" or "x/y" either permits nothing or
+    // more than was meant, so a non-hostname is a configuration error.
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egress": { "allow": ["http://evil.com/x"] } } })),
+        "is not a hostname"
+    ));
+}
+
+#[test]
+fn an_unknown_key_under_egress_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egress": { "mode": "proxy", "allowlist": [] } } })),
+        "sandbox.egress"
+    ));
+}
+
+#[test]
+fn provider_definitions_are_passed_through_and_their_shape_is_checked() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "meta",
+            "providers": {
+                "meta": {
+                    "credentialName": "META_API_KEY",
+                    "credential": "k",
+                    "baseUrl": "https://api.meta.example/v1",
+                    "kind": "anthropic",
+                    "models": [{ "id": "muse-spark-1.3-contributor", "reasoning": true }],
+                },
+            },
+        },
+    })))
+    .expect("resolves");
+
+    // The definition reaches the agent's configuration as written, kind included.
+    let meta = config
+        .agent
+        .providers
+        .get("meta")
+        .expect("the meta provider");
+    assert_eq!(meta.get("kind").and_then(Value::as_str), Some("anthropic"));
+    assert_eq!(
+        meta.get("models").and_then(Value::as_array).map(Vec::len),
+        Some(1)
+    );
+}
+
+#[test]
+fn a_provider_naming_no_known_wire_protocol_is_refused() {
+    for kind in [
+        json!("openai-completions"),
+        json!("anthropic-messages"),
+        json!(3),
+    ] {
+        let problems = problems_of(&valid(json!({
+            "agent": {
+                "provider": "meta",
+                "providers": {
+                    "meta": {
+                        "credential": "k",
+                        "baseUrl": "https://api.meta.example/v1",
+                        "kind": kind,
+                        "models": [{ "id": "muse-spark-1.3-contributor" }],
+                    },
+                },
+            },
+        })))
+        .join("\n");
+
+        assert!(
+            problems.contains("agent.providers.meta.kind must be one of: openai, anthropic"),
+            "{kind}: {problems}"
+        );
+    }
+}
+
+/// A configuration whose providers are `providers`, starting on `chat`.
+fn with_providers(providers: &Value) -> Value {
+    valid(json!({
+        "agent": { "provider": "chat", "providers": providers },
+    }))
+}
+
+#[test]
+fn a_provider_may_carry_images_for_the_agent_to_generate_through() {
+    let config = validate_config(&with_providers(&json!({
+        "chat": { "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] },
+        "pictures": {
+            "credential": "k2",
+            "baseUrl": "https://images.example/v1",
+            "images": { "model": "image" },
+        },
+    })))
+    .expect("resolves");
+
+    assert_eq!(
+        config.agent.providers["pictures"]["images"]["model"],
+        json!("image")
+    );
+}
+
+#[test]
+fn images_name_a_model_and_only_what_errand_reads() {
+    let problems = problems_of(&with_providers(&json!({
+        "chat": { "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] },
+        "a": { "credential": "k", "baseUrl": "https://a.example/v1", "images": { "models": ["x"], "modle": "y" } },
+        "b": { "credential": "k", "baseUrl": "https://b.example/v1", "images": "image" },
+    })))
+    .join("\n");
+
+    for wanted in [
+        "agent.providers.a.images.model is required and must be a non-empty string",
+        "agent.providers.a.images.models is not a setting",
+        "agent.providers.a.images.modle is not a setting",
+        "agent.providers.b.images must be an object naming a model",
+        "only one provider may carry images, and a, b do",
+    ] {
+        assert!(problems.contains(wanted), "{wanted}: {problems}");
+    }
+}
+
+#[test]
+fn images_need_an_openai_endpoint_errand_can_name() {
+    let problems = problems_of(&with_providers(&json!({
+        "chat": {
+            "credential": "k", "baseUrl": "https://chat.example", "kind": "anthropic",
+            "models": [{ "id": "m" }], "images": { "model": "image" },
+        },
+    })))
+    .join("\n");
+    assert!(
+        problems.contains("the Anthropic API has no images endpoint"),
+        "{problems}"
+    );
+
+    let problems = problems_of(&with_providers(&json!({
+        "chat": { "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] },
+        "plugged": { "extension": true, "credential": "k", "images": { "model": "image" } },
+    })))
+    .join("\n");
+    assert!(
+        problems.contains("a provider a plugin registers has none"),
+        "{problems}"
+    );
+
+    // kage knows these by name, whatever `kind` says, and none of them
+    // serves images.
+    for name in ["anthropic", "openai-responses"] {
+        let mut providers = json!({
+            "chat": { "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] },
+        });
+        providers[name] =
+            json!({ "credential": "k", "kind": "openai", "images": { "model": "image" } });
+        let problems = problems_of(&with_providers(&providers)).join("\n");
+        assert!(
+            problems.contains(&format!("cannot use kage's own {name} provider")),
+            "{name}: {problems}"
+        );
+    }
+}
+
+#[test]
+fn a_provider_definition_that_is_not_an_object_is_refused() {
+    let problems = problems_of(&valid(json!({
+        "agent": {
+            "provider": "p",
+            "providers": {
+                "p": { "credentialName": "K", "credential": "k" },
+                "meta": "https://api.meta.example/v1",
+            },
+        },
+    })))
+    .join("\n");
+
+    assert!(problems.contains("agent.providers.meta"));
+}
+
+/// The credential moved into the provider it belongs to. An operator meeting
+/// this has a working configuration in front of them, so the refusal names
+/// the block to write rather than calling the key unknown.
+#[test]
+fn a_credential_at_the_old_place_is_refused_with_the_new_one() {
+    let problems = problems_of(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "credentialName": "ANTHROPIC_API_KEY",
+            "credential": "secret",
+            "providers": { "anthropic": { "credential": "secret" } },
+        },
+    })));
+
+    let said = problems.join("\n");
+    assert!(
+        said.contains("agent.providers.anthropic.credential instead"),
+        "{said}"
+    );
+    assert!(
+        said.contains("agent.providers.anthropic.credentialName instead"),
+        "{said}"
+    );
+}
+
+/// A session starting on a provider nothing describes cannot reach a model,
+/// which is worth saying before a sandbox is built rather than after.
+#[test]
+fn a_starting_provider_nothing_describes_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "somewhere-else",
+                "providers": { "anthropic": { "credential": "secret" } },
+            },
+        })),
+        "agent.provider is somewhere-else but agent.providers describes only anthropic"
+    ));
+}
+
+/// A variable is picked for a provider that names none, since kage reads
+/// every key from the environment and registers nothing without one.
+#[test]
+fn a_provider_naming_no_variable_still_gets_one() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "pg-oc",
+            "providers": {
+                "pg-oc": { "credential": "a", "models": [{ "id": "free" }] },
+                "pg-zai": { "credential": "b" },
+            },
+        },
+    })))
+    .expect("a provider needs no named variable");
+
+    let vars = config.agent.credential_vars();
+    assert_eq!(
+        vars.get("pg-oc").map(String::as_str),
+        Some("ERRAND_PROVIDER_PG_OC_API_KEY")
+    );
+    assert_eq!(
+        vars.get("pg-zai").map(String::as_str),
+        Some("ERRAND_PROVIDER_PG_ZAI_API_KEY")
+    );
+}
+
+/// A named variable wins, so an operator who sets one gets exactly that.
+#[test]
+fn a_named_variable_is_left_as_the_operator_wrote_it() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "a" },
+                "meta": { "credential": "b" },
+            },
+        },
+    })))
+    .expect("the configuration resolves");
+
+    let vars = config.agent.credential_vars();
+    assert_eq!(
+        vars.get("anthropic").map(String::as_str),
+        Some("ANTHROPIC_API_KEY")
+    );
+    assert_eq!(
+        vars.get("meta").map(String::as_str),
+        Some("ERRAND_PROVIDER_META_API_KEY")
+    );
+}
+
+/// Two ids that differ only where a variable cannot differ still get separate
+/// variables, or one provider would read the other's key.
+#[test]
+fn ids_that_cannot_differ_in_a_variable_are_kept_apart() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "pg-oc",
+            "providers": {
+                "pg-oc": { "credential": "a" },
+                "pg.oc": { "credential": "b" },
+            },
+        },
+    })))
+    .expect("both providers describe themselves");
+
+    let vars = config.agent.credential_vars();
+    assert_ne!(vars.get("pg-oc"), vars.get("pg.oc"));
+}
+
+/// A picked variable cannot be shadowed through sandbox.env, which would
+/// authenticate the agent with whatever was set there.
+#[test]
+fn a_picked_variable_is_refused_in_sandbox_env() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "pg-oc",
+                "providers": { "pg-oc": { "credential": "a" } },
+            },
+            "sandbox": { "env": { "ERRAND_PROVIDER_PG_OC_API_KEY": "not-the-real-one" } },
+        })),
+        "sandbox.env must not set ERRAND_PROVIDER_PG_OC_API_KEY"
+    ));
+}
+
+/// A provider with no key gets no variable, so nothing is claimed on its
+/// behalf and kage's own default name still stands.
+#[test]
+fn a_provider_without_a_key_gets_no_variable() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "a" },
+                "free-models": { "extension": true, "models": [{ "id": "fast" }] },
+            },
+        },
+    })))
+    .expect("the configuration resolves");
+
+    assert!(!config.agent.credential_vars().contains_key("free-models"));
+}
+
+/// Every provider's variable is checked, not just the one a session starts on.
+#[test]
+fn a_shadowed_credential_variable_is_refused_for_any_provider() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "a" },
+                    "meta": { "credentialName": "META_API_KEY", "credential": "b" },
+                },
+            },
+            "sandbox": { "env": { "META_API_KEY": "not-the-real-one" } },
+        })),
+        "sandbox.env must not set META_API_KEY"
+    ));
+}
+
+/// The image model `!gen-image` asks for is taken as written: an alias, a
+/// level on the end and all, since what it names is settled when the command
+/// is used and a name nothing lists is refused there.
+#[test]
+fn an_image_model_is_taken_as_written_and_absent_stays_absent() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+            },
+            "imageGen": "image:max",
+        },
+    })))
+    .expect("an image model is accepted");
+
+    assert_eq!(config.agent.image_gen.as_deref(), Some("image:max"));
+    assert_eq!(
+        validate_config(&valid(json!({})))
+            .expect("a minimal file resolves")
+            .agent
+            .image_gen,
+        None
+    );
+}
+
+/// An image model that is not a string is a typo worth naming.
+#[test]
+fn an_image_model_that_is_not_a_string_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+                },
+                "imageGen": 7,
+            },
+        })),
+        "agent.imageGen"
+    ));
+}
+
+/// A provider a plugin registers needs no credential to start: the plugin
+/// carries its own, and errand does not reach it. The credential an entry
+/// does name is delivered whole, since a signing plugin cannot sign with a
+/// nonce.
+#[test]
+fn an_extension_provider_starts_without_a_credential() {
+    let resolved = validate_config(&valid(json!({
+        "agent": {
+            "provider": "free-models",
+            "model": "free-fast",
+            "providers": {
+                "free-models": {
+                    "extension": true,
+                    "models": [{ "id": "free-fast" }],
+                },
+            },
+        },
+    })));
+
+    let config = resolved.expect("an extension provider needs no credential");
+    assert_eq!(config.agent.provider, "free-models");
+    assert!(config.agent.is_extension_provider("free-models"));
+}
+
+/// A provider's `broker` switch is a boolean: anything else is a typo worth
+/// naming rather than a default silently taken.
+#[test]
+fn a_providers_broker_switch_must_be_a_boolean() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credential": "k", "broker": "no" },
+                },
+            },
+        })),
+        "agent.providers.anthropic.broker must be true or false"
+    ));
+}
+
+/// The pi-era extension list is answered with where the idea went.
+#[test]
+fn extensions_are_answered_with_plugins() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {},
+                "extensions": ["/home/somebody/.pi/extensions/free-models"],
+            },
+        })),
+        "agent.extensions is gone with pi"
+    ));
+}
+
+/// Each plugin names one absolute `.lua` file and the capabilities granted
+/// it; anything else is refused with the entry named.
+#[test]
+fn plugins_are_validated_one_entry_at_a_time() {
+    let cases: Vec<(&str, serde_json::Value, &str)> = vec![
+        (
+            "relative",
+            json!([{ "path": "plugins/x.lua" }]),
+            "must be an absolute path",
+        ),
+        (
+            "not lua",
+            json!([{ "path": "/home/somebody/plugins/x" }]),
+            "must name a .lua file",
+        ),
+        (
+            "no path",
+            json!([{ "capabilities": ["net"] }]),
+            "path is required",
+        ),
+        (
+            "bad shape",
+            json!(["/home/somebody/plugins/x.lua"]),
+            "must be an object with a path",
+        ),
+        (
+            "bad capabilities",
+            json!([{ "path": "/home/somebody/plugins/x.lua", "capabilities": [3] }]),
+            "not a capability name",
+        ),
+        (
+            "unknown key",
+            json!([{ "path": "/home/somebody/plugins/x.lua", "enabled": true }]),
+            "is not a setting",
+        ),
+    ];
+    for (case, plugins, problem) in cases {
+        assert!(
+            problems_contain(
+                &valid(json!({
+                    "agent": {
+                        "provider": "anthropic",
+                        "providers": {
+                            "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+                        },
+                        "plugins": plugins,
+                    },
+                })),
+                problem
+            ),
+            "{case}: expected {problem}"
+        );
+    }
+
+    let resolved = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret-value" },
+            },
+            "plugins": [
+                {
+                    "path": "/home/somebody/.config/kage/plugins/x.lua",
+                    "capabilities": ["env", "net"],
+                },
+                { "path": "/home/somebody/.config/kage/plugins/y.lua" },
+            ],
+        },
+    })))
+    .expect("well shaped plugins resolve");
+    assert_eq!(resolved.agent.plugins.len(), 2);
+    assert_eq!(resolved.agent.plugins[0].capabilities, ["env", "net"]);
+    assert!(resolved.agent.plugins[1].capabilities.is_empty());
+}
+
+/// An ordinary starting provider still must carry a credential; the relaxation
+/// is only for the extension case.
+#[test]
+fn an_ordinary_starting_provider_still_needs_its_credential() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "bare",
+                "providers": { "bare": { "baseUrl": "https://api.example/v1" } },
+            },
+        })),
+        "agent.providers.bare.credential is required"
+    ));
+}
+
+/// Asking a provider needs somewhere to ask and a key to ask with, and a
+/// misshapen `discover` or `usage` is refused rather than quietly skipped.
+#[test]
+fn asking_a_provider_needs_a_base_url_and_a_key() {
+    let raw = valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credential": "secret-value" },
+                "keyless": { "baseUrl": "https://keyless.example/v1", "usage": "gateway" },
+                "nowhere": { "credential": "k", "usage": "gateway", "discover": true },
+                "zai": { "credential": "k", "usage": "zai" },
+                "odd": { "baseUrl": "https://odd.example/v1", "credential": "k", "discover": 1 },
+            },
+        },
+    }));
+    let problems = problems_of(&raw);
+
+    assert!(
+        problems
+            .contains(&"agent.providers.keyless.usage needs a credential to ask with".to_owned())
+    );
+    assert!(
+        problems.contains(&"agent.providers.nowhere.usage needs a baseUrl to ask under".to_owned())
+    );
+    assert!(
+        problems
+            .contains(&"agent.providers.nowhere.discover needs a baseUrl to ask under".to_owned())
+    );
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.starts_with("agent.providers.odd.discover"))
+    );
+    assert!(
+        !problems
+            .iter()
+            .any(|problem| problem.contains("providers.zai"))
+    );
+}
+
+/// Asking for work from GitHub names who may, and never everybody.
+#[test]
+fn a_github_trigger_names_who_may_ask_and_never_everybody() {
+    let github = |trigger: Value| {
+        valid(json!({ "github": {
+            "token": "ghp", "userName": "bot", "userEmail": "bot@example.com",
+            "trigger": trigger,
+        } }))
+    };
+
+    let config = validate_config(&github(json!({ "allowedUsers": ["QaidVoid"] }))).expect("valid");
+    assert_eq!(
+        config
+            .github
+            .and_then(|github| github.trigger)
+            .map(|trigger| trigger.allowed_users),
+        Some(vec!["QaidVoid".to_owned()])
+    );
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": [] })),
+        "must name the GitHub logins"
+    ));
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": ["*"] })),
+        "cannot be \"*\""
+    ));
+    let trigger = |extra: Value| {
+        validate_config(&github(extra))
+            .expect("valid")
+            .github
+            .and_then(|github| github.trigger)
+            .expect("a trigger")
+    };
+    let both = trigger(json!({ "allowedUsers": ["a"] }));
+    assert!(both.on_mention && both.on_assign && both.repositories.is_empty());
+    let narrowed = trigger(json!({
+        "allowedUsers": ["a"],
+        "on": ["assign"],
+        "repositories": ["QaidVoid/errand", "pkgforge-dev/*"],
+    }));
+    assert!(!narrowed.on_mention && narrowed.on_assign);
+    assert_eq!(narrowed.repositories, ["QaidVoid/errand", "pkgforge-dev/*"]);
+
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": ["a"], "on": ["assigned"] })),
+        "`mention` or `assign`"
+    ));
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": ["a"], "on": [] })),
+        "names nothing"
+    ));
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": ["a"], "repositories": ["errand"] })),
+        "not `owner/repo`"
+    ));
+    assert!(problems_contain(
+        &github(json!({ "allowedUsers": ["a"], "events": [] })),
+        "github.trigger"
+    ));
+}
+
+/// A denied command pattern is read as written, so the operator's list is
+/// what the agent is given to refuse.
+#[test]
+fn denied_commands_are_read_into_the_configuration() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": { "anthropic": { "credential": "a" } },
+            "deny": ["rm -rf *", "git push --force*"],
+        },
+    })))
+    .expect("the configuration resolves");
+
+    assert_eq!(config.agent.deny, ["rm -rf *", "git push --force*"]);
+}
+
+/// A group that is closed early is caught too: a stray `]` leaves the count
+/// below zero, and a pattern the agent cannot compile is one it would refuse
+/// every call against.
+#[test]
+fn a_deny_pattern_with_unbalanced_grouping_is_refused() {
+    for case in ["rm -rf [unclosed", "rm -rf ]stray"] {
+        assert!(
+            problems_contain(
+                &valid(json!({
+                    "agent": {
+                        "provider": "anthropic",
+                        "providers": { "anthropic": { "credential": "a" } },
+                        "deny": [case],
+                    },
+                })),
+                "is not a usable pattern"
+            ),
+            "{case} was accepted"
+        );
+    }
+}
+
+/// An empty pattern would refuse every command, which is not what an empty
+/// entry means, and a list is what the key takes.
+#[test]
+fn a_deny_list_must_be_a_list_of_usable_patterns() {
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": { "anthropic": { "credential": "a" } },
+                "deny": [""],
+            },
+        })),
+        "empty pattern"
+    ));
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": { "anthropic": { "credential": "a" } },
+                "deny": "rm -rf *",
+            },
+        })),
+        "agent.deny must be a list"
+    ));
+}
+
+/// A refused tool is named as the agent names it, and an empty list is no
+/// list at all.
+#[test]
+fn denied_tools_are_read_into_the_configuration() {
+    let config = validate_config(&valid(json!({
+        "agent": {
+            "provider": "anthropic",
+            "providers": { "anthropic": { "credential": "a" } },
+            "deniedTools": ["web_search", "write"],
+        },
+    })))
+    .expect("the configuration resolves");
+
+    assert_eq!(config.agent.denied_tools, ["web_search", "write"]);
+    assert!(
+        validate_config(&valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": { "anthropic": { "credential": "a" } },
+            },
+        })))
+        .expect("the configuration resolves")
+        .agent
+        .denied_tools
+        .is_empty()
+    );
+    assert!(problems_contain(
+        &valid(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": { "anthropic": { "credential": "a" } },
+                "deniedTools": [""],
+            },
+        })),
+        "does not name a tool"
+    ));
+}
+
+/// A refused command is not refused by naming it alone: it must actually be
+/// matched. The gate walks the whole command line, so a pattern ending in a
+/// star covers the form that is typed.
+#[test]
+fn a_denied_command_reaches_the_agent_as_a_rule_it_can_match() {
+    use crate::sandbox::agent_config::kage_config;
+    use crate::sandbox::backend::Denials;
+
+    let config = kage_config(
+        &serde_json::Map::new(),
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &[],
+        &Denials {
+            commands: vec!["rm -rf *".to_owned()],
+            tools: vec!["web_search".to_owned()],
+        },
+    );
+
+    // The agent reads `deny` and `allow` as lists; a bare string is a parse
+    // error that ends the launch.
+    assert!(config.contains(r#"deny = ["rm -rf *"]"#), "{config}");
+    assert!(
+        config.contains("[permissions.tools.web_search]\ndefault = \"deny\""),
+        "{config}"
+    );
+}

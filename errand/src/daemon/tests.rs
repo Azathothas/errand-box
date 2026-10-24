@@ -1,0 +1,2233 @@
+//! Daemon wiring tests, ported from `daemon_test.ts`.
+
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use tokio::sync::watch;
+
+use super::{
+    Daemon, DaemonOptions, DrawImage, SlashCommand, StartError, create_sandbox, inert_settings,
+    render_startup_report,
+};
+use crate::agent::client::AgentProcess;
+use crate::chat::inbound::{InboundDecision, RawMessage};
+use crate::config::live::LiveConfig;
+use crate::config::schema::Config;
+use crate::config::schema::SandboxBackend;
+use crate::config::validate::validate_config;
+use crate::log::{LogFields, LogLevel, Logger};
+use crate::memory::store::{MemoryStore, Scope};
+use crate::provider::discover::Catalog;
+use crate::provider::images::{Drawn, Endpoint as ImageEndpoint};
+use crate::provider::models::AvailableModel;
+use crate::sandbox::Backend;
+use crate::sandbox::backend::{
+    CapabilityReport, SandboxLaunch, SandboxLaunchError, SandboxUnavailableError,
+};
+use crate::sandbox::paths;
+use crate::session::event::EndReason;
+use crate::session::event::SessionEvent;
+use crate::session::manager::{CreatedThread, FoundView, MadeThread, SandboxPool, ThreadFactory};
+use crate::session::session::IncomingMessage;
+use crate::session::session::RunningBox;
+use crate::session::views::SessionView;
+use crate::session::views::ViewError;
+
+const OWNER: &str = "100000000000000001";
+
+fn silent() -> Logger {
+    Logger::new(LogFields::new(), Arc::new(|_level, _line| {}))
+}
+
+/// An agent that answers its readiness call and otherwise says nothing.
+struct QuietAgent {
+    queue: Mutex<std::collections::VecDeque<u8>>,
+    closed: Mutex<bool>,
+    exit: watch::Receiver<Option<i32>>,
+}
+
+#[derive(Clone)]
+struct QuietControls {
+    fake: Arc<QuietAgent>,
+    sender: Arc<Mutex<Option<watch::Sender<Option<i32>>>>>,
+}
+
+impl QuietAgent {
+    fn new() -> (Arc<Self>, QuietControls) {
+        let (exit_sender, exit_receiver) = watch::channel(None);
+        let fake = Arc::new(Self {
+            queue: Mutex::new(std::collections::VecDeque::new()),
+            closed: Mutex::new(false),
+            exit: exit_receiver.clone(),
+        });
+        (
+            Arc::clone(&fake),
+            QuietControls {
+                fake,
+                sender: Arc::new(Mutex::new(Some(exit_sender))),
+            },
+        )
+    }
+}
+
+impl QuietControls {
+    fn end(&self) {
+        {
+            let mut closed = self.fake.closed.lock().unwrap();
+            if *closed {
+                return;
+            }
+            *closed = true;
+        }
+        self.fake.queue.lock().unwrap().clear();
+        if let Some(sender) = self.sender.lock().unwrap().take() {
+            let _ = sender.send(Some(0));
+        }
+    }
+}
+
+impl AgentProcess for QuietAgent {
+    fn write(&self, bytes: &[u8]) -> std::io::Result<()> {
+        let parsed: serde_json::Value = serde_json::from_slice(bytes).expect("a written command");
+        let id = parsed.get("id").and_then(Value::as_u64);
+        let method = parsed
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        if let Some(id) = id {
+            // Answers the daemon's requests the way the agent would. Answers
+            // the agent sends itself carry no method and are left alone.
+            let result = match method.as_str() {
+                "initialize" => Some(json!({ "protocolVersion": 1 })),
+                "session/new" => Some(json!({ "sessionId": "s-1" })),
+                "session/resume" | "session/load" => Some(json!({
+                    "sessionId": parsed
+                        .get("params")
+                        .and_then(|params| params.get("sessionId"))
+                        .cloned()
+                        .unwrap_or_else(|| json!("s-1")),
+                })),
+                "session/set_config_option" | "_kage/session/compact" => Some(json!({})),
+                _ if method.is_empty() => None,
+                _ => Some(json!({})),
+            };
+            if let Some(result) = result {
+                self.queue.lock().unwrap().extend(
+                    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+                        .to_string()
+                        .into_bytes(),
+                );
+                self.queue.lock().unwrap().push_back(b'\n');
+            }
+        }
+        Ok(())
+    }
+
+    fn read_stdout<'a>(
+        &'a self,
+        buf: &'a mut [u8],
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send + 'a>> {
+        Box::pin(async move {
+            loop {
+                {
+                    let mut queue = self.queue.lock().unwrap();
+                    let count = queue.len().min(buf.len());
+                    if count > 0 {
+                        for (index, byte) in queue.drain(..count).enumerate() {
+                            buf[index] = byte;
+                        }
+                        return Ok(count);
+                    }
+                    if *self.closed.lock().unwrap() {
+                        return Ok(0);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+    }
+
+    fn read_stderr<'a>(
+        &'a self,
+        _buf: &'a mut [u8],
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send + 'a>> {
+        Box::pin(async { Ok(0) })
+    }
+
+    fn exited(&self) -> Pin<Box<dyn Future<Output = Option<i32>> + Send>> {
+        let mut receiver = self.exit.clone();
+        Box::pin(async move {
+            let _ = receiver.changed().await;
+            *receiver.borrow()
+        })
+    }
+}
+
+struct FakeSandbox {
+    report: Mutex<Option<CapabilityReport>>,
+    probe_fails: Mutex<bool>,
+    launched: Mutex<Vec<SandboxLaunch>>,
+    agents: Mutex<Vec<QuietControls>>,
+}
+
+impl FakeSandbox {
+    fn new(report: Option<CapabilityReport>) -> Arc<Self> {
+        Arc::new(Self {
+            report: Mutex::new(report),
+            probe_fails: Mutex::new(false),
+            launched: Mutex::new(Vec::new()),
+            agents: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+impl SandboxPool for FakeSandbox {
+    fn probe(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<CapabilityReport, SandboxUnavailableError>> + Send + '_>>
+    {
+        if *self.probe_fails.lock().unwrap() {
+            return Box::pin(async move {
+                Err(SandboxUnavailableError {
+                    backend: SandboxBackend::Bailey,
+                    reasons: vec!["broken".to_owned()],
+                })
+            });
+        }
+        let report = self
+            .report
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or(CapabilityReport {
+                backend: SandboxBackend::Bailey,
+                gaps: Vec::new(),
+                notes: Vec::new(),
+            });
+        Box::pin(async move { Ok(report) })
+    }
+
+    fn launch(
+        self: Arc<Self>,
+        launch: SandboxLaunch,
+    ) -> Pin<Box<dyn Future<Output = Result<RunningBox, SandboxLaunchError>> + Send>> {
+        Box::pin(async move {
+            let (agent, controls) = QuietAgent::new();
+            self.agents.lock().unwrap().push(controls.clone());
+            self.launched.lock().unwrap().push(launch.clone());
+            let project_path = launch.project_path.clone();
+            Ok(RunningBox {
+                process: agent,
+                to_host_path: Arc::new(move |path: &str| {
+                    paths::host_path_under("/workspace", &project_path, path)
+                }),
+                stop: Arc::new(move || {
+                    controls.end();
+                    Box::pin(async { false }) as Pin<Box<dyn Future<Output = bool> + Send>>
+                }),
+            })
+        })
+    }
+
+    fn list_orphans(&self) -> Pin<Box<dyn Future<Output = Vec<String>> + Send + '_>> {
+        Box::pin(async { Vec::new() })
+    }
+
+    fn remove_orphans<'a>(
+        &'a self,
+        _names: &'a [String],
+    ) -> Pin<Box<dyn Future<Output = usize> + Send + 'a>> {
+        Box::pin(async { 0 })
+    }
+}
+
+/// A thread factory that answers silently, recording what it made.
+struct FakeThreads {
+    created: Mutex<Vec<String>>,
+    closed: Arc<Mutex<Vec<EndReason>>>,
+    next: Mutex<u32>,
+}
+
+impl ThreadFactory for FakeThreads {
+    fn create(self: Arc<Self>, _message: IncomingMessage, name: String) -> MadeThread {
+        Box::pin(async move {
+            self.created.lock().unwrap().push(name);
+            let id = format!("thread-{}", *self.next.lock().unwrap());
+            *self.next.lock().unwrap() += 1;
+            Ok(CreatedThread {
+                id,
+                view: self.quiet_view(),
+            })
+        })
+    }
+
+    fn open(self: Arc<Self>, name: String, _opener: String) -> MadeThread {
+        Box::pin(async move {
+            self.created.lock().unwrap().push(name);
+            let id = format!("thread-{}", *self.next.lock().unwrap());
+            *self.next.lock().unwrap() += 1;
+            Ok(CreatedThread {
+                id,
+                view: self.quiet_view(),
+            })
+        })
+    }
+
+    fn port_for(self: Arc<Self>, _thread_id: String) -> FoundView {
+        Box::pin(async move {
+            Some(Arc::new(QuietView {
+                closed: Arc::clone(&self.closed),
+            }) as Arc<dyn SessionView>)
+        })
+    }
+
+    fn release(&self, _thread_id: &str) {}
+}
+
+impl FakeThreads {
+    fn quiet_view(&self) -> Arc<QuietView> {
+        Arc::new(QuietView {
+            closed: Arc::clone(&self.closed),
+        })
+    }
+}
+
+/// A view that records only that its session ended.
+struct QuietView {
+    closed: Arc<Mutex<Vec<EndReason>>>,
+}
+
+impl SessionView for QuietView {
+    fn observe<'a>(
+        &'a self,
+        event: &'a SessionEvent,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ViewError>> + Send + 'a>> {
+        Box::pin(async move {
+            if let SessionEvent::Close { reason } = event {
+                self.closed.lock().unwrap().push(*reason);
+            }
+            Ok(())
+        })
+    }
+}
+
+fn config_with(overrides: &serde_json::Value) -> Config {
+    let mut base = json!({
+        "chat": {
+            "token": "a.token.value",
+            "channelId": "chan",
+            "allowedUserIds": [OWNER],
+        },
+        "agent": {
+            "provider": "anthropic",
+            "providers": {
+                "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret" },
+            },
+        },
+        "projectRoot": "/tmp/errand-projects",
+        "stateDir": "/tmp/errand-state",
+    });
+    if let Some(overrides) = overrides.as_object() {
+        for (key, value) in overrides {
+            base[key.as_str()] = value.clone();
+        }
+    }
+    validate_config(&base).expect("the test configuration is accepted")
+}
+
+fn raw(content: &str) -> RawMessage {
+    RawMessage {
+        id: "m1".to_owned(),
+        author_id: OWNER.to_owned(),
+        author_name: Some("amelia".to_owned()),
+        author_is_bot: false,
+        channel_id: "chan".to_owned(),
+        parent_channel_id: None,
+        content: content.to_owned(),
+        attachments: Vec::new(),
+    }
+}
+
+fn raw_with(content: &str, id: &str, author_id: &str) -> RawMessage {
+    let mut sent = raw(content);
+    sent.id = id.to_owned();
+    sent.author_id = author_id.to_owned();
+    sent
+}
+
+struct Harness {
+    daemon: Daemon,
+    threads: Arc<FakeThreads>,
+    sandbox: Arc<FakeSandbox>,
+    replies: Arc<Mutex<Vec<(String, String)>>>,
+    /// Files posted to the channel: the name, the bytes, and the caption.
+    files: PostedFiles,
+    lines: Arc<Mutex<Vec<(LogLevel, String)>>>,
+    /// The configuration in force, so a test can change it the way a change
+    /// to the file does.
+    config: LiveConfig,
+    _root: tempfile::TempDir,
+}
+
+impl Harness {
+    /// Everything the daemon answered, run together.
+    fn said(&self) -> String {
+        self.replies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, text)| text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Where each answer was aimed, in the order they were given.
+    fn replied_in(&self) -> Vec<String> {
+        self.replies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(channel, _)| channel.clone())
+            .collect()
+    }
+}
+
+struct DaemonCase {
+    settings: Option<serde_json::Value>,
+    power_off: Option<super::PowerOff>,
+    describe_usage: Option<super::DescribeUsage>,
+    draw_image: Option<DrawImage>,
+    refresh_models: Option<super::RefreshModels>,
+    report: Option<CapabilityReport>,
+    start: bool,
+    memory: Option<Arc<MemoryStore>>,
+    catalog: Option<Catalog>,
+}
+
+impl Default for DaemonCase {
+    fn default() -> Self {
+        Self {
+            settings: None,
+            power_off: None,
+            describe_usage: None,
+            draw_image: None,
+            refresh_models: None,
+            report: None,
+            start: true,
+            memory: None,
+            catalog: None,
+        }
+    }
+}
+
+async fn with_daemon(
+    case: DaemonCase,
+    run: impl FnOnce(&Harness) -> Pin<Box<dyn Future<Output = ()> + '_>>,
+) {
+    let root = tempfile::tempdir().expect("a temp directory");
+    let mut settings = json!({
+        "projectRoot": root.path().join("projects").display().to_string(),
+        "stateDir": root.path().join("state").display().to_string(),
+    });
+    if let Some(overrides) = case.settings.as_ref().and_then(|value| value.as_object()) {
+        for (key, value) in overrides {
+            settings[key.as_str()] = value.clone();
+        }
+    }
+    let config = config_with(&settings);
+    let threads = Arc::new(FakeThreads {
+        created: Mutex::new(Vec::new()),
+        closed: Arc::new(Mutex::new(Vec::new())),
+        next: Mutex::new(1),
+    });
+    let sandbox = FakeSandbox::new(case.report.clone());
+    let replies = Arc::new(Mutex::new(Vec::new()));
+    let files = Arc::new(Mutex::new(Vec::new()));
+    let lines = Arc::new(Mutex::new(Vec::new()));
+
+    let config = LiveConfig::new(config);
+    let daemon = Daemon::new(DaemonOptions {
+        config: config.clone(),
+        sandbox: Arc::clone(&sandbox) as Arc<dyn SandboxPool>,
+        threads: Arc::clone(&threads) as Arc<dyn ThreadFactory>,
+        describe_images: None,
+        log: {
+            let lines = Arc::clone(&lines);
+            Logger::new(
+                LogFields::new(),
+                Arc::new(move |level, line| {
+                    lines.lock().unwrap().push((level, line.to_owned()));
+                }),
+            )
+        },
+        reply_in_channel: {
+            let replies = Arc::clone(&replies);
+            Arc::new(move |message: IncomingMessage, text: String| {
+                let replies = Arc::clone(&replies);
+                Box::pin(async move { replies.lock().unwrap().push((message.channel_id, text)) })
+            })
+        },
+        reply_with_file: {
+            let files = Arc::clone(&files);
+            Arc::new(
+                move |_message: IncomingMessage, name: String, bytes: Vec<u8>, caption: String| {
+                    let files = Arc::clone(&files);
+                    Box::pin(async move {
+                        files.lock().unwrap().push((name, bytes, caption));
+                    })
+                },
+            )
+        },
+        draw_image: case.draw_image.clone(),
+        memory: case.memory.clone(),
+        power_off: case.power_off.clone(),
+        describe_usage: case.describe_usage.clone(),
+        refresh_models: case.refresh_models.clone(),
+        public_url: None,
+        catalog: case.catalog.clone().unwrap_or_default(),
+        delegate_base_url: None,
+        operator_ids: None,
+        unavailable: None,
+    });
+
+    let harness = Harness {
+        daemon,
+        threads,
+        sandbox,
+        replies,
+        files,
+        lines,
+        config: config.clone(),
+        _root: root,
+    };
+
+    if case.start {
+        harness.daemon.start(None).await.expect("the daemon starts");
+    }
+
+    run(&harness).await;
+
+    harness.daemon.shutdown().await;
+}
+
+fn created(threads: &FakeThreads) -> Vec<String> {
+    threads.created.lock().unwrap().clone()
+}
+
+#[tokio::test]
+async fn starting_reports_the_configuration_with_no_secret_in_it() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            let logged = harness
+                .lines
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, line)| line.clone())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert!(harness.daemon.is_accepting());
+            assert!(logged.contains("effective configuration"));
+            assert!(!logged.contains("a.token.value"));
+            assert!(logged.contains("[redacted]"));
+        })
+    })
+    .await;
+}
+
+/// A crashed daemon must not leave agents running against a project.
+#[tokio::test]
+async fn nothing_is_acted_on_before_startup_has_finished() {
+    with_daemon(
+        DaemonCase {
+            start: false,
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("demo: go"), InboundDecision::Start)
+                    .await;
+
+                assert!(created(&harness.threads).is_empty());
+                assert_eq!(
+                    harness
+                        .daemon
+                        .run_command(&SlashCommand {
+                            thread_id: Some("thread-1".to_owned()),
+                            user_id: OWNER.to_owned(),
+                            user_name: "amelia".to_owned(),
+                            content: "!status".to_owned(),
+                        })
+                        .await,
+                    "the daemon is still starting up"
+                );
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_message_in_the_channel_starts_a_session_in_a_thread() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: fix the parser"), InboundDecision::Start)
+                .await;
+
+            assert_eq!(created(&harness.threads), ["demo: fix the parser"]);
+            assert_eq!(harness.daemon.sessions().sessions().len(), 1);
+        })
+    })
+    .await;
+}
+
+/// The channel is where people talk; an aside there is not work to start.
+#[tokio::test]
+async fn an_aside_in_the_channel_starts_nothing_and_says_nothing() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!!! anyone around?"), InboundDecision::Start)
+                .await;
+
+            assert!(created(&harness.threads).is_empty());
+            assert!(harness.replies.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// Opening a thread and a sandbox to print a list is not an answer.
+#[tokio::test]
+async fn help_in_the_channel_is_answered_without_starting_anything() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!help"), InboundDecision::Start)
+                .await;
+
+            assert!(created(&harness.threads).is_empty());
+            assert!(harness.replies.lock().unwrap()[0].1.contains("!steer"));
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_command_needing_a_session_is_left_alone_in_the_channel() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!ls src"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .handle(
+                    raw_with("!somebodyelses thing", "m2", OWNER),
+                    InboundDecision::Start,
+                )
+                .await;
+
+            assert!(created(&harness.threads).is_empty());
+            assert!(harness.replies.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// What a file posted to the channel is, as a test reads it: its name, its
+/// bytes, and its caption.
+type PostedFiles = Arc<Mutex<Vec<(String, Vec<u8>, String)>>>;
+
+/// What a draw was asked for, and the drawer that answers it.
+type Drawing = (Arc<Mutex<Vec<(String, String)>>>, DrawImage);
+
+/// A PNG's signature, so a posted picture is bytes a channel shows.
+const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
+
+/// Draws a fixed picture, recording what it was asked for.
+fn drawing() -> Drawing {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&asked);
+    let draw: DrawImage = Arc::new(move |endpoint: ImageEndpoint, prompt: String| {
+        seen.lock().unwrap().push((endpoint.model.clone(), prompt));
+        Box::pin(async move {
+            Ok(Drawn {
+                bytes: PNG.to_vec(),
+                revised_prompt: None,
+            }) as Result<Drawn, String>
+        }) as Pin<Box<dyn Future<Output = Result<Drawn, String>> + Send>>
+    });
+    (asked, draw)
+}
+
+/// An image generation is drawn, not started: one request to the provider's
+/// images endpoint, and the bytes posted to the channel as an upload.
+fn image_case(image_gen: &str, draw: Option<DrawImage>) -> DaemonCase {
+    DaemonCase {
+        settings: Some(json!({
+            "agent": {
+                "provider": "anthropic",
+                "providers": {
+                    "anthropic": { "credentialName": "ANTHROPIC_API_KEY", "credential": "secret" },
+                    "ajamxhacker": {
+                        "credentialName": "AJAM_KEY",
+                        "credential": "other",
+                        "baseUrl": "https://images.example/v1",
+                    },
+                },
+                "imageGen": image_gen,
+            },
+        })),
+        draw_image: draw,
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn an_image_generation_in_the_channel_draws_and_posts_it() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic:max", Some(draw)), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!gen-image a lighthouse"), InboundDecision::Start)
+                .await;
+
+            // No thread and no sandbox: a picture is one call.
+            assert!(created(&harness.threads).is_empty());
+            assert!(harness.sandbox.launched.lock().unwrap().is_empty());
+
+            assert_eq!(
+                asked.lock().unwrap().as_slice(),
+                [("pic:max".to_owned(), "a lighthouse".to_owned())]
+            );
+            let files = harness.files.lock().unwrap();
+            let (name, bytes, caption) = files.first().expect("a picture was posted");
+            assert_eq!(name, "image.png");
+            assert_eq!(bytes, PNG);
+            assert!(caption.contains("pic:max"), "{caption}");
+            assert!(harness.replies.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// An effort asked for in the channel reaches the request too, as part of the
+/// model id.
+#[tokio::test]
+async fn an_image_generation_in_the_channel_passes_the_effort_it_was_asked_for() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic", Some(draw)), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(
+                    raw("!gen-image --effort xhigh a lighthouse"),
+                    InboundDecision::Start,
+                )
+                .await;
+
+            assert_eq!(
+                asked.lock().unwrap().as_slice(),
+                [("pic:xhigh".to_owned(), "a lighthouse".to_owned())]
+            );
+            assert_eq!(harness.files.lock().unwrap().len(), 1);
+        })
+    })
+    .await;
+}
+
+/// An effort nothing would understand is refused in the channel it was asked
+/// in, rather than drawn at the default.
+#[tokio::test]
+async fn an_unknown_effort_in_the_channel_is_refused() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic", Some(draw)), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(
+                    raw("!gen-image --effort extreme a lighthouse"),
+                    InboundDecision::Start,
+                )
+                .await;
+
+            assert!(
+                harness.said().contains("is not an effort"),
+                "{}",
+                harness.said()
+            );
+            assert!(asked.lock().unwrap().is_empty(), "nothing is drawn");
+            assert!(harness.files.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// A slash command's effort arrives as the same flag, and lands the same way.
+#[tokio::test]
+async fn a_slash_image_generation_passes_its_effort() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic", Some(draw)), |harness| {
+        Box::pin(async move {
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: None,
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!gen-image --effort low a lighthouse".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("the picture is in the channel"), "{answer}");
+            assert_eq!(
+                asked.lock().unwrap().as_slice(),
+                [("pic:low".to_owned(), "a lighthouse".to_owned())]
+            );
+        })
+    })
+    .await;
+}
+
+/// Nothing is configured to draw with, and the command says so rather than
+/// drawing with whatever the provider defaults to.
+#[tokio::test]
+async fn an_image_generation_in_the_channel_without_a_configured_model_says_so() {
+    let (asked, draw) = drawing();
+    with_daemon(
+        DaemonCase {
+            draw_image: Some(draw),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!gen-image a lighthouse"), InboundDecision::Start)
+                    .await;
+
+                assert!(created(&harness.threads).is_empty());
+                assert!(harness.said().contains("no image model is configured"));
+                assert!(asked.lock().unwrap().is_empty(), "nothing is drawn");
+                assert!(harness.files.lock().unwrap().is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+/// A provider with nowhere to send the call is refused before anything is
+/// attempted against an empty URL.
+#[tokio::test]
+async fn an_image_generation_on_a_provider_without_an_endpoint_is_refused() {
+    let (asked, draw) = drawing();
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({
+                "agent": {
+                    "provider": "anthropic",
+                    "providers": {
+                        "anthropic": { "credential": "secret" },
+                        "pictures": { "credential": "k" },
+                    },
+                    "imageGen": "pictures/pic",
+                },
+            })),
+            draw_image: Some(draw),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!gen-image a lighthouse"), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("no endpoint is configured"));
+                assert!(asked.lock().unwrap().is_empty(), "nothing is drawn");
+            })
+        },
+    )
+    .await;
+}
+
+/// A host that cannot draw says so rather than failing silently.
+#[tokio::test]
+async fn an_image_generation_on_a_host_that_cannot_draw_says_so() {
+    with_daemon(image_case("ajamxhacker/pic", None), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!gen-image a lighthouse"), InboundDecision::Start)
+                .await;
+
+            assert!(harness.said().contains("no way to draw"));
+            assert!(harness.files.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// A server that refuses is reported in the channel it was asked in, in its
+/// own words.
+#[tokio::test]
+async fn a_refusal_to_draw_is_said_in_the_channel_where_it_was_asked() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({
+                "agent": {
+                    "provider": "pictures",
+                    "providers": {
+                        "pictures": {
+                            "credential": "k",
+                            "baseUrl": "https://images.example/v1",
+                        },
+                    },
+                    "imageGen": "pic",
+                },
+            })),
+            draw_image: Some(Arc::new(|_: ImageEndpoint, _: String| {
+                Box::pin(async move {
+                    Err("pictures refused to draw it: no credit left".to_owned())
+                        as Result<Drawn, String>
+                }) as Pin<Box<dyn Future<Output = Result<Drawn, String>> + Send>>
+            })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!gen-image a lighthouse"), InboundDecision::Start)
+                    .await;
+
+                assert!(
+                    harness.said().contains("no credit left"),
+                    "{}",
+                    harness.said()
+                );
+                assert!(harness.files.lock().unwrap().is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_refusal_to_start_is_said_in_the_channel_where_it_was_asked() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: first"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .handle(
+                    raw_with("demo: second", "m2", OWNER),
+                    InboundDecision::Start,
+                )
+                .await;
+
+            assert!(
+                harness.replies.lock().unwrap()[0]
+                    .1
+                    .contains("already has a live session")
+            );
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_message_in_a_thread_reaches_its_session() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+
+            let mut sent = raw("carry on");
+            sent.id = "m2".to_owned();
+            sent.channel_id = "thread-1".to_owned();
+            sent.parent_channel_id = Some("chan".to_owned());
+            harness
+                .daemon
+                .handle(
+                    sent,
+                    InboundDecision::Thread {
+                        thread_id: "thread-1".to_owned(),
+                    },
+                )
+                .await;
+
+            assert!(harness.replies.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+/// The agent's history outlives the sandbox, so a restart does not end it.
+#[tokio::test]
+async fn a_message_in_a_sleeping_thread_wakes_the_session() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .sessions()
+                .end_thread("thread-1", EndReason::Idle)
+                .await;
+            assert_eq!(harness.daemon.sessions().sessions().len(), 0);
+
+            harness
+                .daemon
+                .handle(
+                    raw_with("carry on", "m2", OWNER),
+                    InboundDecision::Thread {
+                        thread_id: "thread-1".to_owned(),
+                    },
+                )
+                .await;
+
+            assert_eq!(harness.daemon.sessions().sessions().len(), 1);
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_message_in_a_thread_that_is_over_says_where_to_start_a_new_one() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .sessions()
+                .end_thread("thread-1", EndReason::Stopped)
+                .await;
+
+            harness
+                .daemon
+                .handle(
+                    raw_with("hello?", "m2", OWNER),
+                    InboundDecision::Thread {
+                        thread_id: "thread-1".to_owned(),
+                    },
+                )
+                .await;
+
+            assert!(
+                harness.replies.lock().unwrap()[0]
+                    .1
+                    .contains("post in the channel to start a new one")
+            );
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_thread_archived_from_outside_ends_its_session() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+
+            harness.daemon.thread_closed("thread-1").await;
+
+            assert_eq!(harness.daemon.sessions().sessions().len(), 0);
+        })
+    })
+    .await;
+}
+
+/// Whoever starts a thread owns it, and owning a thread is no reason to be
+/// able to turn the computer off. The only list that counts is the daemon's
+/// own.
+#[tokio::test]
+async fn nobody_powers_off_the_host_unless_the_daemons_own_list_says_so() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!shutdown"), InboundDecision::Start)
+                .await;
+
+            assert!(
+                harness.replies.lock().unwrap()[0]
+                    .1
+                    .contains("nobody may power off this host")
+            );
+            assert!(created(&harness.threads).is_empty());
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_account_not_on_the_shutdown_list_is_refused() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({ "shutdown": { "allowedUserIds": [OWNER] } })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw_with("!shutdown", "m1", "999"), InboundDecision::Start)
+                    .await;
+
+                assert!(
+                    harness.replies.lock().unwrap()[0]
+                        .1
+                        .contains("not on the list")
+                );
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn an_account_on_the_list_powers_the_host_off() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({ "shutdown": { "allowedUserIds": [OWNER] } })),
+            power_off: Some(Arc::new(|| {
+                Box::pin(async { None::<String> })
+                    as Pin<Box<dyn Future<Output = Option<String>> + Send>>
+            })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!shutdown"), InboundDecision::Start)
+                    .await;
+
+                assert!(
+                    harness.replies.lock().unwrap()[0]
+                        .1
+                        .contains("powering off now")
+                );
+                let logged = harness
+                    .lines
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(_, line)| line.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(logged.contains("powering off on request"));
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_power_off_that_fails_says_what_went_wrong() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({ "shutdown": { "allowedUserIds": [OWNER] } })),
+            power_off: Some(Arc::new(|| {
+                Box::pin(async { Some("systemctl refused".to_owned()) })
+                    as Pin<Box<dyn Future<Output = Option<String>> + Send>>
+            })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!shutdown"), InboundDecision::Start)
+                    .await;
+
+                assert!(
+                    harness.replies.lock().unwrap()[0]
+                        .1
+                        .contains("systemctl refused")
+                );
+            })
+        },
+    )
+    .await;
+}
+
+/// Shutting down from inside a thread must not be a way around the list.
+#[tokio::test]
+async fn the_shutdown_list_governs_the_slash_command_too() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({ "shutdown": { "allowedUserIds": [OWNER] } })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                let answer = harness
+                    .daemon
+                    .run_command(&SlashCommand {
+                        thread_id: Some("thread-1".to_owned()),
+                        user_id: "999".to_owned(),
+                        user_name: "somebody".to_owned(),
+                        content: "!shutdown".to_owned(),
+                    })
+                    .await;
+
+                assert!(answer.contains("not on the list"));
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_slash_command_runs_the_same_command_a_message_would() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: Some("thread-1".to_owned()),
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!status".to_owned(),
+                })
+                .await;
+
+            assert_eq!(answer, "ran !status");
+        })
+    })
+    .await;
+}
+
+/// A help listing wants to go back to whoever asked, not into the channel.
+#[tokio::test]
+async fn a_slash_command_that_needs_no_session_answers_the_caller_directly() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: None,
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!help".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("!steer"));
+            assert!(harness.replies.lock().unwrap().is_empty());
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_slash_command_outside_a_thread_says_where_to_use_it() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: None,
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!ls".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("post in the channel to start one"));
+        })
+    })
+    .await;
+}
+
+/// `/gen-image` is the exception to the thread rule: a picture needs no
+/// session, so it is drawn and posted to the channel wherever it was typed.
+#[tokio::test]
+async fn a_slash_image_generation_outside_a_thread_draws_and_posts_it() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic:max", Some(draw)), |harness| {
+        Box::pin(async move {
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: None,
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!gen-image a lighthouse".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("the picture is in the channel"), "{answer}");
+            assert!(created(&harness.threads).is_empty());
+            assert_eq!(
+                asked.lock().unwrap().as_slice(),
+                [("pic:max".to_owned(), "a lighthouse".to_owned())]
+            );
+            assert_eq!(harness.files.lock().unwrap().len(), 1);
+        })
+    })
+    .await;
+}
+
+/// A prompt with nothing in it draws nothing, and says what to type.
+#[tokio::test]
+async fn a_slash_image_generation_without_a_prompt_says_what_to_type() {
+    let (asked, draw) = drawing();
+    with_daemon(image_case("ajamxhacker/pic:max", Some(draw)), |harness| {
+        Box::pin(async move {
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: None,
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!gen-image".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("say what to generate"), "{answer}");
+            assert!(created(&harness.threads).is_empty());
+            assert!(asked.lock().unwrap().is_empty(), "nothing is drawn");
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_slash_command_in_a_sleeping_thread_says_to_wake_it_first() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .sessions()
+                .end_thread("thread-1", EndReason::Idle)
+                .await;
+
+            let answer = harness
+                .daemon
+                .run_command(&SlashCommand {
+                    thread_id: Some("thread-1".to_owned()),
+                    user_id: OWNER.to_owned(),
+                    user_name: "amelia".to_owned(),
+                    content: "!ls".to_owned(),
+                })
+                .await;
+
+            assert!(answer.contains("post a message in it to wake the session"));
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn shutting_down_ends_every_session_and_stops_accepting() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+
+            harness.daemon.shutdown().await;
+
+            assert!(!harness.daemon.is_accepting());
+            assert!(harness.daemon.sessions().sessions().is_empty());
+            assert_eq!(
+                *harness.threads.closed.lock().unwrap(),
+                [EndReason::Shutdown]
+            );
+        })
+    })
+    .await;
+}
+
+/// Presenting a weaker boundary as a stronger one is worse than the weaker
+/// boundary, because it removes the chance to decide about it.
+#[test]
+fn the_startup_report_always_states_what_cannot_be_enforced() {
+    let lines = render_startup_report(
+        &CapabilityReport {
+            backend: SandboxBackend::Bailey,
+            gaps: ["seccomp is unavailable".to_owned()].into_iter().collect(),
+            notes: ["landlock v5".to_owned()].into_iter().collect(),
+        },
+        &[],
+        None,
+    )
+    .join("\n");
+
+    assert!(lines.contains("sandbox backend: bailey"));
+    assert!(lines.contains("landlock v5"));
+    assert!(lines.contains("1 guarantee(s) cannot be enforced"));
+    assert!(lines.contains("seccomp is unavailable"));
+}
+
+#[test]
+fn a_backend_with_nothing_missing_says_so_plainly() {
+    let lines = render_startup_report(
+        &CapabilityReport {
+            backend: SandboxBackend::Podman,
+            gaps: Vec::new(),
+            notes: Vec::new(),
+        },
+        &[],
+        None,
+    )
+    .join("\n");
+
+    assert!(lines.contains("enforces every configured guarantee"));
+}
+
+/// Anyone who can post can run code, which is worth saying out loud.
+#[test]
+fn an_open_allowlist_is_reported_as_the_decision_it_is() {
+    let config = config_with(&json!({
+        "chat": {
+            "token": "t",
+            "channelId": "c",
+            "allowedUserIds": ["*"],
+            "blockedUserIds": ["9"],
+        },
+    }));
+    let lines = render_startup_report(
+        &CapabilityReport {
+            backend: SandboxBackend::Bailey,
+            gaps: Vec::new(),
+            notes: Vec::new(),
+        },
+        &[],
+        Some(&config.chat),
+    )
+    .join("\n");
+
+    assert!(lines.contains("open to everyone who can post"));
+    assert!(lines.contains("1 blocked"));
+}
+
+#[test]
+fn a_setting_the_chosen_backend_ignores_is_reported_as_inert() {
+    assert!(inert_settings(&config_with(&json!({}))).is_empty());
+    assert_eq!(
+        inert_settings(&config_with(&json!({
+            "sandbox": { "image": "localhost/mine:v2" },
+        }))),
+        ["sandbox.image is set but only the podman backend uses it".to_owned()]
+    );
+    assert!(
+        inert_settings(&config_with(&json!({
+            "sandbox": { "backend": "podman", "image": "localhost/mine:v2" },
+        })))
+        .is_empty()
+    );
+}
+
+/// A guarantee that cannot be met must not be started around silently.
+#[tokio::test]
+async fn a_gap_the_configuration_forbids_stops_the_daemon_starting() {
+    with_daemon(
+        DaemonCase {
+            start: false,
+            report: Some(CapabilityReport {
+                backend: SandboxBackend::Bailey,
+                gaps: ["no landlock here".to_owned()].into_iter().collect(),
+                notes: Vec::new(),
+            }),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                assert!(matches!(
+                    harness.daemon.start(None).await,
+                    Err(StartError::EnforcementGap(_))
+                ));
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn the_same_gap_is_allowed_when_the_configuration_allows_it() {
+    with_daemon(
+        DaemonCase {
+            start: false,
+            settings: Some(json!({ "sandbox": { "requireFullEnforcement": false } })),
+            report: Some(CapabilityReport {
+                backend: SandboxBackend::Bailey,
+                gaps: ["no landlock here".to_owned()].into_iter().collect(),
+                notes: Vec::new(),
+            }),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .start(None)
+                    .await
+                    .expect("the gap is allowed");
+
+                assert!(harness.daemon.is_accepting());
+                let logged = harness
+                    .lines
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(_, line)| line.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(logged.contains("no landlock here"));
+            })
+        },
+    )
+    .await;
+}
+
+/// About the account the host shares, so a session is not needed to ask.
+#[tokio::test]
+async fn the_usage_window_is_reported_wherever_it_is_asked_about() {
+    with_daemon(
+        DaemonCase {
+            describe_usage: Some(Arc::new(|refresh| {
+                Box::pin(async move {
+                    if refresh {
+                        "read the window again".to_owned()
+                    } else {
+                        "58% of the provider's usage window is left, and it resets in 2 hours"
+                            .to_owned()
+                    }
+                })
+            })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!usage"), InboundDecision::Start)
+                    .await;
+
+                assert!(
+                    harness.replies.lock().unwrap()[0]
+                        .1
+                        .contains("58% of the provider's usage window is left")
+                );
+                assert!(created(&harness.threads).is_empty());
+                assert_eq!(
+                    harness
+                        .daemon
+                        .run_command(&SlashCommand {
+                            thread_id: None,
+                            user_id: OWNER.to_owned(),
+                            user_name: "amelia".to_owned(),
+                            content: "!usage".to_owned(),
+                        })
+                        .await,
+                    harness.replies.lock().unwrap()[0].1.clone()
+                );
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn an_operator_can_ask_the_window_again_before_it_expires() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({
+                "chat": {
+                    "token": "a.token.value",
+                    "channelId": "chan",
+                    "allowedUserIds": [OWNER, "100000000000000002"],
+                    "operatorUserIds": [OWNER],
+                },
+            })),
+            describe_usage: Some(Arc::new(|refresh| {
+                Box::pin(async move {
+                    if refresh {
+                        "read from the provider again".to_owned()
+                    } else {
+                        "what was already held".to_owned()
+                    }
+                })
+            })),
+            ..DaemonCase::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!usage"), InboundDecision::Start)
+                    .await;
+                assert!(harness.said().contains("what was already held"));
+
+                harness
+                    .daemon
+                    .handle(
+                        raw_with("!usage refresh", "m2", OWNER),
+                        InboundDecision::Start,
+                    )
+                    .await;
+                assert!(harness.said().contains("read from the provider again"));
+            })
+        },
+    )
+    .await;
+}
+
+/// The reading is open to anyone; the asking is not, since every refresh is a
+/// request to every provider.
+#[tokio::test]
+async fn a_permitted_account_that_is_not_an_operator_cannot_ask_the_window_again() {
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({
+                "chat": {
+                    "token": "a.token.value",
+                    "channelId": "chan",
+                    "allowedUserIds": [OWNER, "100000000000000002"],
+                    "operatorUserIds": [OWNER],
+                },
+            })),
+            describe_usage: Some(Arc::new(|_| Box::pin(async { "the window".to_owned() }))),
+            ..DaemonCase::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(
+                        raw_with("!usage refresh", "m2", "100000000000000002"),
+                        InboundDecision::Start,
+                    )
+                    .await;
+
+                assert!(harness.said().contains("only an operator"));
+                assert!(!harness.said().contains("the window"));
+            })
+        },
+    )
+    .await;
+}
+
+/// A mistyped argument is refused rather than read as a refresh, so nobody
+/// believes a window was re-read when it was not.
+#[tokio::test]
+async fn a_mistyped_refresh_is_refused_and_says_what_to_type() {
+    with_daemon(
+        DaemonCase {
+            describe_usage: Some(Arc::new(|_| Box::pin(async { "the window".to_owned() }))),
+            ..DaemonCase::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!usage refreshes"), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("!usage refresh"));
+                assert!(!harness.said().contains("the window"));
+            })
+        },
+    )
+    .await;
+}
+
+/// Which models exist is a property of the host, so asking in a channel
+/// answers rather than starting a session and paying for a sandbox.
+#[tokio::test]
+async fn the_models_on_this_host_are_listed_without_starting_a_session() {
+    with_daemon(
+        DaemonCase {
+            catalog: Some(Catalog::new(
+                serde_json::Map::new(),
+                vec![
+                    AvailableModel {
+                        provider: "zai".to_owned(),
+                        id: "glm-5.3".to_owned(),
+                        default_level: Some(":high".to_owned()),
+                    },
+                    AvailableModel {
+                        provider: "openrouter".to_owned(),
+                        id: "a".to_owned(),
+                        default_level: None,
+                    },
+                ],
+                BTreeMap::new(),
+            )),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!model"), InboundDecision::Start)
+                    .await;
+
+                let said = harness.said();
+                assert!(said.contains("**zai**"), "{said}");
+                assert!(said.contains("`glm-5.3`"), "{said}");
+                assert!(said.contains("**openrouter**"), "{said}");
+                assert!(created(&harness.threads).is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+/// A session runs on one model at a time, so a name typed in a channel is
+/// pointed at a thread rather than acted on with no session to change.
+#[tokio::test]
+async fn switching_a_model_in_a_channel_is_pointed_at_a_thread() {
+    with_daemon(
+        DaemonCase {
+            catalog: Some(Catalog::new(
+                serde_json::Map::new(),
+                vec![AvailableModel {
+                    provider: "zai".to_owned(),
+                    id: "glm-5.3".to_owned(),
+                    default_level: None,
+                }],
+                BTreeMap::new(),
+            )),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!model glm-5.3"), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("inside a session thread"));
+                assert!(created(&harness.threads).is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+/// A host that lists nothing says so, rather than an empty list that reads as
+/// a broken catalog.
+#[tokio::test]
+async fn a_host_with_no_models_says_so() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!model"), InboundDecision::Start)
+                .await;
+
+            assert!(harness.said().contains("lists no models"));
+            assert!(created(&harness.threads).is_empty());
+        })
+    })
+    .await;
+}
+
+/// Inside a thread the session answers, because that is where a name is acted
+/// on. The daemon listing there instead would cost the thread its own model.
+#[tokio::test]
+async fn in_a_thread_the_daemon_leaves_the_model_to_the_session() {
+    with_daemon(
+        DaemonCase {
+            catalog: Some(Catalog::new(
+                serde_json::Map::new(),
+                vec![AvailableModel {
+                    provider: "zai".to_owned(),
+                    id: "glm-5.3".to_owned(),
+                    default_level: None,
+                }],
+                BTreeMap::new(),
+            )),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                let mut sent = raw("!model");
+                sent.channel_id = "thread-1".to_owned();
+                sent.parent_channel_id = Some("chan".to_owned());
+                harness
+                    .daemon
+                    .handle(
+                        sent,
+                        InboundDecision::Thread {
+                            thread_id: "thread-1".to_owned(),
+                        },
+                    )
+                    .await;
+                // Not answered here, so it falls through to the session, which
+                // is what owns the model a thread runs on.
+                assert!(
+                    harness.said().is_empty(),
+                    "the daemon answered in a thread: {}",
+                    harness.said()
+                );
+                assert!(created(&harness.threads).is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_provider_that_meters_nothing_says_so_rather_than_inventing_a_number() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("!usage"), InboundDecision::Start)
+                .await;
+
+            assert!(
+                harness.replies.lock().unwrap()[0]
+                    .1
+                    .contains("does not report a usage window")
+            );
+        })
+    })
+    .await;
+}
+
+/// Memory is about a person, not a session, so asking should not need a
+/// thread.
+#[tokio::test]
+async fn facts_is_answered_in_the_channel_with_no_session_running() {
+    let memory = Arc::new(MemoryStore::open(":memory:").expect("the store opens"));
+    memory
+        .remember(Scope::User, OWNER, "prefers jj over git", "earlier", 0)
+        .unwrap();
+
+    with_daemon(
+        DaemonCase {
+            memory: Some(Arc::clone(&memory)),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!facts"), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("prefers jj over git"));
+                // Answered outright: no thread was opened and no session
+                // started.
+                assert!(created(&harness.threads).is_empty());
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_project_is_a_threads_own_so_the_channel_says_to_ask_there() {
+    let memory = Arc::new(MemoryStore::open(":memory:").expect("the store opens"));
+    with_daemon(
+        DaemonCase {
+            memory: Some(Arc::clone(&memory)),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!facts project"), InboundDecision::Start)
+                    .await;
+                assert!(harness.said().contains("ask in one"));
+            })
+        },
+    )
+    .await;
+}
+
+/// Owner means nothing in a channel, so forgetting there is the operator's.
+#[tokio::test]
+async fn forget_in_the_channel_is_refused_to_anyone_but_an_operator() {
+    let memory = Arc::new(MemoryStore::open(":memory:").expect("the store opens"));
+    memory
+        .remember(Scope::User, OWNER, "prefers jj over git", "earlier", 0)
+        .unwrap();
+
+    with_daemon(
+        DaemonCase {
+            memory: Some(Arc::clone(&memory)),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw(&format!("!forget <@{OWNER}>")), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("only an operator"));
+                assert_eq!(memory.facts_for(Scope::User, OWNER, 100).unwrap().len(), 1);
+            })
+        },
+    )
+    .await;
+}
+
+/// Inside a thread the session answers, because it knows the project.
+#[tokio::test]
+async fn in_a_thread_the_daemon_leaves_memory_to_the_session() {
+    let memory = Arc::new(MemoryStore::open(":memory:").expect("the store opens"));
+    memory
+        .remember(Scope::User, OWNER, "prefers jj over git", "earlier", 0)
+        .unwrap();
+
+    with_daemon(
+        DaemonCase {
+            memory: Some(Arc::clone(&memory)),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(
+                        raw("!facts"),
+                        InboundDecision::Thread {
+                            thread_id: "t1".to_owned(),
+                        },
+                    )
+                    .await;
+                // Not answered here, so it falls through to whatever the
+                // thread holds.
+                assert!(!harness.said().contains("prefers jj over git"));
+            })
+        },
+    )
+    .await;
+}
+
+/// Asking the providers again reaches every session, so it is an operator's,
+/// and anybody else is told so without anything being asked.
+#[tokio::test]
+async fn only_an_operator_may_ask_the_providers_for_their_models_again() {
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&asked);
+    let refresh: super::RefreshModels = Arc::new(move || {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async { "`gateway`: 2 models".to_owned() })
+    });
+    let as_operator = json!({
+        "chat": {
+            "token": "t",
+            "channelId": "chan",
+            "allowedUserIds": [OWNER],
+            "operatorUserIds": [OWNER],
+        },
+    });
+
+    for (settings, expected, calls) in [
+        (None, "only an operator", 0),
+        (Some(as_operator), "`gateway`: 2 models", 1),
+    ] {
+        asked.store(0, std::sync::atomic::Ordering::SeqCst);
+        with_daemon(
+            DaemonCase {
+                settings,
+                refresh_models: Some(Arc::clone(&refresh)),
+                ..Default::default()
+            },
+            |harness| {
+                Box::pin(async move {
+                    harness
+                        .daemon
+                        .handle(raw("!models refresh"), InboundDecision::Start)
+                        .await;
+                    assert!(harness.said().contains(expected), "{}", harness.said());
+                    assert!(created(&harness.threads).is_empty());
+                })
+            },
+        )
+        .await;
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), calls);
+    }
+}
+
+/// Somebody who is refused because they are not an operator becomes one by
+/// the file being changed, without the daemon being restarted. The command
+/// that was refused then works, which is the whole point.
+#[tokio::test]
+async fn a_change_to_the_file_reaches_a_decision_the_daemon_already_made() {
+    let stranger = "100000000000000002";
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&asked);
+    let refresh: super::RefreshModels = Arc::new(move || {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async { "`gateway`: 2 models".to_owned() })
+    });
+
+    with_daemon(
+        DaemonCase {
+            settings: Some(json!({
+                "chat": {
+                    "token": "t",
+                    "channelId": "chan",
+                    "allowedUserIds": [OWNER, stranger],
+                },
+            })),
+            refresh_models: Some(Arc::clone(&refresh)),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(
+                        raw_with("!models refresh", "m1", stranger),
+                        InboundDecision::Start,
+                    )
+                    .await;
+                assert!(harness.said().contains("only an operator"));
+
+                // The file is edited to make them an operator.
+                let mut edited = harness.config.get();
+                edited.chat.operator_user_ids = vec![stranger.to_owned()];
+                assert!(harness.config.replace(edited), "the change was not applied");
+
+                harness
+                    .daemon
+                    .handle(
+                        raw_with("!models refresh", "m2", stranger),
+                        InboundDecision::Start,
+                    )
+                    .await;
+                assert!(
+                    harness.said().contains("`gateway`: 2 models"),
+                    "the same command was still refused after the change: {}",
+                    harness.said()
+                );
+            })
+        },
+    )
+    .await;
+    assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// A change that cannot be read is refused rather than applied, and the daemon
+/// is still answering from what it had when the next command arrives.
+#[tokio::test]
+async fn a_change_that_cannot_be_read_leaves_the_daemon_answering_as_it_did() {
+    with_daemon(
+        DaemonCase {
+            describe_usage: Some(Arc::new(|_| Box::pin(async { "the window".to_owned() }))),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("!usage"), InboundDecision::Start)
+                    .await;
+                assert!(harness.said().contains("the window"));
+
+                // What a half-written file resolves to.
+                let broken = Err(crate::config::schema::ConfigError {
+                    problems: vec!["not valid JSON or JSONC".to_owned()],
+                });
+                assert_eq!(
+                    harness.config.reload(broken),
+                    crate::config::live::Reloaded::Rejected(vec![
+                        "not valid JSON or JSONC".to_owned()
+                    ])
+                );
+
+                harness
+                    .daemon
+                    .handle(raw_with("!usage", "m2", OWNER), InboundDecision::Start)
+                    .await;
+                assert!(harness.said().contains("the window"));
+            })
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn an_operator_may_forget_from_the_channel_and_is_told_what_went() {
+    let memory = Arc::new(MemoryStore::open(":memory:").expect("the store opens"));
+    memory
+        .remember(Scope::User, OWNER, "prefers jj over git", "earlier", 0)
+        .unwrap();
+
+    with_daemon(
+        DaemonCase {
+            memory: Some(Arc::clone(&memory)),
+            settings: Some(json!({
+                "chat": {
+                    "token": "t",
+                    "channelId": "chan",
+                    "allowedUserIds": [OWNER],
+                    "operatorUserIds": [OWNER],
+                },
+            })),
+            ..Default::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw(&format!("!forget <@{OWNER}>")), InboundDecision::Start)
+                    .await;
+
+                assert!(harness.said().contains("forgot 1 fact about"));
+                assert_eq!(memory.facts_for(Scope::User, OWNER, 100).unwrap().len(), 0);
+            })
+        },
+    )
+    .await;
+}
+
+/// The builder names the backend configuration asked for, never a fallback.
+#[test]
+fn create_sandbox_names_the_configured_backend() {
+    let root = tempfile::tempdir().unwrap();
+    let config = config_with(&json!({
+        "projectRoot": root.path().join("projects").display().to_string(),
+        "stateDir": root.path().join("state").display().to_string(),
+    }));
+    let sandbox = create_sandbox(&config, silent(), None, None, BTreeMap::new());
+    assert!(matches!(sandbox, Backend::Bailey(_)));
+
+    let config = config_with(&json!({
+        "projectRoot": root.path().join("projects").display().to_string(),
+        "stateDir": root.path().join("state").display().to_string(),
+        "sandbox": { "backend": "podman" },
+    }));
+    let sandbox = create_sandbox(&config, silent(), None, None, BTreeMap::new());
+    assert!(matches!(sandbox, Backend::Podman(_)));
+}
+
+/// A question asked in a thread is answered in that thread. Answering in the
+/// channel says "this session has ended" to everybody except the person who
+/// asked, somewhere the sentence makes no sense.
+#[tokio::test]
+async fn a_dead_thread_is_answered_in_the_thread_not_the_channel() {
+    with_daemon(DaemonCase::default(), |harness| {
+        Box::pin(async move {
+            harness
+                .daemon
+                .handle(raw("demo: go"), InboundDecision::Start)
+                .await;
+            harness
+                .daemon
+                .sessions()
+                .end_thread("thread-1", EndReason::Stopped)
+                .await;
+
+            let mut sent = raw_with("still there?", "m2", OWNER);
+            sent.channel_id = "thread-1".to_owned();
+            sent.parent_channel_id = Some("chan".to_owned());
+            harness
+                .daemon
+                .handle(
+                    sent,
+                    InboundDecision::Thread {
+                        thread_id: "thread-1".to_owned(),
+                    },
+                )
+                .await;
+
+            assert!(
+                harness
+                    .said()
+                    .contains("post in the channel to start a new one"),
+                "got {}",
+                harness.said()
+            );
+            assert_eq!(
+                harness.replied_in(),
+                ["thread-1"],
+                "the answer belongs where it was asked"
+            );
+        })
+    })
+    .await;
+}
+
+/// `!usage` is answered wherever it was asked, thread included.
+#[tokio::test]
+async fn a_command_asked_in_a_thread_is_answered_there() {
+    with_daemon(
+        DaemonCase {
+            describe_usage: Some(Arc::new(|_| {
+                Box::pin(async { "58% of the provider's usage window is left".to_owned() })
+            })),
+            ..DaemonCase::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .daemon
+                    .handle(raw("demo: go"), InboundDecision::Start)
+                    .await;
+
+                let mut sent = raw_with("!usage", "m2", OWNER);
+                sent.channel_id = "thread-1".to_owned();
+                sent.parent_channel_id = Some("chan".to_owned());
+                harness
+                    .daemon
+                    .handle(
+                        sent,
+                        InboundDecision::Thread {
+                            thread_id: "thread-1".to_owned(),
+                        },
+                    )
+                    .await;
+
+                assert!(
+                    harness
+                        .said()
+                        .contains("58% of the provider's usage window")
+                );
+                assert_eq!(harness.replied_in(), ["thread-1"]);
+            })
+        },
+    )
+    .await;
+}
