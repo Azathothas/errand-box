@@ -33,15 +33,17 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
 
 ## State
 
-- **Last session:** started 2026-10-24T08:34:15Z, attended, in a hosted
-  container, on the branch `claude/eloquent-faraday-nbo94y`, fast-forwarded
-  into `main`.
+- **Last session:** T-027's end-to-end run, 2026-10-24, unattended, a
+  standalone agent on the operator's Windows machine; it changed only
+  `TODO/`, on `main`. Record commit stamped 2026-10-24T16:44:26Z.
 - **Tree:** clean after the record commit, pushed to `main`.
 - **Deployed:** [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
   the latest release, on `2ead3fd`. The prerelease
   [`artefacts`](https://github.com/Azathothas/errand-box/releases/tag/artefacts)
   holds the test assets, rebuilt from `main` by `artefacts.yml`. errand-box
-  is installed nowhere: every test host of the session was torn down.
+  is installed nowhere: the run purged it from every test host and removed
+  its WSL2 distributions; the ModelScope Studio and Daytona sandboxes are the
+  operator's to delete, with the Incus packages setup installed.
 - **CI:** on. `gates` runs on every push to `main`.
 
 ## Baseline, as measured this session
@@ -55,41 +57,26 @@ Measure again with the same commands before you change anything.
 | `sh scripts/common/check-gate.sh --strict` | 9 of 9 |
 | live tests | 54 of 54 with the static binary of `9b27e60`, on a hosted container: Ubuntu 24.04, kernel 6.18, x86_64, cgroup v1, no init, Incus 6.0.7 ([output](../tests/live/2026-10-24-errand-library.txt)) |
 | the `artefacts` assets | on the same kind of host: v0.1.1 installed by the kit's `bootstrap.sh`, the image imported from `artefacts` and taken as current, setup 0 failed and then 0 changed, `tests/e2e/mock-session.sh` PASS |
+| live tests on WSL2 | T-027's run: WSL2 Ubuntu 24.04 with systemd, cgroup v2, Incus 7.5.1, v0.1.1 from its release: 41 of 42, rootless podman failed (E-70, T-024); WSL2 Arch with no init: no guest starts (T-039) |
 
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
 
-**37 entries: 14 done, 6 partial, 1 blocked, 16 open.**
+**78 entries: 15 done, 6 partial, 1 blocked, 56 open.**
 
 ---
 
 ## What this session did
 
-- **Research:** six write-ups in `docs/history/references/`.
-- **The fork** (T-028, done): imported, gated, a library, shipped in v0.1.1.
-- **Fixed in the fork:** T-029 (the provider key sent to a host a session
-  named), T-030 (a push that could publish another session's repository),
-  T-031 (a silent drop in the relay).
-- **The web interface removed** (T-034, partial: podman and `issues`
-  remain). **discord-mock** (T-035, partial).
-- **`artefacts`:** `.github/workflows/artefacts.yml` builds errand-box,
-  discord-mock and the guest image on both architectures, with an e2e kit;
-  the first run passed. `tests/e2e/` holds the kit's inputs and
-  `mock-session.sh`.
-- **T-037 filed.** T-027 rewritten for the standalone agent.
-
-Leads for T-027's run, seen during the session and not filed:
-
-- With `tests/e2e/mock.env`, kage refuses the first turn: "no provider
-  credentials found". For a provider kage does not know, errand writes it
-  into kage's config only with a base URL and a models list
-  (`errand/src/sandbox/agent_config.rs:291`).
-- The supervised errand cannot be pointed at discord-mock: `errand-box
-  __as` clears the environment (`src/procs.rs`).
-- `errand-box doctor` before setup says "run `errand-box up`" for Incus that
-  is not installed; `setup --skip-image` says errand waits for `--env` and
-  `--creds` when both were given.
-- errand's log under errand-box says sessions run "as confined host
-  processes using the host's own tools" (T-016).
+- **T-027, done:** errand-box used as a user uses it, from v0.1.1 and
+  `artefacts`, on WSL2 (Ubuntu 24.04 with systemd, a second one for the
+  upgrade from v0.1.0, and Arch with no init), ModelScope Studio and Daytona.
+  T-027's entry has the table per host.
+- **41 issues** on this repository, #2 to #42, and **41 entries**, T-038 to
+  T-078, one per issue. Evidence added to T-012, T-024, T-036 and T-037.
+- **Leads of the last session, settled:** the provider kage refuses is
+  T-041; the supervised errand and the stand-in, T-049; doctor's advice
+  before setup, T-068.
+- Built nothing and changed no code.
 
 ## What is in progress
 
@@ -99,13 +86,21 @@ Nothing.
 
 ## Start here next session
 
-1. The issues and entries T-027's run files, in the order its entries rank.
-2. T-037.
-3. T-035's open items, then T-032 and T-033.
-4. T-020, then T-019's backend in the fork, which retires the `bailey`
+1. The P1 entries of T-027's run: T-040 (setup stops after `up` and skips
+   the sandbox steps), T-041 (a custom provider never reaches kage), T-046
+   (uninstall's documented order), T-038 and T-039 (WSL2), T-042 (a
+   user-namespaced host).
+2. T-043 and T-044 (a setup that proves a guest starts, and refuses where
+   none can), then T-037 with T-050.
+3. The other P2 entries of the run, smallest first: T-051, T-063, T-047,
+   T-048, T-058, T-059, T-060, T-061, T-062, T-064, T-065, T-045, T-052,
+   T-053, T-055, T-057, T-049, T-054, T-066.
+4. T-035's open items, then T-032 and T-033.
+5. T-020, then T-019's backend in the fork, which retires the `bailey`
    stand-in.
-5. T-024, then T-021, then T-022, which waits on T-020's link.
-6. T-034's podman and `issues`, T-036, T-014, T-026, T-023, T-025.
+6. T-024, then T-021, then T-022, which waits on T-020's link.
+7. T-034's podman and `issues`, T-036, T-014, T-026, T-023, T-025, and the
+   P3 entries of the run.
 
 ---
 
@@ -116,9 +111,9 @@ Nothing.
 2. **T-007's setting and secret**: the commands are in
    [`upkeep.md`](upkeep.md), T-007; they need your `gh` CLI and a token you
    create.
-3. **The credentials T-015 lists**, if T-027's run is to test a real model
-   turn or a real Discord application. Put each in a file, never in the
-   chat.
+3. **The credentials T-015 lists**, for a real Discord application. T-027's
+   run tested a real model turn through a gateway the operator named, and no
+   real chat service.
 
 ---
 

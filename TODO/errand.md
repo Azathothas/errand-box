@@ -639,3 +639,216 @@ cargo test --locked -p errand --lib -- endpoint stand_in   # the guard, the hand
 sh scripts/discord-spec.sh --check                          # every answer against Discord's spec
 sh scripts/ci-local.sh
 ```
+
+---
+
+# T-041: ERRAND_PROVIDER with a custom gateway never reaches kage
+
+**Source:** [issue #5](https://github.com/Azathothas/errand-box/issues/5), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P1
+**Effort:** S
+**Status:** open
+
+## Problem
+
+errand-box writes a provider's credential, base URL and kind, and no
+models. errand leaves a provider kage does not know out of kage's config
+unless it has models, so kage finds no provider. A name the pinned kage
+knows and errand's list does not is served by kage's own endpoint, and the
+base URL is ignored.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04) with a real Anthropic-compatible gateway:
+`gateway` and `kenari` failed (the second went to kage's own endpoint and
+the broker refused it); `anthropic` with the same base URL answered a model
+turn. Read: `src/errandcfg.rs:101-129`, `errand/src/sandbox/agent_config.rs:38-59`, `:265-298`.
+
+## Approach
+
+1. Write `models: [{id: ERRAND_MODEL}]` into the provider.
+2. Keep errand's list of kage's providers in step with the pinned kage, by
+   a test.
+3. setup's errand row says what kage will see; examples/errand-box.env
+   shows a custom gateway.
+
+## Prove
+
+```sh
+cargo test --locked errandcfg:: -p errand-box
+cargo test --locked -p errand --lib -- agent_config
+```
+
+With `ERRAND_PROVIDER=gateway` and a real gateway, a session's kage config
+holds `[providers.custom.gateway]` with its model, and a turn is answered.
+
+---
+
+# T-049: A `mock.` token without the stand-in's URL goes to Discord
+
+**Source:** [issue #13](https://github.com/Azathothas/errand-box/issues/13), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+With tests/e2e's inputs the supervised errand uses Discord itself, since
+`__as` clears the environment and no setting names the stand-in. Discord
+refuses the token and errand exits and restarts; where Discord is not
+reachable it waits 30 s each time. tests/e2e/mock-creds.env claims the
+token only goes to a loopback stand-in.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): "Sent invalid authentication", exit 2,
+88 restarts; on Daytona, a 31 s loop. Read:
+`errand/src/chat/endpoint.rs:97-105`, `src/procs.rs:217-219`.
+
+## Approach
+
+1. Refuse a `mock.` token at start when the variable is unset.
+2. An optional ERRAND_DISCORD_MOCK_URL in errand-box.env that setup passes
+   to the service, under errand's three conditions.
+3. Correct the comment in the kit.
+
+## Prove
+
+```sh
+cargo test --locked -p errand --lib -- endpoint
+```
+
+With the tests/e2e inputs, the supervised errand either serves discord-mock
+or refuses once with the variable's name.
+
+---
+
+# T-059: The message that starts a thread never gets its reaction
+
+**Source:** [issue #23](https://github.com/Azathothas/errand-box/issues/23), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+errand fetches a message through the thread's channel before it reacts to
+it. The message that started the thread lives in the parent channel, so
+the fetch returns 404 and the reaction is skipped without a log line.
+
+## Premise
+
+Measured against discord-mock on WSL2 and Daytona: two GET 404 per new
+thread, no reaction on the first prompt, reactions on every reply. Read:
+`errand/src/chat/threads.rs:198-226`, `:576-583`.
+
+## Approach
+
+Fetch and react to the starter through the thread's parent; log a skipped
+reaction; a stand-in test.
+
+## Prove
+
+```sh
+cargo test --locked -p errand --lib -- stand_in
+```
+
+mock-session's calls.txt shows a reaction on the first prompt and no 404.
+
+---
+
+# T-060: `!allow` confirms access for an account errand ignores
+
+**Source:** [issue #24](https://github.com/Azathothas/errand-box/issues/24), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`!allow` of an account outside allowedUserIds answers that it can now
+prompt the session, and errand still drops every message from it. Such an
+account also gets no reply and no reaction, though threads.md says it is
+told once.
+
+## Premise
+
+Measured against discord-mock with a second seeded person. Read:
+`errand/src/chat/inbound.rs:218-222`, `errand/src/session/session/answering.rs:122-150`.
+
+## Approach
+
+Refuse `!allow` for an account that is not permitted, or let guests past
+the gate for their thread; react once on the ignore path.
+
+## Prove
+
+```sh
+cargo test --locked -p errand --lib -- inbound answering
+```
+
+---
+
+# T-074: Every failed prompt is posted twice
+
+**Source:** [issue #38](https://github.com/Azathothas/errand-box/issues/38), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+One provider failure gives two thread messages, "the agent reported an
+error" and "the agent refused the prompt". `!compact` with no provider
+reports success and then the error.
+
+## Premise
+
+Measured against discord-mock. Read: `errand/src/session/session.rs:895-920`.
+
+## Approach
+
+One message per failure; `!compact` reports after the agent answers.
+
+## Prove
+
+```sh
+cargo test --locked -p errand --lib -- session
+```
+
+---
+
+# T-077: discord-mock has no HTTP control for delete, archive and commands
+
+**Source:** [issue #41](https://github.com/Azathothas/errand-box/issues/41), T-027's end-to-end run, 2026-10-24
+**Category:** errand
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The binary's `/_mock/` routes post messages, inject faults and read the
+journal. Deleting a message, archiving or deleting a thread, a slash
+command and expiring attachments exist on `MockHandle` and nowhere else, so
+an end-to-end test cannot reach those paths of errand.
+
+## Premise
+
+Read: `discord-mock/src/control.rs:231-239`, `:101-190`. Measured: every
+gateway fault over HTTP left errand's session intact.
+
+## Approach
+
+`/_mock/` routes for the existing methods, and steps that use them.
+
+## Prove
+
+```sh
+cargo test --locked -p discord-mock
+```

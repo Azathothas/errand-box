@@ -9,6 +9,20 @@ errand.
 
 ## Unreleased
 
+### 2026-10-24T16:45Z: T-027's end-to-end run, and what it found
+
+**Record:** T-027 (done) and T-038 to T-078 in [TODO/](TODO/INDEX.md),
+issues #2 to #42. Not deployed and not released: no code changed.
+
+- errand-box v0.1.1 and the prerelease `artefacts`, used as a user uses
+  them on WSL2 (Ubuntu 24.04 with systemd, and Arch with no init),
+  ModelScope Studio and Daytona, and an upgrade from v0.1.0.
+- WSL2 with systemd passed the live tests but rootless podman (41 of 42);
+  WSL2 with no init, ModelScope Studio and Daytona cannot start a guest,
+  each for its own reason, and setup reports success on two of them.
+- 41 issues filed with their evidence, and one entry per issue; evidence
+  added to T-012, T-024, T-036 and T-037.
+
 ### 2026-10-24T13:18Z: assets for an end-to-end test, and T-037
 
 **Record:** T-035 and T-037 in [TODO/](TODO/INDEX.md). Not deployed and not

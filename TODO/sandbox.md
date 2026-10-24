@@ -901,6 +901,13 @@ narrower route is its own entry (T-025).
 - `up` runs at every boot. The key's write must hold across restarts and not
   fight another tool that sets the same sysctl; read the value each time.
 
+## Measured on WSL2, 2026-10-24
+
+T-027's run, WSL2 Ubuntu 24.04 with systemd and cgroup v2 (no AppArmor in
+that kernel): live.sh `inside`, rootless podman as the agent, failed with
+"dbus: couldn't determine address of session bus": E-70 on a second kind
+of host. Docker, sudo podman and FUSE passed.
+
 ## Prove
 
 ```sh
@@ -965,3 +972,177 @@ sh tests/live/live.sh inside   # rootless podman PASS through the chosen route
 
 Or `docs/research/userns.md` shows each route refused, with the command and
 its output, and T-024's key stays the only route.
+
+---
+
+# T-051: bailey doctor reports every limit as unset
+
+**Source:** [issue #15](https://github.com/Azathothas/errand-box/issues/15), T-027's end-to-end run, 2026-10-24
+**Category:** sandbox
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`bailey doctor` always prints `per-instance limits: memory unset, cpu unset,
+processes unlimited`, while the profile holds all three and sessions
+enforce them. E-63 says doctor reports the limits the profile holds.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04) and Daytona against `incus profile show`.
+Read: `src/shim.rs:104-108`: the JSON pointer escapes `.` as `~1`, which
+RFC 6901 decodes to `/`, so the key looked up is `limits/memory`.
+
+## Approach
+
+Look the key up with `get`, and add a unit test with a profile JSON.
+
+## Prove
+
+```sh
+cargo test --locked shim::
+errand-box __as errand -- /usr/local/lib/errand-box/shim/bailey doctor | grep 'per-instance limits'   # memory 80%, cpu N, processes 8192
+```
+
+---
+
+# T-054: The image build is fsync-bound and prints nothing for half an hour
+
+**Source:** [issue #18](https://github.com/Azathothas/errand-box/issues/18), T-027's end-to-end run, 2026-10-24
+**Category:** sandbox
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The guest image built on a WSL2 host in 1894 s, and setup printed nothing
+between the build bridge row and the result. docs/operations.md says about
+10 minutes.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04, 20 CPUs): packages downloaded in about 2
+minutes; dpkg then ran 25 minutes with I/O pressure near 50% and the CPU
+idle. A second build on the same machine took 775 s. Read:
+`image/provision.sh:53-58` (no unsafe-io), `src/image.rs` (output kept for
+failures only).
+
+## Approach
+
+dpkg with `force-unsafe-io` in the build; provision's progress lines shown
+as they come; measured times per kind of host in the page, and image
+route 2 named for slow hosts.
+
+## Prove
+
+```sh
+time errand-box image build   # on the same WSL2 host: well under the 1894 s measured, with progress rows
+```
+
+---
+
+# T-058: A session with no broker loses a race with the guest's tmpfiles
+
+**Source:** [issue #22](https://github.com/Azathothas/errand-box/issues/22), T-027's end-to-end run, 2026-10-24
+**Category:** sandbox
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The shim pushes `/run/errand-box/env.sh` as soon as `incus exec true`
+works, and the directory is made later by systemd-tmpfiles. Without
+`--egress-proxy` every run fails with "Failed to open target file", and an
+immediate retry hits the dead run's lock.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04, Incus 7.5.1): exec ready after 269 to
+357 ms, the directory after 659 to 728 ms; 3 of 3 runs without a broker
+failed, 3 of 3 with one passed, and live.sh `session` passed. Read:
+`src/session.rs:238-255`, `:386-396`, `image/provision.sh:90`.
+
+## Approach
+
+Wait for the directory in `wait_ready`, or push it first; a live check that
+starts an instance and pushes at once.
+
+## Prove
+
+```sh
+cargo test --locked session::
+sh tests/live/live.sh session
+```
+
+---
+
+# T-061: A session that cannot start tells the chat only Incus's hint
+
+**Source:** [issue #25](https://github.com/Azathothas/errand-box/issues/25), T-027's end-to-end run, 2026-10-24
+**Category:** sandbox
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+When a session instance cannot start, the shim's last stderr line is
+Incus's "Try `incus info --show-log ...`", and errand posts that line as
+the reason. The error itself reaches errand's log only.
+
+## Premise
+
+Measured on Daytona with mock-session.sh: the thread got "this session
+could not start: the agent exited with code 125: Try `incus info ...`".
+Read: `src/session.rs:299-300`, `errand/src/session/session.rs:1127`.
+
+## Approach
+
+The shim prints one summary line last, with the first line of the Incus
+error; or errand quotes the first `errand-box:` line.
+
+## Prove
+
+```sh
+cargo test --locked session::
+```
+
+On a host where instances cannot start, mock-session's thread names the
+Incus error.
+
+---
+
+# T-066: `image.source = "release"` downloads the published image
+
+**Source:** [issue #30](https://github.com/Azathothas/errand-box/issues/30), T-027's end-to-end run, 2026-10-24
+**Category:** sandbox
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+`image.source = "release"` refuses because no release publishes the image,
+but the prerelease `artefacts` does, for both architectures, and the run
+used it by hand on Daytona and WSL2 Arch, where the build is impossible.
+
+## Premise
+
+Measured: imported images were taken as current (inputs `3ddf6025ef90`).
+Read: `src/setup.rs:1488-1495`, `.github/workflows/artefacts.yml:85-95`.
+T-014 holds the published-image plan.
+
+## Approach
+
+Download, check against SHA256SUMS and the inputs digest, and import;
+publish the image with every tagged release.
+
+## Prove
+
+```sh
+printf '[image]\nsource = "release"\n' > r.toml && errand-box setup --config r.toml --skip-image   # guest image ok, imported
+```

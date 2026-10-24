@@ -51,9 +51,13 @@ The open P1 entries are a Discord stand-in for testing errand's chat path
 that does not need proxy devices,
 which closes the path from the errand account to the admin socket, a
 session with a real chat service, rootless podman on Ubuntu 24.04 hosts,
-errand-box used as a user uses it on three hosts the operator named (WSL2,
-Daytona, ModelScope Studio), and the one path of the scheduled workflows
-that has not run: a pull request.
+the one path of the scheduled workflows that has not run (a pull request),
+and what T-027's run on WSL2, Daytona and ModelScope Studio found: a setup
+that stops early and skips the sandbox steps without a word (T-040), a
+provider setting that never reaches the agent (T-041), an uninstall order
+that leaves every instance (T-046), WSL2 that stops an idle distribution
+(T-038) or cannot start a guest without systemd (T-039), and a
+user-namespaced host where no guest starts (T-042).
 systemd and musl are shown live, the first release is out, and every
 workflow has run on GitHub. A host type is P1 rather than P0 because the
 code paths exist and the failure, if any, is at setup, before errand runs.
@@ -68,15 +72,15 @@ retires the `bailey` stand-in.
 
 ## Counts
 
-**37 items. 16 open, 6 partial, 1 blocked, 14 done.**
+**78 items. 56 open, 6 partial, 1 blocked, 15 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 3 | 3 | 1 | 7 | 14 |
-| P2 | 10 | 2 | 0 | 3 | 15 |
-| P3 | 3 | 1 | 0 | 0 | 4 |
-| **All** | 16 | 6 | 1 | 14 | 37 |
+| P1 | 8 | 3 | 1 | 8 | 20 |
+| P2 | 32 | 2 | 0 | 3 | 37 |
+| P3 | 16 | 1 | 0 | 0 | 17 |
+| **All** | 56 | 6 | 1 | 15 | 78 |
 
 ---
 
@@ -110,7 +114,7 @@ retires the `bailey` stand-in.
 | [T-024](sandbox.md) | P1 | sandbox | open | Rootless podman under AppArmor's user namespace restriction, and on cgroup v2 |
 | [T-025](sandbox.md) | P2 | sandbox | open | An AppArmor route for user namespaces in guests, without the host-wide sysctl |
 | [T-026](upkeep.md) | P2 | upkeep | open | Live checks that read a state once, at a moment they do not control |
-| [T-027](setup.md) | P1 | setup | open | Use errand-box as a user does, on three hosts, and file what it finds |
+| [T-027](setup.md) | P1 | setup | done | Use errand-box as a user does, on three hosts, and file what it finds |
 | [T-028](errand.md) | P1 | errand | done | errand is errand-box's hard fork, built, tested and shipped from this tree |
 | [T-029](errand.md) | P0 | errand | done | A guest sends the operator's provider key to a host it names |
 | [T-030](errand.md) | P1 | errand | done | The host-side push can publish another session's repository |
@@ -121,3 +125,44 @@ retires the `bailey` stand-in.
 | [T-035](errand.md) | P1 | errand | partial | A Discord stand-in, so errand's chat path is tested without Discord |
 | [T-036](setup.md) | P3 | setup | open | `uninstall` stops incusd under s6 and leaves its dnsmasq running |
 | [T-037](setup.md) | P2 | setup | open | errand's refusals restart every two seconds, and a transient one looks the same |
+| [T-038](setup.md) | P1 | setup | open | WSL2 stops an idle distribution, and errand with it |
+| [T-039](setup.md) | P1 | setup | open | WSL2 without systemd cannot start a guest, and setup says all is well |
+| [T-040](setup.md) | P1 | setup | open | setup stops after `up` when a daemon failed, and box keys go unapplied |
+| [T-041](errand.md) | P1 | errand | open | ERRAND_PROVIDER with a custom gateway never reaches kage |
+| [T-042](setup.md) | P1 | setup | open | A host that is a 65536-id user namespace cannot start isolated guests, and setup promises 15257 |
+| [T-043](setup.md) | P2 | setup | open | setup never starts a guest |
+| [T-044](setup.md) | P2 | setup | open | doctor and setup do not recognise a host where Incus cannot run |
+| [T-045](setup.md) | P2 | setup | open | `up` restarts the services it has just created, and on Daytona lxcfs never returns |
+| [T-046](setup.md) | P1 | setup | open | `uninstall --yes`, then `--purge --yes`, leaves every instance and image |
+| [T-047](setup.md) | P2 | setup | open | network.proxy is not validated, and a bad proxy outlives `proxy = "auto"` |
+| [T-048](setup.md) | P2 | setup | open | setup reads `--env` and `--creds` after it changes the host |
+| [T-049](errand.md) | P2 | errand | open | A `mock.` token without the stand-in's URL goes to Discord |
+| [T-050](setup.md) | P2 | setup | open | setup and status misreport a refusing errand |
+| [T-051](sandbox.md) | P2 | sandbox | open | bailey doctor reports every limit as unset |
+| [T-052](setup.md) | P2 | setup | open | On WSL2 the pool is sized from the virtual disk |
+| [T-053](setup.md) | P2 | setup | open | WSL2 distributions share one network namespace, and the build bridge name collides |
+| [T-054](sandbox.md) | P2 | sandbox | open | The image build is fsync-bound and prints nothing for half an hour |
+| [T-055](setup.md) | P2 | setup | open | setup reports the configured pool driver, and E-05 only once |
+| [T-056](setup.md) | P3 | setup | open | Pool and image failures on a sandbox name no way out |
+| [T-057](setup.md) | P2 | setup | open | On Arch, s6 cannot be installed with pacman |
+| [T-058](sandbox.md) | P2 | sandbox | open | A session with no broker loses a race with the guest's tmpfiles |
+| [T-059](errand.md) | P2 | errand | open | The message that starts a thread never gets its reaction |
+| [T-060](errand.md) | P2 | errand | open | `!allow` confirms access for an account errand ignores |
+| [T-061](sandbox.md) | P2 | sandbox | open | A session that cannot start tells the chat only Incus's hint |
+| [T-062](setup.md) | P2 | setup | open | Guest memory follows /proc/meminfo, not the container's limit |
+| [T-063](setup.md) | P2 | setup | open | Unknown options are ignored, and `gc --dryrun` deletes |
+| [T-064](setup.md) | P2 | setup | open | `logs` with no name is refused under systemd |
+| [T-065](setup.md) | P2 | setup | open | The README's quick start cannot be followed |
+| [T-066](sandbox.md) | P2 | sandbox | open | `image.source = "release"` downloads the published image |
+| [T-067](setup.md) | P3 | setup | open | bootstrap.sh prints the exit code in its errors |
+| [T-068](setup.md) | P3 | setup | open | doctor's next step is wrong when Incus is missing or down |
+| [T-069](setup.md) | P3 | setup | open | Reports print every row twice |
+| [T-070](setup.md) | P3 | setup | open | doctor as a user who is not root reports E-08 |
+| [T-071](setup.md) | P3 | setup | open | "No Zabbly build" when Zabbly cannot be reached |
+| [T-072](setup.md) | P3 | setup | open | status counts ext4's root reserve as used |
+| [T-073](setup.md) | P3 | setup | open | Input errors lose the key, the line or the file |
+| [T-074](errand.md) | P3 | errand | open | Every failed prompt is posted twice |
+| [T-075](upkeep.md) | P3 | upkeep | open | live.sh's up test does nothing under systemd |
+| [T-076](upkeep.md) | P3 | upkeep | open | mock-session.sh passes when the session never started |
+| [T-077](errand.md) | P3 | errand | open | discord-mock has no HTTP control for delete, archive and commands |
+| [T-078](upkeep.md) | P3 | upkeep | open | feature.yml applies a label that does not exist |

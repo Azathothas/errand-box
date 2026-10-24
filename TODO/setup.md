@@ -316,6 +316,15 @@ put the errand account in the shared group `nogroup`), and showed that
 
 Open: WSL2 is untouched. T-027's run covers it.
 
+## Measured on WSL2, 2026-10-24
+
+T-027's run: WSL2 Ubuntu 24.04 with systemd as PID 1 (cgroup v2, Incus
+7.5.1): live.sh 41 PASS and 1 FAIL, the one being rootless podman as the
+agent (E-70, T-024). WSL2 Arch with no init: no guest starts, because PID
+1's cgroup lies outside the distribution's namespace (T-039). WSL2 also
+stops an idle distribution (T-038). Open: WSL2 without systemd, and the
+E-70 failure.
+
 ## Prove
 
 ```sh
@@ -473,7 +482,7 @@ additional task entries and then it will present a summary to me"
 **Category:** setup
 **Priority:** P1
 **Effort:** M
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -520,6 +529,31 @@ it, outside the tree. It reads the code and does not change it.
 - A hosted container may refuse nested containers outright. That is a
   finding with its measurement, not a reason to stop the other hosts.
 
+## Done
+
+2026-10-24, run by a standalone agent on the operator's Windows machine,
+from v0.1.1 and the prerelease `artefacts` (kit `COMMIT` 9ba63c5), on five
+hosts: WSL2 Ubuntu 24.04 with systemd, WSL2 Arch with no init, a second
+WSL2 Ubuntu 24.04 for the upgrade, ModelScope Studio, and Daytona.
+
+| host | result |
+| --- | --- |
+| WSL2 Ubuntu 24.04, systemd | setup 0 failed (image built in 1894 s); live.sh 41 PASS, 1 FAIL (rootless podman, E-70); mock-session PASS; a real model turn through a custom gateway with a workaround (T-041); uninstall needs a reinstall to purge (T-046) |
+| WSL2 Ubuntu 24.04, the upgrade | v0.1.0 then v0.1.1: the downloaded errand removed, `web` dropped, the unit runs `errand-box serve` |
+| WSL2 Arch, no init | needs Incus from pacman and s6 from source (T-057); no guest starts (T-039) |
+| ModelScope Studio | an unprivileged container: Incus cannot run, and nothing says so (T-044) |
+| Daytona | setup completes with a `dir` pool and the imported image; no session instance starts (T-042); lxcfs dies for good on a restart (T-045) |
+
+Every finding is an issue on this repository and an entry here, T-038 to
+T-078, issues #2 to #42. Evidence for existing entries went to T-012,
+T-024, T-036 and T-037. The run's prove, run 2026-10-24:
+`gh issue list --repo Azathothas/errand-box --state all --limit 200`
+lists the 41 issues, and `sh scripts/check-todo.sh` exits 0.
+
+Not tested: a real chat service (T-015 still waits on credentials), the
+idle timeout of a session, and Pass B on WSL2 Ubuntu with no systemd (the
+Arch host showed the no-init outcome).
+
 ## Prove
 
 ```sh
@@ -564,6 +598,14 @@ processes of the account `incus`. Then either stop incusd with `incus admin
 shutdown` before the supervisor's stop, which takes the networks down, or
 have `uninstall` stop the remaining processes of the account `incus` by pid.
 Never by name (E-12).
+
+## Measured since, 2026-10-24
+
+T-027's run, `uninstall --purge --yes` under s6: on WSL2 Arch (Incus
+7.5.1) three dnsmasq processes of the account incus were left after every
+daemon stopped, as the Problem says; on Daytona and ModelScope Studio none
+were (no bridge, or incusd took them with it). Under systemd incusd is kept
+running by design, with its dnsmasq.
 
 ## Prove
 
@@ -642,9 +684,970 @@ and 4, and say so in `status`.
 4. `tests/live/live.sh`: a `refusal` test that writes a config errand
    refuses, runs `up`, and counts starts over 60 s.
 
+## Measured since, 2026-10-24
+
+T-027's run, errand refusing its inputs: under systemd on WSL2 Ubuntu
+24.04, 26 restarts in 2 minutes and 88 by the end ("Sent invalid
+authentication", exit 2); under s6 on Daytona, one restart every 31 s
+(errand waits 30 s for the chat before it exits). The same loop without a
+backoff hit two other services under s6 on ModelScope Studio: lxcfs started
+556 times in 9 minutes and incus-user once a second. What setup and status
+report about it is T-050.
+
 ## Prove
 
 ```sh
 cargo test --locked supervise:: up:: status::
 sh tests/live/live.sh refusal   # at most 6 starts in 60 s; status says refusing (exit 2)
+```
+
+---
+
+# T-038: WSL2 stops an idle distribution, and errand with it
+
+**Source:** [issue #2](https://github.com/Azathothas/errand-box/issues/2), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+On WSL2 the distribution stops about 15 to 20 seconds after the last WSL
+client exits, systemd or not. incusd, errand and maint stop with it, so
+errand leaves the chat whenever the user closes the terminal. Nothing in
+setup, doctor or the pages says so; the README lists WSL2 as a host.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04, systemd PID 1, errand-box set up): Stopped
+17 s after the last client; on the next access every unit came back.
+Read: `src/host.rs:74` detects WSL and nothing else uses it.
+
+## Approach
+
+1. A DEGRADED row on WSL in setup and doctor, with the keep-alive to use.
+2. docs/operations.md "After a restart" gains a WSL paragraph: a logon task
+   that holds `wsl -d DISTRO --exec sleep infinity`, or WSL's own idle
+   setting where the installed WSL has one.
+3. An E-row.
+
+## Prove
+
+```sh
+errand-box doctor | grep -i wsl   # the row names the idle stop and the keep-alive
+```
+
+On a WSL2 host with the keep-alive documented: close every terminal, wait
+60 s, and `errand-box status` shows errand's unit with its old start time.
+
+---
+
+# T-039: WSL2 without systemd cannot start a guest, and setup says all is well
+
+**Source:** [issue #3](https://github.com/Azathothas/errand-box/issues/3), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P1
+**Effort:** S
+**Status:** open
+
+## Problem
+
+In a WSL2 distribution with no systemd, LXC cannot set up cgroups, so no
+Incus container starts (`cgfsng ... Invalid cross-device link`). setup ends
+`0 failed`, `bailey doctor` passes and errand's probe says the backend
+enforces every guarantee; every session then fails.
+
+## Premise
+
+Measured on WSL2 (Arch, no init, errand-box's s6): PID 1 is WSL's init with
+cgroup `0::/../..`, outside the distribution's cgroup namespace; a plain
+`incus launch` fails the same way; moving incusd into its own cgroup did not
+help. live.sh: every test that starts an instance failed.
+
+## Approach
+
+1. Detect it: a `..` in `/proc/1/cgroup` (or WSL with no systemd on cgroup v2).
+2. doctor and setup refuse with the fix: `[boot] systemd=true` in
+   /etc/wsl.conf, restart the distribution, run setup again.
+3. README's host list and an E-row say the same.
+
+## Prove
+
+```sh
+errand-box doctor   # on a WSL2 distribution with no systemd: FAILED, names systemd=true
+```
+
+---
+
+# T-040: setup stops after `up` when a daemon failed, and box keys go unapplied
+
+**Source:** [issue #4](https://github.com/Azathothas/errand-box/issues/4), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+setup returns right after `up` when any row failed, and says nothing about
+the steps it skipped: the pool, the image, the project, the profile, the
+golden instance and runtime.toml. With errand restarting in a loop, a
+`box.cpus` or `box.disk` change is applied on some runs and not on others.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): `box.cpus = "2"` left `limits.cpu: "16"`,
+`box.disk = "8GiB"` left `size: 20GiB`, while `box.memory` was applied one
+run earlier. On ModelScope Studio and Daytona the first setup ended at the
+lxcfs row with no pool and no image. Read: `src/setup.rs:1469-1476`.
+
+## Approach
+
+1. errand's row from the first `up` does not stop setup; the final `up`
+   (`src/setup.rs:1595-1604`) reports errand.
+2. A daemon whose loss is degraded (lxcfs, E-06) does not stop setup.
+3. When setup stops, one row names what it did not run, and why.
+4. A unit test with a fake runner where errand's unit fails.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+On a host where errand refuses its inputs, change `box.cpus` and run setup
+three times: `incus profile get default limits.cpu` follows each time.
+
+---
+
+# T-042: A host that is a 65536-id user namespace cannot start isolated guests, and setup promises 15257
+
+**Source:** [issue #6](https://github.com/Azathothas/errand-box/issues/6), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+On a host that is itself a user namespace with 65536 ids, Incus picks idmap
+bases above that range for isolated instances, and no session instance can
+start (`Failed to handle idmapped storage`). setup reports room for 15257
+instances and ends `0 failed`.
+
+## Premise
+
+Measured on Daytona: `/proc/self/uid_map` holds one 65536 range; setup wrote
+`root:1000000:1000000000`; `volatile.idmap.base` 1065536 and 1131072; every
+first start failed. Read: `src/setup.rs:458` counts /etc/subuid only.
+
+## Approach
+
+1. Count isolated capacity against `/proc/self/uid_map` and `gid_map`.
+2. Below one block beyond the base map: refuse with the reason, or fall back
+   to non-isolated ids with a DEGRADED row that says what is lost.
+3. doctor reports the same; an E-row for a user-namespaced host.
+
+## Prove
+
+```sh
+cargo test --locked setup::isolated_capacity
+```
+
+On Daytona: setup reports the real capacity, and `sh tests/live/live.sh session`
+passes or setup refused with the reason.
+
+---
+
+# T-043: setup never starts a guest
+
+**Source:** [issue #7](https://github.com/Azathothas/errand-box/issues/7), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+No step of setup starts a guest. The golden instance is never started, and
+the per-session check `run -- true` only prepares an instance. So setup and
+errand's probe report success on hosts where no guest can start (T-039,
+T-042), and the user learns it from the first chat message.
+
+## Premise
+
+Read: `src/setup.rs:1339-1395` (golden, never started), `src/shim.rs:279`
+(the `-- true` path). Measured: Daytona and WSL2 Arch both ended setup with
+`0 failed` and failed every session.
+
+## Approach
+
+After the golden instance, copy it to a throwaway name, start it, run
+`true` as the agent, delete it, bounded at 60 s; FAILED with the first error
+line of the instance log.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+On WSL2 Arch without systemd, setup's new row is FAILED with the cgroup
+error; on WSL2 Ubuntu it is ok in about 1 s.
+
+---
+
+# T-044: doctor and setup do not recognise a host where Incus cannot run
+
+**Source:** [issue #8](https://github.com/Azathothas/errand-box/issues/8), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+On an unprivileged container doctor says "run errand-box setup"; setup then
+installs Incus and leaves lxcfs and incus-user restarting every second.
+doctor does not name the package manager (pacman: setup refuses), the
+blocked egress (Daytona) or E-18, which edge-cases.md says it reports.
+
+## Premise
+
+Measured on ModelScope Studio (no CAP_SYS_ADMIN or CAP_NET_ADMIN, read-only
+/proc/sys, no /dev/fuse): incus-user logs "Failed to create network:
+operation not permitted"; lxcfs restarted 556 times in 9 minutes. Read:
+`src/main.rs:489-593`, `src/setup.rs:1442-1458`, `src/up.rs:47`.
+
+## Approach
+
+1. doctor rows: a container, the two capabilities, /proc/sys, loop devices,
+   the package manager, the hosts setup fetches from, E-18.
+2. setup runs them before it installs anything and refuses on a FAILED one.
+3. `choose_lxcfs` reports no /dev/fuse as DEGRADED and starts no lxcfs.
+
+## Prove
+
+```sh
+cargo test --locked host:: up::
+docker run --rm ubuntu:24.04 sh -c 'errand-box doctor'   # FAILED rows that name the capability
+```
+
+---
+
+# T-045: `up` restarts the services it has just created, and on Daytona lxcfs never returns
+
+**Source:** [issue #9](https://github.com/Azathothas/errand-box/issues/9), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+On a fresh s6 host every run script is new, so `up` sends `s6-svc -t` to
+each service 300 ms after svscan starts it. Where a FUSE mount cannot be
+unmounted (Daytona), the killed lxcfs leaves a dead mount and restarts every
+second for ever; the failure row quotes "Running destructor lxcfs_exit".
+
+## Premise
+
+Measured on Daytona: lxcfs started 14:27:40.45 and died 0.5 s later;
+`fusermount3 -u`, `-uz`, `umount -l` and `umount -l --no-canonicalize` all
+failed on the dead mount; after a sandbox restart `up` left lxcfs running.
+Read: `src/up.rs:694-697`, `:167-170`, `:594-605`.
+
+## Approach
+
+1. No `-t` for a service whose supervise directory is new in this pass.
+2. lxcfs's run script stays down with one clear line on a dead mount.
+3. Failure rows quote the first error line, not the last line.
+4. An E-row for a runtime that cannot unmount FUSE.
+
+## Prove
+
+```sh
+cargo test --locked up::
+```
+
+On Daytona, a fresh setup: `s6-svstat /var/lib/errand-box/s6/lxcfs` shows
+one start, and `errand-box status` lists lxcfs ok.
+
+---
+
+# T-046: `uninstall --yes`, then `--purge --yes`, leaves every instance and image
+
+**Source:** [issue #10](https://github.com/Azathothas/errand-box/issues/10), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P1
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The three uninstall commands of docs/operations.md, in order, do not
+work: `--yes` removes the program and runtime.toml, so `--purge --yes` is
+"not found"; after a new bootstrap it removes files only and leaves every
+`eb-` instance, the image and the build bridge, with no row about them.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): 10 instances and the image stayed; run
+first, `--purge --yes` removed them (20 changed). A purge also leaves the
+lxcfs drop-in, errand-box's subuid lines, the build's base image and
+incus-user's projects. Read: `src/ops.rs:294`, `:331`, `:250-270`.
+
+## Approach
+
+1. Keep runtime.toml, or a copy, until a purge; else find `eb-` instances
+   by prefix in every project.
+2. A DEGRADED row when purge cannot find them.
+3. docs/operations.md: `--purge --yes` instead of, not after, `--yes`.
+4. Remove, or list as kept, the drop-in and the subuid lines.
+
+## Prove
+
+```sh
+errand-box uninstall --yes && sh bootstrap.sh --version "$v" && errand-box uninstall --purge --yes
+incus list --all-projects -c n -f csv | grep -c '^eb-'   # 0
+```
+
+---
+
+# T-047: network.proxy is not validated, and a bad proxy outlives `proxy = "auto"`
+
+**Source:** [issue #11](https://github.com/Azathothas/errand-box/issues/11), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+Any string is accepted as `network.proxy` and written to incusd's
+`core.proxy_*` and to proxy.env, which errand reads. Back on `auto` with no
+HTTPS_PROXY, setup keeps it ("the previous setting is kept"); only `none`
+clears it, and no page says so. A missing `proxy_ca` file is accepted too.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): `ftp://proxy.invalid:21` stayed in
+`core.proxy_https` and proxy.env after setup with `auto`. Read:
+`src/config.rs:245-309`, `src/up.rs:1285`.
+
+## Approach
+
+1. Validate: auto, none, or an http or https URL with a host and a port;
+   `proxy_ca` a readable file.
+2. Record where a kept proxy came from, and drop one the config set.
+3. Document `none` as the reset.
+
+## Prove
+
+```sh
+cargo test --locked config:: up::proxy
+printf '[network]\nproxy = "ftp://x:21"\n' > bad.toml && errand-box setup --config bad.toml; echo "exit $?"   # 1, names network.proxy
+```
+
+---
+
+# T-048: setup reads `--env` and `--creds` after it changes the host
+
+**Source:** [issue #12](https://github.com/Azathothas/errand-box/issues/12), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+A missing or incomplete env file is found only after packages, the account,
+s6, the binaries and the boot hook. `--env` without `--creds` is dropped
+with exit 0, and a creds file readable by everyone is used without a word.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): `--env nope.env` failed after 11 steps;
+`--env good.env` alone printed "kept"; a 0644 creds file passed. Read:
+`src/setup.rs:1455-1468`, `:912-966`.
+
+## Approach
+
+1. Parse both files and build errand's config before the first change.
+2. One without the other is a usage error (exit 2) that names it.
+3. A creds file that group or others can read, or root does not own, is
+   DEGRADED or FAILED.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+errand-box setup --config c.toml --env e.env; echo "exit $?"   # 2, names --creds
+```
+
+---
+
+# T-050: setup and status misreport a refusing errand
+
+**Source:** [issue #14](https://github.com/Azathothas/errand-box/issues/14), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+setup reports a crash-looping errand as ok when it fails after the 3 s
+settle (Daytona, `tests/data`), against what docs/tests.md section 5 says.
+The failure row quotes the last log line, which is a warning, an info line
+or systemd's "Started" line, not the error. status follows the unit's
+state at the instant it reads it. Related to T-037, which backs off.
+
+## Premise
+
+Measured on Daytona and WSL2 (Ubuntu 24.04): `errand ok up (pid 4690) 11
+seconds`, pids 4690, 5337, 5953 in 90 s; on WSL2 the error was "the chat
+connection ended: Sent invalid authentication", and status said FAILED and
+then ok a second apart. Read: `src/up.rs:740`, `:594-605`, `src/status.rs:129`.
+
+## Approach
+
+1. Quote the last error-level line, or systemd's exit status.
+2. status counts restarts over a window.
+3. setup waits for errand's ready line or its exit, up to startupMs.
+
+## Prove
+
+```sh
+cargo test --locked up:: status::
+```
+
+With `tests/data` inputs, setup reports errand FAILED with the chat error on
+both kinds of host, and status agrees with itself across 10 calls.
+
+---
+
+# T-052: On WSL2 the pool is sized from the virtual disk
+
+**Source:** [issue #16](https://github.com/Azathothas/errand-box/issues/16), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`engine.pool_size = "auto"` takes half of the WSL virtual disk's free space
+(476 GiB of a 1 TB vhdx) while the Windows drive under it had 232 GB free;
+the E-32 check reads the same virtual numbers and sees nothing wrong.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04): the pool row and `df /` against the
+Windows drive. Read: `src/setup.rs:968`, `:994`, `:1001`.
+
+## Approach
+
+On WSL, cap `auto` (64 GiB, or a quarter of the vhdx) and say in the row
+that the Windows drive's free space is not visible; an E-row.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+On WSL2, a fresh setup's pool row names the cap and `engine.pool_size`.
+
+---
+
+# T-053: WSL2 distributions share one network namespace, and the build bridge name collides
+
+**Source:** [issue #17](https://github.com/Azathothas/errand-box/issues/17), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+Every WSL2 distribution shares one network namespace, so a second Incus
+sees the first one's bridges. errand-box's build bridge has a fixed name,
+and a foreign or leftover `ebbuild0` makes the image build fail with "the
+build bridge has no IPv4 address".
+
+## Premise
+
+Measured on two WSL2 distributions (Ubuntu and Arch): one `net:` namespace;
+Arch's Incus listed `ebbuild0,bridge,NO`, and its image build failed at
+once. Read: `src/image.rs:21`, `:105-118`, `:74-81`.
+
+## Approach
+
+1. Check `managed`; name a foreign interface and how to remove it.
+2. A bridge name unique to the host.
+3. A doctor row on WSL, and an E-row.
+
+## Prove
+
+```sh
+cargo test --locked image::
+ip link add ebbuild0 type bridge && errand-box image build   # FAILED, names the foreign ebbuild0
+```
+
+---
+
+# T-055: setup reports the configured pool driver, and E-05 only once
+
+**Source:** [issue #19](https://github.com/Azathothas/errand-box/issues/19), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+For an existing pool setup prints the driver from the config, not the
+pool's, and ignores a changed `pool_driver` silently. The E-05 warning for a
+`dir` pool appears only on the run that makes it. A `dir` pool copies the
+whole rootfs per session, and nothing says how many fit.
+
+## Premise
+
+Measured on Daytona: `storage pool ok errand-box (btrfs)` while Incus said
+`driver: dir`; sessions took 19 to 54 s to copy; the 10 GiB pool held about
+three. Read: `src/setup.rs:1053`, `:1001-1007`.
+
+## Approach
+
+Read the pool's driver; DEGRADED for `dir` on every run and in status; say
+when the config's driver differs; for `dir`, the per-session size.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+On a host with a `dir` pool, setup and status both say DEGRADED (E-05).
+
+---
+
+# T-056: Pool and image failures on a sandbox name no way out
+
+**Source:** [issue #20](https://github.com/Azathothas/errand-box/issues/20), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+With no loop devices, the pool row shows only losetup's "Permission
+denied"; with images.linuxcontainers.org blocked, the image row shows only
+the reset connection. The ways out are in the docs (`pool_driver = "dir"`,
+image route 2), not in the rows, and `ebbuild0` stays after the failure.
+
+## Premise
+
+Measured on Daytona. Read: `src/setup.rs:1067-1071`, `src/image.rs:180`.
+
+## Approach
+
+Add the way out to each row, and remove the build bridge on that path.
+
+## Prove
+
+```sh
+cargo test --locked setup:: image::
+```
+
+On Daytona with the defaults, the pool row names `pool_driver = "dir"`.
+
+---
+
+# T-057: On Arch, s6 cannot be installed with pacman
+
+**Source:** [issue #21](https://github.com/Azathothas/errand-box/issues/21), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+On a pacman host with no init, the first refusal lists incus, lxcfs and
+btrfs-progs; the second says "install the s6 package with pacman", and
+Arch has none (skalibs, execline and s6 are in the AUR).
+
+## Premise
+
+Measured on WSL2 (Arch, no init): `error: target not found: s6`; s6 2.15.1.1
+built from the author's releases worked. Read: `src/setup.rs:177-186`,
+`:747-793`, `src/up.rs:443`.
+
+## Approach
+
+One refusal that lists everything for that host, with per-distribution
+advice: on Arch, the AUR or the author's releases. RULES.md section 4 keeps
+s6 from the distribution, so the fix is the advice, not a bundled s6.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+On an Arch distribution without systemd, the first setup either installs
+s6 or names the AUR and the source route in one row.
+
+---
+
+# T-062: Guest memory follows /proc/meminfo, not the container's limit
+
+**Source:** [issue #26](https://github.com/Azathothas/errand-box/issues/26), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+In a container with a cgroup memory limit, errand-box reads the machine's
+memory, and `box.memory = "80%"` becomes `limits.memory: 80%`, which Incus
+resolves against the machine. Guests are then not limited inside the
+sandbox's real memory.
+
+## Premise
+
+Measured on Daytona: `memory.max` 4 GiB, errand-box `193206 MiB`; CPUs were
+right (4, from cpu.max). Read: `src/host.rs:86-92`.
+
+## Approach
+
+Take the smaller of MemTotal and the cgroup limit; write `limits.memory`
+as a size when a limit applies; a doctor row.
+
+## Prove
+
+```sh
+cargo test --locked host::
+```
+
+In a container with `-m 4g`, doctor's host line says 4096 MiB.
+
+---
+
+# T-063: Unknown options are ignored, and `gc --dryrun` deletes
+
+**Source:** [issue #27](https://github.com/Azathothas/errand-box/issues/27), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+status, doctor, up, maint, gc and reap ignore an unknown option and run, so
+a misspelt `--dry-run` runs a real gc. setup and uninstall refuse one.
+
+## Premise
+
+Measured: `maint --frobnicate` ran a pass; `gc --frobnicate` ran a gc.
+Read: `src/main.rs:130-134`, `:231`, `:256`, `:263`, `:355-413`.
+
+## Approach
+
+Refuse what is left after each command's options, exit 2.
+
+## Prove
+
+```sh
+cargo test --locked --test shim
+errand-box gc --dryrun; echo "exit $?"   # 2
+```
+
+---
+
+# T-064: `logs` with no name is refused under systemd
+
+**Source:** [issue #28](https://github.com/Azathothas/errand-box/issues/28), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+Under systemd `errand-box logs` exits 2 ("name a daemon"), though the help
+and docs/operations.md promise the last line of each. maint logs only
+while it waits for runtime.toml, so its last line stays a stale error.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04) and on s6 hosts. Read: `src/ops.rs:42-62`,
+`src/main.rs:64-66`, `:369-382`.
+
+## Approach
+
+The same table under systemd from `journalctl -n 1 -u UNIT`; maint logs one
+line when it starts working.
+
+## Prove
+
+```sh
+errand-box logs; echo "exit $?"   # 0, one line per daemon, under systemd too
+```
+
+---
+
+# T-065: The README's quick start cannot be followed
+
+**Source:** [issue #29](https://github.com/Azathothas/errand-box/issues/29), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The README's third line names three input files it never says how to get;
+it also fetches bootstrap.sh from main against docs/operations.md, and does
+not say that setup needs root or how long the first one takes.
+
+## Premise
+
+Measured on a fresh ModelScope Studio: the third line failed with "cannot
+read ./errand-box.toml". Read: README.md, bootstrap.sh:134.
+
+## Approach
+
+The tag, the three inputs from examples/, root, the time, the image route;
+bootstrap's last line names examples/.
+
+## Prove
+
+```sh
+sh scripts/common/check-docs.sh
+```
+
+The README's commands, run in an empty directory on a fresh host, reach
+setup's report.
+
+---
+
+# T-067: bootstrap.sh prints the exit code in its errors
+
+**Source:** [issue #31](https://github.com/Azathothas/errand-box/issues/31), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`die` prints its second argument, so errors end in "2"; `--help` prints
+`set -u`; `--dry-run` needs root; an unknown version says only "download
+failed".
+
+## Premise
+
+Measured on every host. Read: bootstrap.sh:31, :39, :49-55.
+
+## Approach
+
+`die` prints `$1`; help stops at the first non-comment line; dry-run without
+root; a 404 names the missing release.
+
+## Prove
+
+```sh
+sh bootstrap.sh --frobnicate; echo "exit $?"   # 2, and the message has no trailing 2
+sh tests/pins-test.sh
+```
+
+---
+
+# T-068: doctor's next step is wrong when Incus is missing or down
+
+**Source:** [issue #32](https://github.com/Azathothas/errand-box/issues/32), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+Before setup, doctor and status say "run `errand-box up`" about an Incus
+that is not installed. With Incus down, doctor says the golden instance is
+missing and to run setup. `image import` before setup says only "could not
+start incus".
+
+## Premise
+
+Measured on all four hosts. Read: `src/main.rs:556-576`, `src/status.rs:168`.
+
+## Approach
+
+Skip or reword the answer row without Incus; split "missing" from "cannot
+check"; name `setup --skip-image` before an import.
+
+## Prove
+
+```sh
+errand-box doctor   # fresh host: one next step, setup
+```
+
+---
+
+# T-069: Reports print every row twice
+
+**Source:** [issue #33](https://github.com/Azathothas/errand-box/issues/33), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+setup, up, image and uninstall print each row live on stderr and again in
+the table on stdout. The uninstall plan marks every planned action
+"skipped" and names a unit that may not exist.
+
+## Premise
+
+Measured on every host. Read: `src/report.rs:48-53`, `src/ops.rs:288-330`.
+
+## Approach
+
+Live rows only when stdout is not a terminal, or no table after them; a
+plan status of its own; a plan built from what exists.
+
+## Prove
+
+```sh
+cargo test --locked report:: ops::
+```
+
+---
+
+# T-070: doctor as a user who is not root reports E-08
+
+**Source:** [issue #34](https://github.com/Azathothas/errand-box/issues/34), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+/proc/1/personality is readable by root only, so doctor run by anyone else
+reports the lxcfs 6 condition on every host. Arch's host line has a double
+space.
+
+## Premise
+
+Measured on all four hosts. Read: `src/host.rs:80`, `:185`,
+`src/main.rs:521`.
+
+## Approach
+
+Count it only as root, or say "run as root to check"; drop an empty codename.
+
+## Prove
+
+```sh
+runuser -u nobody -- errand-box doctor | grep -c 'E-08'   # 0
+```
+
+---
+
+# T-071: "No Zabbly build" when Zabbly cannot be reached
+
+**Source:** [issue #35](https://github.com/Azathothas/errand-box/issues/35), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+For an unknown codename, any curl failure of the Zabbly probe is reported
+as "no Zabbly build", including a host that cannot reach Zabbly at all.
+
+## Premise
+
+Measured on Daytona (Ubuntu 26.04, egress reset). Read:
+`src/setup.rs:311-326`, `:386-392`.
+
+## Approach
+
+Tell a 404 from a transport error, and report the latter as unreachable.
+
+## Prove
+
+```sh
+cargo test --locked setup::
+```
+
+---
+
+# T-072: status counts ext4's root reserve as used
+
+**Source:** [issue #36](https://github.com/Azathothas/errand-box/issues/36), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+status computes used as total minus available, so ext4's reserve reads as
+used: 59 of 1006 GiB where df says 8.2 GiB.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04). Read: `src/status.rs:36-45`, `:187`.
+
+## Approach
+
+Used from the free blocks; the threshold from the available ones.
+
+## Prove
+
+```sh
+cargo test --locked status::
+```
+
+---
+
+# T-073: Input errors lose the key, the line or the file
+
+**Source:** [issue #37](https://github.com/Azathothas/errand-box/issues/37), T-027's end-to-end run, 2026-10-24
+**Category:** setup
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+A TOML type error names neither the key nor the line; an env error names a
+fixed file name or no file; `--config` with no value is an unknown option;
+unknown ERRAND_ keys pass; `box.cpus = "0"` is used as 1.
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04), one bad input at a time. Read:
+`src/config.rs:275-322`, `src/errandcfg.rs:15-41`, `:80-91`, `src/main.rs:110`.
+
+## Approach
+
+Keep the toml span and key path; pass real paths; "--config needs a value";
+warn about unknown ERRAND_ keys; refuse cpus outside the host's range.
+
+## Prove
+
+```sh
+cargo test --locked config:: errandcfg::
 ```

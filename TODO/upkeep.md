@@ -214,3 +214,95 @@ sh tests/live/live.sh reap
 
 On both runners, through live.yml; and neither check sleeps where it can
 wait on a condition.
+
+---
+
+# T-075: live.sh's up test does nothing under systemd
+
+**Source:** [issue #39](https://github.com/Azathothas/errand-box/issues/39), T-027's end-to-end run, 2026-10-24
+**Category:** upkeep
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+On a systemd host `t_up` passes at once and stops nothing. By hand, `up`
+restored every unit, and the same pass found doctor's wrong golden row
+(T-068) and two `up` runs that disagreed (T-050).
+
+## Premise
+
+Measured on WSL2 (Ubuntu 24.04). Read: `tests/live/live.sh`, `t_up`.
+
+## Approach
+
+Under systemd stop the units, reset the device modes, run `up`, and check
+each unit and a second `up` with 0 changed.
+
+## Prove
+
+```sh
+sh tests/live/live.sh up   # on a systemd host: units stopped and restored, no early PASS
+```
+
+---
+
+# T-076: mock-session.sh passes when the session never started
+
+**Source:** [issue #40](https://github.com/Azathothas/errand-box/issues/40), T-027's end-to-end run, 2026-10-24
+**Category:** upkeep
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+mock-session.sh passes on any post in the thread, so "this session could
+not start" counts as a pass.
+
+## Premise
+
+Measured on Daytona, where no instance can start: PASS. Read:
+`tests/e2e/mock-session.sh:126-148`.
+
+## Approach
+
+Pass on errand's ready line, fail on "could not start", and print the
+thread's posts.
+
+## Prove
+
+```sh
+sh tests/e2e/mock-session.sh "demo: say hello"; echo "exit $?"   # 1 where sessions cannot start
+```
+
+---
+
+# T-078: feature.yml applies a label that does not exist
+
+**Source:** [issue #42](https://github.com/Azathothas/errand-box/issues/42), T-027's end-to-end run, 2026-10-24
+**Category:** upkeep
+**Priority:** P3
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The Feature form labels its issues `feature`, and the repository has no
+such label, so they arrive unlabelled and `--label feature` fails.
+
+## Premise
+
+Read: `.github/ISSUE_TEMPLATE/feature.yml`; `gh label list` has
+`enhancement` and no `feature`.
+
+## Approach
+
+Create the label, or use `enhancement` in the template.
+
+## Prove
+
+```sh
+gh label list --repo Azathothas/errand-box | grep -c '^feature'   # 1, or the template names enhancement
+```
