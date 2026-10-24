@@ -51,6 +51,7 @@ concluded.
 | page | what it holds |
 | --- | --- |
 | [references/2026-10-24-brokers-a.md](references/2026-10-24-brokers-a.md) | a sweep of three credential brokers (agent-vault, claw-wrap, wardgate) against errand's broker and entries T-020 to T-023 |
+| [references/2026-10-24-runtimes.md](references/2026-10-24-runtimes.md) | a sweep of two agent runtimes (OpenShell, raxis) as replacements for errand, for errand-box, or as sources of mechanisms |
 | [references/2026-10-24-brokers-b.md](references/2026-10-24-brokers-b.md) | a sweep of three credential brokers (vultrino, charon, lens-sandbox-core) against errand's broker and entries T-020 to T-023 |
 
 ---
