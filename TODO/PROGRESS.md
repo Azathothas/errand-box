@@ -73,9 +73,10 @@ Check that no `FRESHNESS_TOKEN` exists before setting it.
   container, on the branch `claude/eloquent-faraday-nbo94y`, merged into
   `main` by fast-forward at its end.
 - **Tree:** clean after the record commit, pushed to `main`.
-- **Deployed:** v0.1.1 is dispatched from `main` by this session; the
-  release row of [`SUMMARY.md`](SUMMARY.md) says whether it was published.
-  errand-box is installed nowhere: the session's live host was torn down.
+- **Deployed:** released as
+  [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
+  the tag on `2ead3fd`, the first release that carries errand. errand-box
+  is installed nowhere: the session's live host was torn down.
 - **CI:** on. `gates` runs on every push to `main`.
 
 ## Baseline, as measured this session
@@ -91,7 +92,7 @@ Measure again with the same commands before you change anything.
 
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
 
-**36 entries: 13 done, 7 partial, 1 blocked, 15 open.**
+**36 entries: 14 done, 6 partial, 1 blocked, 15 open.**
 
 ---
 
@@ -128,8 +129,9 @@ Findings, not filed:
 
 ## What is in progress
 
-Nothing. T-028 is closed when v0.1.1 is published, in the same commit as
-the operations page's version.
+Nothing. The build host no longer has musl-tools, qemu-user-static or
+zig: the session removed what it installed, so `musl` and `cross` exit 2
+there until they are installed again.
 
 ---
 

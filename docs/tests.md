@@ -203,7 +203,7 @@ systemd as PID 1 has `systemd=true` under `[boot]` in `/etc/wsl.conf`. Read
 ### Install and set up
 
 ```sh
-v=v0.1.1                     # v0.1.0 until v0.1.1 is released
+v=v0.1.1
 base="https://raw.githubusercontent.com/Azathothas/errand-box/$v"
 mkdir -p ~/eb && cd ~/eb
 curl -fsSLO "$base/bootstrap.sh"

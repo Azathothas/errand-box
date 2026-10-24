@@ -13,7 +13,7 @@ we will probably extend/improve it even more"; the research of that day,
 **Category:** errand
 **Priority:** P1
 **Effort:** L
-**Status:** partial
+**Status:** done
 
 ## Problem
 
@@ -107,6 +107,14 @@ musl C compiler when zig is present.
   Proposed to the operator as an entry, with a backoff; not filed.
 
 ## Done, and open
+
+**Done on 2026-10-24, every step; step 4 by T-034.** Shipped in
+[v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
+the tag on `2ead3fd`, after `gates` passed there. Its assets were downloaded
+again and checked: both binaries match `SHA256SUMS`, the x86_64 one reports
+`errand-box 0.1.1` and carries `serve`, and `bootstrap.sh --dry-run` from
+the tag fetches and checks them. The notes below are the order it was done
+in.
 
 **Steps 1, 2, 3 and 5 done on 2026-10-24, step 6 in part.**
 

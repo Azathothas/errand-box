@@ -10,7 +10,7 @@ as root unless it says otherwise.
    match:
 
    ```sh
-   v=v0.1.0                            # the newest release
+   v=v0.1.1                            # the newest release
    curl -fsSLO "https://raw.githubusercontent.com/Azathothas/errand-box/$v/bootstrap.sh"
    sh bootstrap.sh --version "$v"      # or --base-url URL for a mirror
    ```

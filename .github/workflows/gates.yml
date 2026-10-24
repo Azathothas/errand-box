@@ -92,7 +92,7 @@ jobs:
         run: sh scripts/ci-local.sh --step discord-contract
       - name: the pin mover
         run: sh scripts/ci-local.sh --step pins
-      - name: the pinned errand accepts the config errand-box writes
+      - name: the errand built in accepts the config errand-box writes
         run: sh scripts/ci-local.sh --step errand-config
 
       # Tracked plus untracked-but-not-ignored, so the same block gives the

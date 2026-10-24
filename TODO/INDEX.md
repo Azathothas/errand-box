@@ -43,11 +43,11 @@ The P0 entries are what errand-box is: one command that sets a host up, a
 session that is a whole system, and daemons that come back after a restart.
 All four are done. The fourth, T-029, was a guest that could send the
 operator's provider key off the host through errand's broker; it is fixed
-in errand-box's fork, and a host has it once it runs a release that carries
-the fork.
+in errand-box's fork, and v0.1.1 is the first release that carries the
+fork (T-028, done).
 
-The open P1 entries are errand as errand-box's own build (T-028), a
-Discord stand-in for testing errand's chat path (T-035), a broker link
+The open P1 entries are a Discord stand-in for testing errand's chat path
+(T-035, partial), a broker link
 that does not need proxy devices,
 which closes the path from the errand account to the admin socket, a
 session with a real chat service, rootless podman on Ubuntu 24.04 hosts,
@@ -68,15 +68,15 @@ retires the `bailey` stand-in.
 
 ## Counts
 
-**36 items. 15 open, 7 partial, 1 blocked, 13 done.**
+**36 items. 15 open, 6 partial, 1 blocked, 14 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 3 | 4 | 1 | 6 | 14 |
+| P1 | 3 | 3 | 1 | 7 | 14 |
 | P2 | 9 | 2 | 0 | 3 | 14 |
 | P3 | 3 | 1 | 0 | 0 | 4 |
-| **All** | 15 | 7 | 1 | 13 | 36 |
+| **All** | 15 | 6 | 1 | 14 | 36 |
 
 ---
 
@@ -111,7 +111,7 @@ retires the `bailey` stand-in.
 | [T-025](sandbox.md) | P2 | sandbox | open | An AppArmor route for user namespaces in guests, without the host-wide sysctl |
 | [T-026](upkeep.md) | P2 | upkeep | open | Live checks that read a state once, at a moment they do not control |
 | [T-027](setup.md) | P1 | setup | open | Use errand-box as a user does, on three hosts, and file what it finds |
-| [T-028](errand.md) | P1 | errand | partial | errand is errand-box's hard fork, built, tested and shipped from this tree |
+| [T-028](errand.md) | P1 | errand | done | errand is errand-box's hard fork, built, tested and shipped from this tree |
 | [T-029](errand.md) | P0 | errand | done | A guest sends the operator's provider key to a host it names |
 | [T-030](errand.md) | P1 | errand | done | The host-side push can publish another session's repository |
 | [T-031](errand.md) | P2 | errand | done | The relay drops a connection with no log line when its target does not answer |
