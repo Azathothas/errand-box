@@ -165,10 +165,6 @@ async fn a_provider_that_cannot_be_reached_says_nothing_not_no() {
 /// A window nothing has been charged to has nothing scheduled to reset, and
 /// z.ai sends null for it. Reading that as no answer cleared the status
 /// exactly when the window was emptiest.
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[test]
 fn an_untouched_window_is_an_answer_reset_time_or_not() {
     let body = json!({

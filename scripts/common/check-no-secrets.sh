@@ -117,7 +117,23 @@ scan "a password in a url"      '://[A-Za-z0-9._%+-]+:[^@/[:space:]]{6,}@'
 
 # --- 3. public-only: fingerprints of a private system ------------------------
 if [ "$PUBLIC" = "1" ]; then
-  scan "an email address"       '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  # Narrowed rather than switched off, by three shapes that are not anybody's
+  # address. Each is removed from the line first, and what is left is checked:
+  #   - a domain RFC 2606 and RFC 6761 reserve: example.com, .net and .org,
+  #     and the .example, .test and .invalid top-level names. Test data uses
+  #     them on purpose;
+  #   - the user part of a URL, `scheme://user@host`. That is a credential
+  #     shape, and "a password in a url" above is its rule;
+  #   - `git@`, the account every code host serves SSH remotes as.
+  # Whenever this produces a false positive, move the address onto a reserved
+  # domain; do not widen the exclusions.
+  _mail_out=$(list_files | tr '\n' '\0' \
+    | xargs -0 grep -nIE '@' 2>/dev/null \
+    | sed -E 's#://[^/@[:space:]]+@#://#g' \
+    | sed -E 's#(^|[^A-Za-z0-9._%+-])git@#\1#g' \
+    | sed -E 's#[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)*(example\.(com|net|org)|[A-Za-z0-9-]+\.(example|test|invalid))([^A-Za-z0-9.-]|$)#\5#g' \
+    | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' || true)
+  [ -n "$_mail_out" ] && hit "an email address" "$_mail_out"
 
   # Narrowed, not switched off. A pinned GitHub Action is a 40-hex commit on
   # a PUBLIC repository, and pinning is the SAFE practice this template asks
@@ -154,10 +170,12 @@ if [ "$PUBLIC" = "1" ]; then
   # the whole rule.
   _home_out=$(list_files | tr '\n' '\0' \
     | xargs -0 grep -nIE '([A-Za-z]:[\\/]Users[\\/]|/home/|/Users/)[A-Za-z0-9._-]+' 2>/dev/null \
-    | grep -vE '/home/(linuxbrew|runner|user|vagrant|ubuntu|node)/' \
+    | grep -vE '/home/(linuxbrew|runner|user|vagrant|ubuntu|node|operator|somebody|someone|a)([^A-Za-z0-9._-]|$)' \
     | grep -vE '/state/home(/|[^A-Za-z0-9._-]|$)' \
     | grep -vE '/home/agent([^A-Za-z0-9._-]|$)' \
     | grep -vE '/Users/(runner|user)/' || true)
+  # operator, somebody, someone and a are the generic users of errand's test
+  # fixtures.
   # /state/home is the home errand gives every sandboxed session, and
   # /home/agent the account of errand-box's guest image: fixed paths of the
   # software, not of anybody's machine.

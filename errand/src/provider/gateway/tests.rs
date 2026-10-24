@@ -92,10 +92,6 @@ impl Fetch for Unavailable {
     }
 }
 
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[test]
 fn an_open_window_is_read_as_what_has_been_used_of_it() {
     let quota = read_gateway_usage(&usage_body(&open())).expect("an answer");
@@ -112,10 +108,6 @@ fn an_open_window_is_read_as_what_has_been_used_of_it() {
 }
 
 /// The gateway says outright, and that beats the arithmetic.
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[test]
 fn a_spent_window_is_spent_whatever_the_percentages_say() {
     let mut limiting = open();
@@ -173,10 +165,6 @@ fn an_answer_the_gateway_is_unsure_of_is_no_answer() {
     );
 }
 
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[tokio::test]
 async fn usage_is_asked_for_beside_the_base_url_with_the_key() {
     let fetch = Fake::answer(usage_body(&open()));

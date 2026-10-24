@@ -253,10 +253,10 @@ fn a_mention_is_the_login_standing_on_its_own() {
     assert!(!mentions(&format!("x@{BOT} not a mention"), BOT));
     assert_eq!(
         as_said(
-            &format!("@{BOT} fix the\n```\nparser\n```\nwith @Alice-B, me@x.dev"),
+            &format!("@{BOT} fix the\n```\nparser\n```\nwith @Alice-B, me@x.example"),
             BOT
         ),
-        "fix the\n```\nparser\n```\nwith <@github:alice-b>, me@x.dev"
+        "fix the\n```\nparser\n```\nwith <@github:alice-b>, me@x.example"
     );
 }
 

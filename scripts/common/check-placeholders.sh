@@ -116,8 +116,14 @@ REPORT=""
 # The cost of the wider rule: a placeholder written in lowercase would be
 #    missed. None is, the convention is uppercase, and the marker rule in
 #    docs/conventions/prose.md is the same kind of explicit-list trade.
-BRACE=$(printf '%s\n' "$FILES" | tr '\n' '\0' | xargs -0 grep -nI '{{' 2>/dev/null \
-  | grep -v '\${{' | grep -vE '\{\{ *[a-z.]' || true)
+# `{{` IS ALSO RUST'S ESCAPE FOR A LITERAL BRACE in a format string, and it is
+#    followed by a quote, a space, a brace or the end of the line: `{{"`,
+#    `{{ {} }}`, `=> {{`. It fired seven times the day errand's source came
+#    into this tree. So the rule now asks for the one shape a placeholder has,
+#    `{{` and an UPPERCASE letter, with spaces allowed between, rather than
+#    listing every shape that is not one.
+BRACE=$(printf '%s\n' "$FILES" | tr '\n' '\0' | xargs -0 grep -nIE '\{\{ *[A-Z]' 2>/dev/null \
+  | grep -v '\${{' || true)
 if [ -n "$BRACE" ]; then
   COUNT=$((COUNT + 1))
   REPORT="$REPORT

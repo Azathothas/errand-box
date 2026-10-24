@@ -12,42 +12,29 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
 
 ---
 
-## Decisions that wait for the operator
+## The operator's rulings of 2026-10-24
 
-The session of 2026-10-24 researched one question the operator set: errand-box
-stops depending on errand as an upstream, but still needs its chat layer. Is
-it better to vendor errand and patch it, or to rewrite the chat layer? It also
-read eight projects the operator named, as ideas or replacements. Five
-write-ups hold the evidence, each listed in
-[`docs/history/README.md`](../docs/history/README.md). The recommendation,
-for the operator to rule on:
+The session of 2026-10-24 researched whether to vendor errand or rewrite its
+chat layer, and eight projects the operator named. Five write-ups hold the
+evidence, each listed in [`docs/history/README.md`](../docs/history/README.md).
+The operator ruled on the recommendation the same day:
 
-1. **Vendor errand at `715e9b0b777a` and prune it. Do not rewrite it, and do
-   not take errand's releases.** Both errand write-ups reached this verdict
-   independently. errand-box needs about 76% of errand's non-test lines. A
-   rewrite on the same Discord library keeps about three quarters of the
-   crates and a C compiler. The fixes for at least seven closed security
-   reports come with the code. A native Incus backend in the vendored copy then retires
-   the `bailey` stand-in.
-2. **Fix errand#48 first, in the vendored copy.** A guest that holds its
-   nonce can send the operator's provider key to a host it names, when the
-   provider's base URL has no path. The same code is in the errand v0.3.1
-   that `pins.toml` installs today. Read at both commits; no request was
-   sent.
-3. **None of the eight projects replaces errand, errand-box or the broker.**
-   OpenShell and raxis need KVM or cgroup v2, and their sandboxes run no
-   systemd or Docker. None has a chat layer. Adopt mechanisms only, each
-   cited in its write-up, into T-020 to T-023.
-4. **New entries to approve**, per
-   [`authoring.md`](../docs/methodology/authoring.md): vendor errand; fix
-   errand#48 and #54 item 1, then errand#52; the silent drop in
-   `src/relay.rs:62` and `:79` when a relay cannot connect. T-016 and T-019
-   change scope if 1 is approved.
-5. **The corpus.** `references/` holds the ten clones and their trackers, 271
-   MB with git data. It is too large for `main`. Push it to its own branch,
-   without raxis's tree, which is SSPL-1.0? Until then it exists only in the
-   hosted container, excluded by `.git/info/exclude`, and each
-   `PROVENANCE.md` gives the command that fetches it again.
+1. **errand is errand-box's hard fork, in `errand/`** (T-028). Imported byte
+   for byte at `715e9b0b777a`; no upstream release is taken after it. The
+   import builds and passes its tests in the workspace and the gate.
+   errand-box does not ship it yet: setup still installs the pinned v0.3.1.
+2. **The corpus is deleted.** The write-ups stay; each names the commit it
+   read, and `git clone` with
+   [`scripts/fetch-tracker.sh`](../scripts/fetch-tracker.sh) fetches it again.
+3. **The eight projects are ideas only.** The mechanisms worth taking are in
+   the write-ups and in T-029 to T-033.
+
+New entries: T-028 to T-034, in [`errand.md`](errand.md). T-019 is open, not
+blocked: its backend is errand-box's to build in the fork. T-029, a P0, is
+live in the errand v0.3.1 that `pins.toml` installs today. Until T-028 ships
+the fork, an operator can keep it from reaching the key by giving
+`ERRAND_PROVIDER_BASE_URL` a path, where the provider allows one: read, not
+tested.
 
 ---
 
@@ -121,7 +108,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB, no
 Incus. The earlier hosts and their results are in git history.
 
-**27 entries: 10 done, 4 partial, 2 blocked, 11 open.**
+**34 entries: 10 done, 5 partial, 1 blocked, 18 open.**
 
 ---
 
@@ -147,39 +134,39 @@ Candidates that a measurement refuted:
   errand's features resolves to 150 crates and builds C code.
 - errand-box can fix errand#48 and T-016 from outside errand. Read: the
   route match and the fixed text are in errand's code.
+
 ## What is in progress
 
-Nothing in the tree. The recommendation above waits for the operator's
-ruling, and no entry is filed until the operator approves it.
+T-028, the fork: imported and gated. Not reached yet: shipping it from
+errand-box's binary, the static build's C compiler, the web bundle, and the
+pages that still say errand is installed from its release.
 
 ---
 
 ## Start here next session
 
-1. If the operator ruled on the decisions above: file the approved entries,
-   then start with errand#48.
-2. On the Windows machine: the mandated task above.
-3. T-020, `TODO/sandbox.md`: the broker link without proxy devices. Read the
-   adopted mechanisms in the 2026-10-24 write-ups first.
-4. T-024, then T-021, then T-022, which waits on T-020's link.
-5. T-014, T-026, T-023, T-025.
+1. T-029 in the fork, then T-028's shipping steps, so the fix reaches a host.
+2. T-030, then T-031 to T-033.
+3. On the Windows machine: the mandated task above.
+4. T-020, then T-019's backend in the fork, which retires the `bailey`
+   stand-in. Read the adopted mechanisms in the 2026-10-24 write-ups first.
+5. T-024, then T-021, then T-022, which waits on T-020's link.
+6. T-014, T-026, T-023, T-025, T-034.
 
 ---
 
 ## Open questions for the operator
 
-The five decisions at the top of this file. Two things only the operator can
-do are unchanged:
-
-1. **Revoke the Daytona token** that was given to the session of
+1. **T-034**: keep or remove errand's web interface and its `errand threads`
+   command. The recommendation is to keep both.
+2. **Revoke the Daytona token** that was given to the session of
    2026-10-23: it is in a session transcript.
-2. **Create the credentials** T-015 and T-007 list. Put each in a file,
+3. **Create the credentials** T-015 and T-007 list. Put each in a file,
    never in the chat.
 
 ---
 
 ## Settled, and not to be raised again
 
-See [`RULES.md`](RULES.md) section 4: Incus system containers; errand
-unchanged behind `bailey`; root at setup; s6 from the distribution.
-Decision 1 above, if the operator approves it, replaces the second.
+See [`RULES.md`](RULES.md) section 4: Incus system containers; errand as
+errand-box's hard fork; root at setup; s6 from the distribution.

@@ -102,7 +102,7 @@ Without one, the limits in your service definition still hold, but they hold
 over the daemon and every session together, and the daemon reports that as the
 gap above.
 
-The [service definitions](/service) show how to provide one.
+The [service definitions](service.md) show how to provide one.
 
 ## Granting more than the default
 

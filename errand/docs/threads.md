@@ -29,7 +29,7 @@ A message starting `!` is a command. An unknown one is left alone entirely: a
 shared channel usually has more than one bot in it, and forwarding somebody
 else's command to a model costs money to no purpose.
 
-The full list is in [commands](/reference/commands), or type `!help`.
+The full list is in [commands](reference/commands.md), or type `!help`.
 
 ## Who may do what
 
@@ -49,7 +49,7 @@ session role grants it and the daemon answers it against its own list.
 The agent's words as it produces them, the commands it runs as one block that
 extends rather than a message per call, and a diff after each edit. A picture
 the agent generates or draws arrives as an upload, captioned with its size (see
-[generating images](/images)). A turn ends with a line that names you, so a
+[generating images](images.md)). A turn ends with a line that names you, so a
 phone tells you when it is your turn again.
 
 A model that answers with a picture inside its text, as base64, does not turn
@@ -71,7 +71,7 @@ the agent is shown, and a Lottie sticker arrives as the JSON that draws it.
 
 An image is handed to the model as well as saved. If the session's model cannot
 see images, a cheaper one that can is asked to describe it first, and the agent
-is told plainly that it is reading a description. See [two models](/models).
+is told plainly that it is reading a description. See [two models](models.md).
 
 ## Deleting a message
 

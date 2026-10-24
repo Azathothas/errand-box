@@ -44,7 +44,7 @@ Write `~/.config/errand/config.json`. The smallest file that starts:
 }
 ```
 
-Everything else has a default, listed in [configuration](/reference/configuration).
+Everything else has a default, listed in [configuration](reference/configuration.md).
 Keep the file mode 0600: it holds two credentials.
 
 ## Run it
@@ -56,7 +56,7 @@ errand run
 It checks the sandbox before it touches the chat service, and says what it can
 and cannot enforce on this host. If it cannot enforce something the
 configuration asks for, it stops rather than starting anyway. See
-[sandboxing](/sandboxing) for what that report means.
+[sandboxing](sandboxing.md) for what that report means.
 
 Then post in the served channel. The first message opens a thread and starts a
 session; replies in that thread are prompts.

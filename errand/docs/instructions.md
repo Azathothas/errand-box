@@ -75,4 +75,4 @@ applies everywhere is worth its place, and a page of preferences is bought again
 on every message anybody sends.
 
 Facts the agent learns as it goes are a separate thing, with their own bounds.
-See [memory](/memory).
+See [memory](memory.md).

@@ -58,8 +58,8 @@ step() {
       shellcheck -s sh $(shell_files)
       ;;
     fmt) cargo fmt --all -- --check ;;
-    clippy) cargo clippy --locked --all-targets -- -D warnings ;;
-    test) cargo test --locked ;;
+    clippy) cargo clippy --locked --workspace --all-targets -- -D warnings ;;
+    test) cargo test --locked --workspace ;;
     pins) sh tests/pins-test.sh ;;
     # Downloads the pinned errand: the one step that needs the network.
     errand-config) cargo build --locked && sh tests/errand-config-test.sh ;;

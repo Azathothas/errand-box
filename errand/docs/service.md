@@ -44,7 +44,7 @@ systemctl enable --now errand
 Both definitions restart a crash and refuse to restart a refusal. Exit 2, 3, and
 4 are decisions the daemon made, and repeating them would only log the same line
 again; 4 would also mean fighting the daemon that is already serving. See
-[getting started](/start) for what each code means.
+[getting started](start.md) for what each code means.
 
 ## Seeing more in the log
 

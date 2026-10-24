@@ -128,7 +128,7 @@ fn writing_pages_repairs_exactly_the_stale_ones() {
 
 #[test]
 fn the_committed_pages_match_the_code_this_generator_reads() {
-    let root = super::repo_root();
+    let root = super::crate_root();
 
     assert_eq!(stale_pages(&root), Vec::<String>::new());
 }
@@ -139,7 +139,7 @@ fn the_committed_pages_match_the_code_this_generator_reads() {
 #[test]
 #[ignore = "writes the committed pages; run with --ignored when the code changed"]
 fn regenerate_the_reference_pages() {
-    let root = super::repo_root();
+    let root = super::crate_root();
 
     write_pages(&root);
     assert_eq!(stale_pages(&root), Vec::<String>::new());

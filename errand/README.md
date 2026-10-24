@@ -1,11 +1,10 @@
 # errand
 
-Run a coding agent from a chat channel, in a sandbox it cannot escape.
-
-A message in one configured channel opens a thread and starts a session. The
-agent works in a project directory of your choosing and nowhere else. Replies
-in the thread are prompts; what the agent says, runs, and changes comes back
-to the same thread.
+errand-box's hard fork of errand, taken from
+[QaidVoid/errand](https://github.com/QaidVoid/errand) at `715e9b0b777a` on
+2026-10-24. It is errand-box's code from that commit on, and it takes no
+upstream release. What changed since the fork is in the git history of this
+directory. [docs/index.md](docs/index.md) says what errand does.
 
 - One channel, one thread per session, several sessions at once.
 - The agent runs sandboxed. There is no unsandboxed mode.
@@ -13,15 +12,32 @@ to the same thread.
   of messages cannot get an account rate limited.
 - The chat token never enters a sandbox.
 
-Full documentation, including every configuration field, is in
-[docs](docs), built with VitePress from `docs`.
+## Documentation
+
+| page | what it covers |
+| --- | --- |
+| [docs/index.md](docs/index.md) | what errand is |
+| [docs/start.md](docs/start.md) | the first run |
+| [docs/threads.md](docs/threads.md) | sessions, threads and their commands |
+| [docs/sandboxing.md](docs/sandboxing.md) | the sandbox backends and the egress broker |
+| [docs/service.md](docs/service.md) | running the daemon as a service |
+| [docs/github.md](docs/github.md) | pull requests from a session |
+| [docs/models.md](docs/models.md) | providers and models |
+| [docs/images.md](docs/images.md) | images a session generates |
+| [docs/memory.md](docs/memory.md) | what a session remembers |
+| [docs/instructions.md](docs/instructions.md) | instructions given to the agent |
+| [docs/interface.md](docs/interface.md) | the local web interface |
+| [docs/reference/configuration.md](docs/reference/configuration.md) | every configuration field, generated |
+| [docs/reference/commands.md](docs/reference/commands.md) | every chat command, generated |
+| [docs/reference/characters.md](docs/reference/characters.md) | every reaction and prefix, generated |
+| [CHANGELOG.md](CHANGELOG.md) | upstream's releases, up to the fork |
 
 ## What you need
 
 - Linux, with either [bailey](https://github.com/QaidVoid/bailey) or rootless
-  podman on the host. The sandbox is not optional, so one of them has to be
-  there: without a backend the daemon refuses to start rather than running a
-  session unconfined. `sandbox.backend` picks which, and defaults to `bailey`.
+  podman on the host. Without a backend the daemon refuses to start rather
+  than running a session unconfined. Under errand-box, `bailey` is
+  errand-box itself. `sandbox.backend` picks which, and defaults to `bailey`.
 - A chat bot token, and one channel for it to serve.
 - A credential for a model provider.
 
@@ -146,13 +162,10 @@ The model list is derived from the file again after a change, so an edited
 `models` list is what `!model` lists straight away. `!models refresh` is for
 asking the providers themselves again, over the network.
 
-Full documentation, including every configuration field, is in
-[docs](docs), built with VitePress from `docs`.
-
 ## Running it as a service
 
-Definitions for OpenRC and systemd are in [packaging](packaging), along with
-what to prepare and what its exit codes mean.
+errand-box supervises errand under systemd or s6:
+[../docs/operations.md](../docs/operations.md).
 
 ## Status
 
@@ -187,7 +200,7 @@ The documentation site builds with VitePress from `docs`, with bun:
 cd docs && bun install && bun run build
 ```
 
-Project rules are in [AGENTS.md](AGENTS.md).
+Project rules are errand-box's: [../AGENTS.md](../AGENTS.md).
 
 ## License
 

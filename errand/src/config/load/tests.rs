@@ -46,10 +46,10 @@ fn the_environment_names_the_file_and_nothing_else_is_consulted() {
 fn a_blank_variable_is_not_a_path_so_the_search_runs() {
     let looked = config_candidates(&environment(&[
         (CONFIG_VARIABLE, "  "),
-        ("HOME", "/home/amelia"),
+        ("HOME", "/home/user"),
     ]));
 
-    assert_eq!(looked[0], "/home/amelia/.config/errand/config.json");
+    assert_eq!(looked[0], "/home/user/.config/errand/config.json");
 }
 
 /// A person's own configuration comes first, so running the daemon by hand on
@@ -57,10 +57,10 @@ fn a_blank_variable_is_not_a_path_so_the_search_runs() {
 #[test]
 fn it_looks_in_the_accounts_config_directory_then_the_systems() {
     assert_eq!(
-        config_candidates(&environment(&[("HOME", "/home/amelia")])),
+        config_candidates(&environment(&[("HOME", "/home/user")])),
         vec![
-            "/home/amelia/.config/errand/config.json",
-            "/home/amelia/.config/errand/config.jsonc",
+            "/home/user/.config/errand/config.json",
+            "/home/user/.config/errand/config.jsonc",
             "/etc/errand/config.json",
             "/etc/errand/config.jsonc",
             "config.json",
@@ -72,16 +72,16 @@ fn it_looks_in_the_accounts_config_directory_then_the_systems() {
 #[test]
 fn a_chosen_config_root_is_honoured() {
     let candidates = config_candidates(&environment(&[
-        ("HOME", "/home/amelia"),
-        ("XDG_CONFIG_HOME", "/home/amelia/cfg"),
+        ("HOME", "/home/user"),
+        ("XDG_CONFIG_HOME", "/home/user/cfg"),
     ]));
 
-    assert_eq!(candidates[0], "/home/amelia/cfg/errand/config.json");
+    assert_eq!(candidates[0], "/home/user/cfg/errand/config.json");
 }
 
 #[test]
 fn the_first_one_that_is_actually_there_is_the_one_used() {
-    let env = environment(&[("HOME", "/home/amelia")]);
+    let env = environment(&[("HOME", "/home/user")]);
 
     assert_eq!(
         config_path(&env, |path| path == "/etc/errand/config.json"),
@@ -94,7 +94,7 @@ fn the_first_one_that_is_actually_there_is_the_one_used() {
     // With none of them there, the failure names the place most likely meant.
     assert_eq!(
         config_path(&env, |_| false),
-        "/home/amelia/.config/errand/config.json"
+        "/home/user/.config/errand/config.json"
     );
 }
 
@@ -114,15 +114,15 @@ fn a_valid_file_loads() {
 #[test]
 fn a_missing_file_says_where_it_looked_and_what_to_do() {
     let error = load_config(
-        "/home/amelia/.config/errand/config.json",
+        "/home/user/.config/errand/config.json",
         |_| Err(Error::new(ErrorKind::NotFound, "nope")),
-        &environment(&[("HOME", "/home/amelia")]),
+        &environment(&[("HOME", "/home/user")]),
         |_| false,
     )
     .expect_err("a missing file is refused");
 
     let said = error.problems.join("\n");
-    assert!(said.contains("/home/amelia/.config/errand/config.json"));
+    assert!(said.contains("/home/user/.config/errand/config.json"));
     assert!(said.contains("/etc/errand/config.json"));
     assert!(said.contains("ERRAND_CONFIG"));
 }

@@ -668,11 +668,11 @@ pub fn pages(schema: &str) -> BTreeMap<String, String> {
     ])
 }
 
-/// The repository root, which is the crate itself since the cutover.
-pub fn repo_root() -> PathBuf {
+/// The crate's root, which the generated pages are relative to.
+pub fn crate_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .canonicalize()
-        .expect("the crate root is the repository root")
+        .expect("the crate root exists")
 }
 
 /// Which committed pages no longer match the code, oldest first.

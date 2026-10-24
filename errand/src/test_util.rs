@@ -1,21 +1,9 @@
-//! Shared test helpers, for tests that need to know where the repository is.
+//! Shared test helpers, for tests that need to know where the crate is.
 
 use std::path::PathBuf;
 
-/// The nearest directory version control answers for, walking up from the
-/// crate, so a test finds the repository root however cargo was invoked.
-pub(crate) fn repo_root() -> PathBuf {
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        for marker in [".jj", ".git"] {
-            if dir.join(marker).exists() {
-                return dir;
-            }
-        }
-        assert!(
-            dir.pop(),
-            "could not find the repository root from {}",
-            env!("CARGO_MANIFEST_DIR")
-        );
-    }
+/// The crate's own directory. errand lives in a directory of errand-box's
+/// repository, so the version control root is not the crate's root.
+pub(crate) fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

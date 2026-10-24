@@ -10,10 +10,10 @@ use serde_json::Value;
 
 use super::schema::defaults;
 use super::validate::validate_config;
-use crate::test_util::repo_root;
+use crate::test_util::crate_root;
 
 fn tracked_file(name: &str) -> Value {
-    let text = fs::read_to_string(repo_root().join(name))
+    let text = fs::read_to_string(crate_root().join(name))
         .unwrap_or_else(|error| panic!("{name} should be readable: {error}"));
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("{name} should be JSON: {error}"))
 }

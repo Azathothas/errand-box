@@ -3,9 +3,10 @@
 errand-box is one Rust program that sets up a Linux host so that each errand
 session runs in its own Incus system container. It installs and configures
 Incus, a guest image, kage and errand, keeps the daemons up on hosts with or
-without an init, and implements the `bailey` interface errand calls, so that
-errand runs unchanged. The audience is an operator who runs errand on a host
-they control, and the agents who work on this repository.
+without an init, and implements the `bailey` interface errand calls. errand,
+the chat daemon, is errand-box's hard fork in `errand/`. The audience is an
+operator who runs errand on a host they control, and the agents who work on
+this repository.
 
 This file is a router. It restates no rule that has a home in another file.
 Each row links to the file that holds the rule, and that file is the
@@ -36,6 +37,7 @@ authority. To read a row is not to read the rule.
 | Any session, first | [`TODO/PROGRESS.md`](TODO/PROGRESS.md), [`TODO/RULES.md`](TODO/RULES.md), [`docs/methodology/sessions.md`](docs/methodology/sessions.md) |
 | Work on an open entry | the entry in `TODO/`, [`docs/methodology/gate.md`](docs/methodology/gate.md), [`docs/conventions/code.md`](docs/conventions/code.md), [`docs/conventions/forbidden-patterns.md`](docs/conventions/forbidden-patterns.md) |
 | Write a new entry | [`docs/methodology/authoring.md`](docs/methodology/authoring.md), [`docs/methodology/work-todo.md`](docs/methodology/work-todo.md). Do not implement it in the same step. |
+| Change errand, the fork in `errand/` | [`TODO/errand.md`](TODO/errand.md), [`docs/bailey-contract.md`](docs/bailey-contract.md), [`docs/incus-backend.md`](docs/incus-backend.md). `errand/README.md` indexes its own pages. |
 | Change the shim (`src/shim.rs`, `src/session.rs`, `src/trust.rs`) | [`docs/bailey-contract.md`](docs/bailey-contract.md), then [`docs/design.md`](docs/design.md) |
 | A native Incus backend in errand | [`docs/incus-backend.md`](docs/incus-backend.md), entry T-019 |
 | Change setup, `up` or the supervisor | [`docs/operations.md`](docs/operations.md), [`docs/edge-cases.md`](docs/edge-cases.md) |
@@ -98,6 +100,7 @@ Each of these was broken once, somewhere.
 | path | what is in it |
 | --- | --- |
 | `src/` | the program: setup, up, doctor, maint, the image build, and the bailey shim |
+| `errand/` | errand, the chat daemon, as errand-box's hard fork; a workspace member with its own lints and tests |
 | `image/` | the guest's provisioning script, launcher and boot step, embedded in the program |
 | `tests/` | the shim's integration tests with a fake Incus, the script tests, and `live/` |
 | `examples/` | the three input files of `setup`, with every key |

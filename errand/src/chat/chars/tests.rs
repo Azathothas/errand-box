@@ -1,7 +1,7 @@
 //! Tests for the character table, ported from `chars_test.ts`.
 
 use super::{PrefixKey, ReactionKey, all_chars, glyph, prefixed, reaction};
-use crate::test_util::repo_root;
+use crate::test_util::crate_root;
 
 #[test]
 fn every_entry_renders_to_the_character_it_names() {
@@ -46,7 +46,7 @@ fn the_table_covers_every_reaction_and_prefix_there_is() {
 /// Declared as codepoints, so the file holding them is itself ASCII.
 #[test]
 fn the_table_is_written_without_a_single_literal_glyph() {
-    let source = std::fs::read_to_string(repo_root().join("src/chat/chars.rs"))
+    let source = std::fs::read_to_string(crate_root().join("src/chat/chars.rs"))
         .expect("the table source is readable");
     assert!(source.is_ascii());
 }

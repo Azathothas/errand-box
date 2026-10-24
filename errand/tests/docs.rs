@@ -18,22 +18,10 @@ struct Undocumented {
     item: String,
 }
 
-/// The nearest directory version control answers for, walking up from the
-/// crate, so the test finds the repository root however cargo was invoked.
-fn repo_root() -> PathBuf {
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        for marker in [".jj", ".git"] {
-            if dir.join(marker).exists() {
-                return dir;
-            }
-        }
-        assert!(
-            dir.pop(),
-            "could not find the repository root from {}",
-            env!("CARGO_MANIFEST_DIR")
-        );
-    }
+/// The crate's own directory. errand lives in a directory of errand-box's
+/// repository, so the version control root is not the crate's root.
+fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 /// Every `.rs` file under `src`, excluding the test modules beside the code.
@@ -172,7 +160,7 @@ fn scan(file: &str, text: &str) -> Vec<Undocumented> {
 
 #[test]
 fn every_exported_item_says_what_it_is() {
-    let root = repo_root();
+    let root = crate_root();
     let mut undocumented = Vec::new();
     for path in source_files(&root) {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -220,7 +208,7 @@ pub fn bare() {}
 /// not compiled since they were written.
 #[test]
 fn every_test_file_is_declared_by_the_module_it_sits_beside() {
-    let root = repo_root();
+    let root = crate_root();
     let mut orphans = Vec::new();
     let mut pending = vec![root.join("src")];
     while let Some(dir) = pending.pop() {

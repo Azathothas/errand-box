@@ -390,6 +390,11 @@ Find which `bailey doctor` lines errand reads for these two notes
 (`src/sandbox/bailey.rs` at the pinned errand), and whether a line the shim
 can print truthfully changes them. errand stays unchanged.
 
+**Correction, 2026-10-24: errand is errand-box's code now (T-028).** The
+two notes are fixed text in `errand/src/sandbox/bailey.rs:435` and
+`:452-454`, so the fix is an edit there, or nothing once T-019's backend
+writes its own notes.
+
 ## Prove
 
 ```sh
@@ -407,7 +412,7 @@ grep -c "confined host processes" /var/log/errand-box/errand/current
 **Category:** sandbox
 **Priority:** P2
 **Effort:** L
-**Status:** blocked
+**Status:** open
 
 ## Problem
 
@@ -572,6 +577,17 @@ opt-in key, pins that release, and runs this entry's Part 2 acceptance with
 the key on. Part 1 needs errand to write the three limits into the bailey
 policy, which is also errand's change, and errand-box's parser must accept
 them first (step 1, blocked on nobody).
+
+**Correction, 2026-10-24: the blocker is gone.** The operator ruled that
+errand-box takes errand into this tree as a hard fork (T-028). Part 2 is
+errand-box's to build, in `errand/src/sandbox/`, and the maintainer's ruling
+in section 10 of [docs/incus-backend.md](../docs/incus-backend.md) no longer
+binds it: the errand account stays in errand-box's restricted project, not in
+`incus-admin`, and the broker link is T-020's. Part 1 folds into Part 2,
+because the backend reads `sandbox.memory`, `cpus` and `pids` itself. When
+Part 2 passes, the `bailey` stand-in (`src/shim.rs`, `src/trust.rs`,
+`src/policy.rs`, `tests/shim.rs`) and docs/bailey-contract.md move to
+history.
 
 ## Prove
 

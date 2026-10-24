@@ -85,10 +85,11 @@ names the blocker and what would unblock it.
   second host: Incus costs 0.9 to 1.1 times runc; gVisor 1.2 to 9 times, with
   no FUSE and Docker only in part. A VM needs KVM, which many hosts lack.
   [`docs/research/engines.md`](../docs/research/engines.md).
-- **errand stays unchanged; errand-box answers as `bailey`.** 2026-10-23. The
-  podman backend of errand runs host processes, not a system;
-  [`docs/bailey-contract.md`](../docs/bailey-contract.md) says why the
-  bailey interface is the seam.
+- **errand is errand-box's hard fork, in `errand/`.** 2026-10-24, the
+  operator's ruling. No upstream release is taken after the import commit.
+  Until T-019's backend lands, errand-box still answers errand as `bailey`.
+  The decision this replaced is in
+  [`docs/history/errand-unchanged.md`](../docs/history/errand-unchanged.md).
 - **Root at setup.** 2026-10-23. Without root at run time Incus loses the
   disk quota; without root at all only emulation works, at 18 to 53 times
   the cost. [`docs/research/rootless.md`](../docs/research/rootless.md).

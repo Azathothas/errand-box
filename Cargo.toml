@@ -8,6 +8,9 @@ description = "Sets up Incus, a guest image, kage and errand on a Linux host, an
 repository = "https://github.com/Azathothas/errand-box"
 publish = false
 
+[workspace]
+members = ["errand"]
+
 [[bin]]
 name = "errand-box"
 path = "src/main.rs"

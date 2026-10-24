@@ -7,10 +7,6 @@ use super::{
     classify_update, detail_of, stop_failure, tool_target, usage_of,
 };
 
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[test]
 fn usage_is_read_off_an_update_with_cost_beside_it() {
     let usage = usage_of(&json!({
@@ -30,10 +26,6 @@ fn usage_is_read_off_an_update_with_cost_beside_it() {
 
 /// An agent that reports only how full the context is has not said what was
 /// charged, and the fill must not be read as spend.
-#[expect(
-    clippy::float_cmp,
-    reason = "the fixtures hold values a f64 holds exactly"
-)]
 #[test]
 fn an_update_without_kage_totals_charges_nothing() {
     let usage = usage_of(&json!({ "sessionUpdate": "usage_update", "used": 900, "size": 10 }))
