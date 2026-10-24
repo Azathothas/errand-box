@@ -9,7 +9,7 @@ repository = "https://github.com/Azathothas/errand-box"
 publish = false
 
 [workspace]
-members = ["errand"]
+members = ["errand", "discord-mock"]
 
 [[bin]]
 name = "errand-box"

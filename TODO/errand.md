@@ -411,7 +411,7 @@ of that day,
 **Category:** errand
 **Priority:** P1
 **Effort:** L
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -446,8 +446,31 @@ five tests that section names.
 - **An environment variable, not a config key**, so errand-box's setup and
   `up` never write it, and a guard that refuses a real token and a non-local
   gateway before any request.
-- **Open for the operator:** where the binary lives on a test host. The
-  recommendation is a release asset `setup` and `bootstrap.sh` never install.
+- **The stand-in runs in CI and in-process tests only.** The operator's
+  ruling of 2026-10-24: no release asset, no install on a test host, and
+  `tests/live` does not use it. The `discord-mock` binary is for a CI job
+  that runs errand against it from outside.
+
+## Done, and open
+
+**The stand-in, the plan's steps 1 to 4 and test 5, done on 2026-10-24.**
+The errand patch, tests 1 to 4 and the gate step are next.
+
+- `discord-mock/`, a workspace member (0BSD, `publish = false`).
+  `src/state.rs` is the one store, whose changes return the dispatches they
+  cause; `src/rest.rs` serves the fifteen operations, the attachment CDN
+  with signed URLs, and answers 501 for any other route, method or body
+  field; `src/gateway.rs` holds sessions, `seq`, replay on RESUME, intents,
+  the content intent, zlib payload compression, the 120-sends limit and the
+  faults; `src/journal.rs` records every call and frame; `src/control.rs`
+  is what a person or a moderator does; `src/main.rs` is the binary. A
+  handle dropped with an unread gap fails its test. New crate names:
+  `multer` and `spin` (axum's multipart), `twilight-model` and five of its
+  own, dev only: the plan's measured 8.
+- `cargo test --locked -p discord-mock`: 26 tests pass, test 5 among them
+  (`tests/dispatch.rs`). With `channel_id` dropped from the message,
+  serenity read MESSAGE_CREATE as `Event::Unknown`; with the replay one
+  dispatch short, `s` rose by two. Both failed, exit 101, and were restored.
 
 ## Prove
 

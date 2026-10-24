@@ -113,7 +113,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB, no
 Incus. The earlier hosts and their results are in git history.
 
-**35 entries: 13 done, 5 partial, 1 blocked, 16 open.**
+**35 entries: 13 done, 6 partial, 1 blocked, 15 open.**
 
 ---
 

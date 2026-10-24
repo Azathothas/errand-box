@@ -101,6 +101,7 @@ Each of these was broken once, somewhere.
 | --- | --- |
 | `src/` | the program: setup, up, doctor, maint, the image build, and the bailey shim |
 | `errand/` | errand, the chat daemon, as errand-box's hard fork; a workspace member with its own lints and tests |
+| `discord-mock/` | a local stand-in for the part of Discord errand reaches, for tests and CI only (T-035) |
 | `image/` | the guest's provisioning script, launcher and boot step, embedded in the program |
 | `tests/` | the shim's integration tests with a fake Incus, the script tests, and `live/` |
 | `examples/` | the three input files of `setup`, with every key |
