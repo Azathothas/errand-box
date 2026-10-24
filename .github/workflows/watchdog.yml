@@ -38,10 +38,12 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           rc=0
-          for check in zabbly-stable zabbly-lts-6.0 images pins; do
+          for check in zabbly-stable zabbly-lts-6.0 images pins discord-spec; do
             f="$RUNNER_TEMP/upstreams/$check.md"
+            title="upstream: $check is gone"
+            [ "$check" != discord-spec ] || title="upstream: Discord's spec changed for the stand-in's operations"
             if [ -f "$f" ]; then
-              sh scripts/track-issue.sh raise "upstream-$check" "upstream: $check is gone" "$f" || rc=1
+              sh scripts/track-issue.sh raise "upstream-$check" "$title" "$f" || rc=1
             else
               sh scripts/track-issue.sh clear "upstream-$check" "$check answers again: $RUN_URL" || rc=1
             fi

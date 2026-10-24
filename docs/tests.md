@@ -6,7 +6,7 @@ exits 0 only when every check passed. Read the exit code unpiped.
 | kind | needs | command |
 | --- | --- | --- |
 | 1. unit and integration tests | cargo, on Linux | `cargo test --locked` |
-| 2. the local CI steps | cargo, shellcheck, and musl-tools for the static build, on Linux | `sh scripts/ci-local.sh` |
+| 2. the local CI steps | cargo, shellcheck, python3 with python3-jsonschema, and musl-tools for the static build, on Linux | `sh scripts/ci-local.sh` |
 | 3. the live tests | root on a host where `errand-box setup` finished | `sh tests/live/live.sh` |
 | 4. other kinds of host | root on a host where Incus runs | `sh tests/hosts/host.sh NAME IMAGE` |
 | 5. as a user, on a host you are given | sudo on that host, and a release | section 5 |
@@ -57,6 +57,7 @@ checked there.
 | `shellcheck` | every shell script this repository ships |
 | `fmt`, `clippy` | format, and clippy with warnings as errors |
 | `test` | section 1 |
+| `discord-contract` | `scripts/discord-spec.sh --check`: the Discord stand-in answers the fifteen REST operations errand reaches in the shapes of Discord's OpenAPI spec, `discord/discord-api-spec` at a pinned commit. It refuses a snapshot whose digest is not the pinned one. Without python3-jsonschema it exits 2 |
 | `pins` | `tests/pins-test.sh`: `scripts/pins.sh` against releases on `file://` URLs. A bump writes both digests and moves `latest`; a digest that differs from upstream's `.sha256` changes nothing |
 | `errand-config` | `tests/errand-config-test.sh`: the errand built into errand-box accepts the config errand-box writes. It runs errand-box under the name `errand` against the config from `tests/data/`. This step caught `output.postImages`, a key that errand v0.3.1 refused |
 | `musl` | the static release binary builds for this machine, runs, and answers as `errand`. errand's crates compile C (T-028), so it needs `musl-gcc` from musl-tools, or `CC_<target>` set; without one it exits 2 |

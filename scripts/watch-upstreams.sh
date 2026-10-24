@@ -14,6 +14,9 @@
 #                     the guest image, for amd64 and arm64
 #   pins              each URL of pins.toml answers (the release asset is
 #                     still there)
+#   discord-spec      Discord's spec has not changed for the operations the
+#                     Discord stand-in serves (scripts/discord-spec.sh
+#                     --drift; needs python3)
 #
 # Usage: sh scripts/watch-upstreams.sh [OUT_DIR]
 #   OUT_DIR gets one <check>.md per failed check, for the issue body.
@@ -62,6 +65,18 @@ for u in $urls; do
   n=$((n + 1))
   head_ok "$u" || bad="$bad $u"
 done
-[ -z "$bad" ] && [ "$n" -gt 0 ]
-result pins $? "pins.toml: $n URLs${bad:+; gone:$bad}${bad:-, every one answers}"
+if [ -z "$bad" ] && [ "$n" -gt 0 ]; then rc=0; else rc=1; fi
+result pins "$rc" "pins.toml: $n URLs${bad:+; gone:$bad}${bad:-, every one answers}"
+
+drift=$(sh "$root/scripts/discord-spec.sh" --drift 2>&1)
+rc=$?
+[ "$rc" -le 1 ] || { printf 'discord-spec could not run: %s\n' "$drift" >&2; exit 2; }
+summary="discord/discord-api-spec main against the pinned snapshot: $(printf '%s\n' "$drift" | tail -n 1)"
+if [ "$rc" = 0 ]; then
+  result discord-spec 0 "$summary"
+else
+  result discord-spec 1 "$summary
+
+$drift"
+fi
 exit "$failed"

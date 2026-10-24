@@ -453,21 +453,22 @@ five tests that section names.
 
 ## Done, and open
 
-**The stand-in, the plan's steps 1 to 4, the errand patch and tests 1, 2,
-3 and 5, done on 2026-10-24.** Test 4 and its gate step are next.
+**The plan's steps 1 to 4, the errand patch and the five tests done on
+2026-10-24; steps 5 and 6 in large part; step 7 not started.**
 
-- `discord-mock/`, a workspace member (0BSD, `publish = false`), a
-  dev-dependency of errand only. `src/state.rs` is the one store, whose
-  changes return the dispatches they cause; `src/rest.rs` serves the
-  fifteen operations, the attachment CDN with signed URLs, and answers 501
-  for any other route, method or body field; `src/gateway.rs` holds
-  sessions, `seq`, replay on RESUME, intents, the content intent, zlib
-  payload compression, the 120-sends limit and the faults;
-  `src/journal.rs` records every call and frame; `src/control.rs` is what
-  a person or a moderator does; `src/main.rs` is the binary. A handle
-  dropped with an unread gap fails its test. New crate names: `multer` and
-  `spin` (axum's multipart), `twilight-model` and five of its own, dev
-  only: the plan's measured 8.
+- The stand-in: `discord-mock/`, a workspace member (0BSD,
+  `publish = false`), a dev-dependency of errand only. `src/state.rs` is
+  the one store, whose changes return the dispatches they cause;
+  `src/rest.rs` serves the fifteen operations, the attachment CDN with
+  signed URLs, and answers 501 for any other route, method or body field;
+  `src/gateway.rs` holds sessions, `seq`, replay on RESUME, intents, the
+  content intent, zlib payload compression, the 120-sends limit and the
+  faults; `src/journal.rs` records every call and frame; `src/control.rs`
+  is what a person or a moderator does; `src/main.rs` is the binary. A
+  handle dropped with an unread gap fails its test. 3,651 non-test lines
+  (3,042 without blank and comment lines), against the plan's estimate of
+  2,000 to 3,500. New crate names: `multer` and `spin` (axum's multipart),
+  `twilight-model` and five of its own, dev only: the plan's measured 8.
 - The errand patch: `errand/src/chat/endpoint.rs`, called where
   `serve.rs` built the client, with the three-part guard and one
   `WARNING:` line while the stand-in is in force; unset, the builder is
@@ -475,21 +476,76 @@ five tests that section names.
   `run` so the tests use the adapter `run` uses. `reqwest012` is serenity's
   own reqwest 0.12.28: no crate added. `grep -rn DISCORD_MOCK src image
   bootstrap.sh examples tests` finds nothing: errand-box never sets it.
-- `cargo test --locked -p discord-mock`, 26 tests pass;
-  `cargo test --locked -p errand --lib -- endpoint stand_in`, 13 pass.
+- The spec: `discord-mock/spec/errand-surface.json`, made by
+  `scripts/discord-spec.sh` (with `scripts/discord-spec.py`, always
+  `python3 -I`) from `discord/discord-api-spec` at `bf93257f85d6`: 15
+  operations, 250 components, 164,656 bytes, the research's 164,655 and a
+  newline. Its MIT licence is beside it. The commit, the whole file's
+  SHA-256 and the snapshot's SHA-256 are pinned in the script. `pins.toml`
+  was the plan's home and was refused: errand-box compiles it in
+  (`src/fetch.rs:12`) and never downloads the spec, and `freshness.sh`
+  reads every table there as a GitHub release, so it would fail every week.
+- The gate: the step `discord-contract` in `scripts/ci-local.sh` and
+  `gates.yml`, which installs `python3-jsonschema` first. The daily
+  watchdog runs `discord-spec.sh --drift` as the check `discord-spec`.
+
+The prove, on this session's container (Ubuntu 24.04, Python 3.13.17,
+jsonschema 4.26.0, not the packaged 4.10.3):
+`cargo test --locked -p discord-mock`, 26 tests pass;
+`cargo test --locked -p errand --lib -- endpoint stand_in`, 13 pass;
+`sh scripts/discord-spec.sh --check`, 22 answers, 0 failed;
+`sh scripts/ci-local.sh`, every step passed but `cross`, which exits 2 as
+before.
 
 Each test was seen to fail, the exit code read unpiped, then restored:
-condition 2 switched off let a real token's shape through (test 1); errand
-asking for `GUILD_MESSAGE_TYPING` too gave intents 35329 (test 2); the
-thread post without `SUPPRESS_EMBEDS` had `flags` 0 (test 3); `channel_id`
-dropped from the message made serenity read MESSAGE_CREATE as
-`Event::Unknown`, and a replay one short made `s` rise by two (test 5).
-Each exited 101.
+
+| test | planted defect | what failed |
+| --- | --- | --- |
+| 1, the guard | condition 2 switched off | `a_token_without_the_mock_prefix_is_refused`: a real token's shape was taken; exit 101 |
+| 1, the guard | condition 3 switched off | `a_failed_gateway_lookup_is_refused_not_sent_to_discord`: `Ok(())` where serenity had fallen back to `wss://gateway.discord.gg`; exit 101 |
+| 2, the handshake | errand asks for `GUILD_MESSAGE_TYPING` too | IDENTIFY's intents 35329, not 33281; exit 101 |
+| 3, a message opens a thread | the post without `SUPPRESS_EMBEDS` | the thread post's `flags` 0, not 4; exit 101 |
+| 4, the spec | `flags` dropped from the message answer | `discord-contract` exit 1: six answers, "'flags' is a required property" |
+| 5, two clients | `channel_id` dropped from the message | serenity read MESSAGE_CREATE as `Event::Unknown`; exit 101 |
+| 5, the replay | RESUME replays one dispatch short | `s` rose by two; exit 101 |
+
+Found while building it:
+
+- errand sets an outcome reaction on the message that started a session
+  by fetching it through the thread: `GET /channels/{thread}/messages/{m}`
+  (`errand/src/chat/threads.rs`, `fetch`). The message is in the parent
+  channel, so the stand-in answers 404 and errand skips the reaction.
+  Discord's answer to that call is not in its docs: a thread's first
+  message is a THREAD_STARTER_MESSAGE (`developers/topics/threads.mdx:134`),
+  and its id is not stated. A capture from T-015's bot settles it.
+- serenity #3575 does not hold for 0.12.5: op 1 with `"s": null` is
+  answered (`discord-mock/tests/faults.rs`).
+- Test 2 is in errand (`chat::endpoint::tests`), not in the stand-in's
+  tests as the plan put it: errand's modules are private, and the plan's
+  place needs a public test API in errand and a dev-dependency cycle.
+- Running `check-todo.sh --set` also rewrote the counts line of
+  `TODO/PROGRESS.md`; the gate refuses the record without it.
+
+**Open:**
+
+- Step 7, rate limits for route A2: the rate-limit headers are fixed
+  values, and nothing answers 429.
+- Step 6 in part: op 9 with `true`; errand's own state across a resume
+  (`errand/src/chat/gateway.rs:434-441`); the 15-minute token, which needs
+  a clock the tests can move. Done: drop and resume, op 1, op 7, op 9
+  with `false` and the 5-second re-IDENTIFY, a withheld ACK, 4004, 4014
+  as errand's permanent error, 4008.
+- Permissions and 50013 are not modelled; THREAD_MEMBER_UPDATE after a
+  thread is made is inferred, not captured; gateway fixtures from a real
+  capture wait for T-015's bot.
+- errand's attachment fetch (`errand/src/session/session.rs:2700-2733`) is
+  not driven against the CDN; it needs the fetch injected.
 
 ## Prove
 
 ```sh
 cargo test --locked -p discord-mock
 cargo test --locked -p errand --lib -- endpoint stand_in   # the guard, the handshake, a thread, a command
+sh scripts/discord-spec.sh --check                          # every answer against Discord's spec
 sh scripts/ci-local.sh
 ```
