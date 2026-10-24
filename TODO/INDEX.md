@@ -69,15 +69,15 @@ retires the `bailey` stand-in.
 
 ## Counts
 
-**34 items. 17 open, 6 partial, 1 blocked, 10 done.**
+**34 items. 16 open, 7 partial, 1 blocked, 10 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 1 | 0 | 3 | 4 |
-| P1 | 4 | 3 | 1 | 5 | 13 |
+| P1 | 3 | 4 | 1 | 5 | 13 |
 | P2 | 10 | 2 | 0 | 2 | 14 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 17 | 6 | 1 | 10 | 34 |
+| **All** | 16 | 7 | 1 | 10 | 34 |
 
 ---
 
@@ -114,7 +114,7 @@ retires the `bailey` stand-in.
 | [T-027](setup.md) | P1 | setup | open | Use errand-box as a user does, on three hosts, and file what it finds |
 | [T-028](errand.md) | P1 | errand | partial | errand is errand-box's hard fork, built, tested and shipped from this tree |
 | [T-029](errand.md) | P0 | errand | partial | A guest sends the operator's provider key to a host it names |
-| [T-030](errand.md) | P1 | errand | open | The host-side push can publish another session's repository |
+| [T-030](errand.md) | P1 | errand | partial | The host-side push can publish another session's repository |
 | [T-031](errand.md) | P2 | errand | open | The relay drops a connection with no log line when its target does not answer |
 | [T-032](errand.md) | P2 | errand | open | The broker's provider route: the smaller defects errand's tracker names |
 | [T-033](errand.md) | P2 | errand | open | Files the daemon reads from a session are read whole, and an upload is not redacted |

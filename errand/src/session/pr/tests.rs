@@ -1149,3 +1149,75 @@ async fn somebodys_fork_is_forked_and_opened_against_itself() {
     // The branch the request merges into is the fork's own default.
     assert_eq!(pull.get("base"), Some(&serde_json::json!("main")));
 }
+
+/// A git directory inside the tree can still borrow another repository's
+/// refs or objects, and the host-side clone follows it (T-030, errand#52).
+#[test]
+fn a_git_directory_that_borrows_from_elsewhere_is_refused() {
+    let plain = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(plain.path().join("objects/info")).unwrap();
+    std::fs::create_dir_all(plain.path().join("refs/heads")).unwrap();
+    std::fs::write(plain.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    assert!(super::refuse_borrowed(plain.path()).is_ok());
+
+    let shape = |plant: &dyn Fn(&std::path::Path)| {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("objects/info")).unwrap();
+        std::fs::create_dir_all(dir.path().join("refs/heads")).unwrap();
+        plant(dir.path());
+        super::refuse_borrowed(dir.path()).map_err(|error| error.to_string())
+    };
+    let elsewhere = tempfile::tempdir().unwrap();
+    let other = elsewhere.path().display().to_string();
+
+    let commondir = shape(&|dir| std::fs::write(dir.join("commondir"), &other).unwrap());
+    assert!(commondir.unwrap_err().contains("commondir"));
+    let alternates = shape(&|dir| {
+        std::fs::write(dir.join("objects/info/alternates"), format!("{other}\n")).unwrap();
+    });
+    assert!(alternates.unwrap_err().contains("alternates"));
+    let linked_refs = shape(&|dir| {
+        std::fs::remove_dir_all(dir.join("refs")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), dir.join("refs")).unwrap();
+    });
+    assert!(linked_refs.unwrap_err().contains("symbolic link"));
+    let linked_deep = shape(&|dir| {
+        std::os::unix::fs::symlink(elsewhere.path(), dir.join("refs/heads/main")).unwrap();
+    });
+    assert!(linked_deep.unwrap_err().contains("symbolic link"));
+    let linked_root = tempfile::tempdir().unwrap();
+    let link = linked_root.path().join(".git");
+    std::os::unix::fs::symlink(elsewhere.path(), &link).unwrap();
+    assert!(super::refuse_borrowed(&link).is_err());
+}
+
+/// End to end: a planted `commondir` stops the pull request before anything
+/// is forked or pushed.
+#[tokio::test]
+async fn a_pull_request_from_a_borrowing_git_directory_pushes_nothing() {
+    let kept = with_repo();
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::write(
+        std::path::Path::new(&kept.repo).join(".git/commondir"),
+        elsewhere.path().display().to_string(),
+    )
+    .unwrap();
+    let (fake, run) = plain_git();
+    let (api_fake, api) = working_api();
+
+    let outcome = open_pull_request(
+        &request(&kept.project, "t", "amelia"),
+        &run,
+        &api,
+        &immediate_sleep(),
+    )
+    .await;
+
+    assert!(outcome.unwrap_err().to_string().contains("commondir"));
+    assert!(api_fake.paths.lock().unwrap().is_empty());
+    assert!(!fake.calls.lock().unwrap().iter().any(|call| {
+        call.args
+            .iter()
+            .any(|word| word == "push" || word == "clone")
+    }));
+}

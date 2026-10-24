@@ -242,7 +242,9 @@ fn git(
 /// tree, and the daemon then reads and pushes whatever is at the other end. So
 /// git is asked where it would actually look, and an answer outside the
 /// repository is refused rather than operated on. `--absolute-git-dir`
-/// resolves a path and runs nothing the repository could name.
+/// resolves a path and runs nothing the repository could name. A git
+/// directory inside the tree can still borrow from outside it, which
+/// [`refuse_borrowed`] refuses.
 async fn assert_contained(run: &Run, repo: &str) -> Result<(), PullRequestError> {
     let dir = git(run, repo, &["rev-parse", "--absolute-git-dir"], None).await;
     if dir.code != 0 {
@@ -260,6 +262,59 @@ async fn assert_contained(run: &Run, repo: &str) -> Result<(), PullRequestError>
             "this project's git directory is outside it, so it is not one the daemon will open"
                 .to_owned(),
         ));
+    }
+    refuse_borrowed(Path::new(git_dir))
+}
+
+/// Refuses a git directory that borrows another repository's refs or
+/// objects.
+///
+/// A `commondir` file points the refs at another git directory, an
+/// alternates file adds another repository's objects, and a symbolic link in
+/// the git directory can do either. The push clones the repository on the
+/// host, where the errand account can read every session's project, and git
+/// follows all three there, so a session could publish another session's
+/// branch under the bot's token. A repository made by `git init` or `git
+/// clone` in a session has none of them.
+fn refuse_borrowed(git_dir: &Path) -> Result<(), PullRequestError> {
+    let refused = |what: &str| {
+        Err(PullRequestError(format!(
+            "this project's git directory {what}, so it is not one the daemon will push from"
+        )))
+    };
+    let unreadable = |error: std::io::Error| {
+        PullRequestError(format!(
+            "could not read this project's git directory: {error}"
+        ))
+    };
+    for name in [
+        "commondir",
+        "objects/info/alternates",
+        "objects/info/http-alternates",
+    ] {
+        if std::fs::symlink_metadata(git_dir.join(name)).is_ok() {
+            return refused(&format!("has {name}"));
+        }
+    }
+    let mut pending = vec![git_dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        if std::fs::symlink_metadata(&dir)
+            .map_err(unreadable)?
+            .file_type()
+            .is_symlink()
+        {
+            return refused("holds a symbolic link");
+        }
+        for entry in std::fs::read_dir(&dir).map_err(unreadable)? {
+            let kind = entry.map_err(unreadable)?;
+            let file_type = kind.file_type().map_err(unreadable)?;
+            if file_type.is_symlink() {
+                return refused("holds a symbolic link");
+            }
+            if file_type.is_dir() {
+                pending.push(kind.path());
+            }
+        }
     }
     Ok(())
 }

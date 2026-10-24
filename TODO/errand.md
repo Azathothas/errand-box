@@ -200,7 +200,7 @@ Close this entry when T-028's live test runs the fork's errand.
 **Category:** errand
 **Priority:** P1
 **Effort:** S
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -222,6 +222,23 @@ which copies the objects and reads no alternates.
 ```sh
 cargo test --locked -p errand pr   # an alternates file and a commondir file are each refused
 ```
+
+## Done, and open
+
+**Fixed in the fork on 2026-10-24.** Reproduced first with git 2.43.0: with
+a `commondir` file naming another repository's git directory,
+`--absolute-git-dir` still named the session's own `.git`, and `git clone
+--shared --bare` of the session's repository had the other repository's
+`main`. A clone without `--shared` is no fix, because git follows
+`commondir` and alternates there too. So `assert_contained` now calls
+`refuse_borrowed` (`errand/src/session/pr.rs`), which refuses a git
+directory that holds `commondir` or an alternates file, or a symbolic link
+anywhere in it, the git directory itself included. Two new tests in
+`errand/src/session/pr/tests.rs`; the prove passed, 35 tests. With the
+check switched off, both new tests fail.
+
+**Open:** as T-029, a host runs this fix once it runs a release that
+carries the fork (T-028).
 
 ---
 
