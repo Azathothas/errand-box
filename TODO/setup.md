@@ -1345,7 +1345,7 @@ In a container with `-m 4g`, doctor's host line says 4096 MiB.
 **Category:** setup
 **Priority:** P2
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -1367,6 +1367,19 @@ Refuse what is left after each command's options, exit 2.
 cargo test --locked --test shim
 errand-box gc --dryrun; echo "exit $?"   # 2
 ```
+
+## Closing
+
+**Closed 2026-10-25.** `src/main.rs` gained `deny_leftovers`, used by `doctor`,
+`status`, `up` and `reap`; `maint` and `gc` refuse anything that is not their
+one flag (`--loop`, `--dry-run`) before a pass runs, so a misspelt
+`gc --dryrun` exits 2 rather than deleting. `setup` and `uninstall` already
+refused, so the behaviour is now uniform. The check runs after the config
+loads and before `runtime.toml`, so a rejection needs no host state. A new
+`tests/shim.rs` test, `unknown_options_are_refused_not_run`, drives
+`gc --dryrun`, `maint --frobnicate`, `reap --x`, `status --nope` and
+`doctor --nope` (each exit 2, "unknown option") and confirms `gc --dry-run`
+is not rejected; it passed. fmt and clippy are clean.
 
 ---
 

@@ -370,3 +370,35 @@ fn reap_stops_an_instance_whose_launcher_is_gone() {
     );
     assert_eq!(w.status(), "Stopped");
 }
+
+/// T-063: an unknown option is a usage error (exit 2), not a silently ignored
+/// argument that lets `gc --dryrun` run a real gc. Commands that take the host
+/// lock (setup, up, image, uninstall) are left out so the test makes no lock.
+#[test]
+fn unknown_options_are_refused_not_run() {
+    for (cmd, bad) in [
+        ("gc", "--dryrun"),
+        ("maint", "--frobnicate"),
+        ("reap", "--x"),
+        ("status", "--nope"),
+        ("doctor", "--nope"),
+    ] {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_errand-box"));
+        c.args([cmd, bad]);
+        let out = c.output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{cmd} {bad} should exit 2: {err}"
+        );
+        assert!(err.contains("unknown option"), "{cmd} {bad}: {err}");
+    }
+    // The command's own flag is accepted: `gc --dry-run` may fail for want of
+    // runtime.toml, but never as an unknown option.
+    let mut c = Command::new(env!("CARGO_BIN_EXE_errand-box"));
+    c.args(["gc", "--dry-run"]);
+    let out = c.output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("unknown option"), "gc --dry-run: {err}");
+}

@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 65 open, 6 partial, 1 blocked, 17 done.**
+**89 items. 64 open, 6 partial, 1 blocked, 18 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 10 | 3 | 1 | 9 | 23 |
-| P2 | 38 | 2 | 0 | 4 | 44 |
+| P2 | 37 | 2 | 0 | 5 | 44 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 65 | 6 | 1 | 17 | 89 |
+| **All** | 64 | 6 | 1 | 18 | 89 |
 
 ---
 
@@ -165,7 +165,7 @@ decision).
 | [T-060](errand.md) | P2 | errand | open | `!allow` confirms access for an account errand ignores |
 | [T-061](sandbox.md) | P2 | sandbox | open | A session that cannot start tells the chat only Incus's hint |
 | [T-062](setup.md) | P2 | setup | open | Guest memory follows /proc/meminfo, not the container's limit |
-| [T-063](setup.md) | P2 | setup | open | Unknown options are ignored, and `gc --dryrun` deletes |
+| [T-063](setup.md) | P2 | setup | done | Unknown options are ignored, and `gc --dryrun` deletes |
 | [T-064](setup.md) | P2 | setup | open | `logs` with no name is refused under systemd |
 | [T-065](setup.md) | P2 | setup | open | The README's quick start cannot be followed |
 | [T-066](sandbox.md) | P2 | sandbox | open | `image.source = "release"` downloads the published image |

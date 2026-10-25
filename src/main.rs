@@ -133,6 +133,20 @@ fn load_config(args: &[String]) -> Result<(config::Config, Vec<String>), String>
     Ok((config::load(&path)?, rest))
 }
 
+/// Refuse any argument a command did not consume, with exit 2, as `setup` and
+/// `uninstall` already do. Without this, `status`, `doctor`, `up`, `maint`,
+/// `gc` and `reap` ran as if an unknown option were not there, so a misspelt
+/// `gc --dryrun` ran a real gc (T-063). Returns 0 when nothing is left.
+fn deny_leftovers(cmd: &str, rest: &[String]) -> i32 {
+    match rest.first() {
+        Some(bad) => {
+            eprintln!("errand-box {cmd}: unknown option {bad:?}");
+            2
+        }
+        None => 0,
+    }
+}
+
 fn finish(r: &Report, json: bool) -> i32 {
     if json {
         println!("{}", r.json());
@@ -228,7 +242,13 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
         "up" => {
             let mut r = Report::default();
             let cfg = match load_config(rest) {
-                Ok((cfg, _)) => cfg,
+                Ok((cfg, extra)) => {
+                    let code = deny_leftovers("up", &extra);
+                    if code != 0 {
+                        return code;
+                    }
+                    cfg
+                }
                 // `up` is the recovery after a restart: a typo in the live
                 // file must not keep the daemons down (E-42).
                 Err(e) => match config::load(Path::new(config::APPLIED_PATH)) {
@@ -253,14 +273,20 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
             finish(&r, json)
         }
         "doctor" => match load_config(rest) {
-            Ok((cfg, _)) => finish(&doctor(&cfg, runner), json),
+            Ok((cfg, extra)) => match deny_leftovers("doctor", &extra) {
+                0 => finish(&doctor(&cfg, runner), json),
+                code => code,
+            },
             Err(e) => {
                 eprintln!("errand-box: {e}");
                 1
             }
         },
         "status" => match load_config(rest) {
-            Ok((cfg, _)) => finish(&status::status(&cfg, &host::detect(), runner), json),
+            Ok((cfg, extra)) => match deny_leftovers("status", &extra) {
+                0 => finish(&status::status(&cfg, &host::detect(), runner), json),
+                code => code,
+            },
             Err(e) => {
                 eprintln!("errand-box: {e}");
                 1
@@ -360,6 +386,13 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
                     return 1;
                 }
             };
+            // Each takes one flag of its own; refuse anything else before a
+            // pass runs, so a misspelt `gc --dryrun` does not delete (T-063).
+            let known = if cmd == "gc" { "--dry-run" } else { "--loop" };
+            if let Some(bad) = rest.iter().find(|a| a.as_str() != known) {
+                eprintln!("errand-box {cmd}: unknown option {bad:?}");
+                return 2;
+            }
             let rt = match runtime::load() {
                 Ok(r) => r,
                 // Wait only while the file is simply not there yet (before
@@ -410,6 +443,7 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
             maint::once(&rt, &cfg, runner, &mut std::io::stdout(), &mut last);
             0
         }
+        "reap" if deny_leftovers("reap", rest) != 0 => 2,
         "reap" => match runtime::load()
             .and_then(|rt| session::reap(&rt, runner, &mut std::io::stdout()))
         {
