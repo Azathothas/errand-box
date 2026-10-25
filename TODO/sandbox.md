@@ -676,6 +676,46 @@ To measure first, before the design is built on it:
   or `socat`, listening on 169.254.169.1 for the broker port and for
   `guest_proxy_port`.
 
+## Measured (2026-10-25, on the provisioned host)
+
+All three items, on Incus 6.0.7 in project `user-994`, against a throwaway copy
+of `eb-golden`. Evidence, not assumption (the scripts are in the session's
+scratch; the findings are here):
+
+- **A guest connects to a unix socket on a read-only disk device: yes.** With the
+  disk device `readonly=true`, a guest `curl --unix-socket` to the shared socket
+  reports `num_connects=1`; the result is identical with `readonly=false`. A
+  read-only disk device does not block `connect()`. This is the property T-090's
+  Incus link also rides (its TUN carries IP frames over this same socket).
+- **Owner and mode: socket and directory owned by the errand account
+  (994:993), socket mode 0660, directory mode 0750.** The restricted project
+  pins a split idmap (`restricted.idmap.uid=994`, `gid=993`): guest uid 1000
+  maps to host 994, guest root (uid 0) to a per-instance base (1196608 here,
+  volatile). A socket owned by host 994 appears inside as uid 1000, and both
+  guest uid 1000 (as owner) and guest root (via its DAC override, since 994 is
+  inside the idmap) connect at 0660, no world bit. The alternatives were
+  measured and rejected: a host-root-owned socket appears as `nobody` (unmapped)
+  and connects only at mode 0666 (world), because guest root has no override
+  over an unmapped file; a socket owned by the mapped guest-root uid connects
+  for guest root but not guest 1000, and that uid is per-instance volatile. "No
+  other host account" is the parent `/var/lib/errand` (0750 errand:errand):
+  other host accounts (ubuntu, nixbld*) cannot enter it. The source must sit
+  under `/var/lib/errand` regardless (`restricted.devices.disk.paths`), which is
+  why a source under `/run` was refused.
+- **The guest-side relay: `systemd-socket-proxyd`, already in the image.** The
+  golden image ships it (`/lib/systemd/` and `/usr/lib/systemd/`) and has
+  `curl`, `setpriv`, `ip`, but not `socat` or `nc`. So the relay is a
+  socket-activated `systemd-socket-proxyd` on
+  `169.254.169.1:{broker, guest_proxy_port}`, run as guest root (which reaches
+  the 994-owned host socket), and no new package is added.
+
+So the design is grounded: a per-session directory `/var/lib/errand/links/<id>/`
+(994:993, 0750) holds the broker and sysproxy unix sockets (994:993, 0660);
+errand-box relays each to errand's broker port (the shim's `relay::unix_to_tcp`,
+E-23, already does this for rootless); the directory is shared read-only by a
+disk device; the guest's `systemd-socket-proxyd` units listen on 169.254.169.1
+and connect to the shared sockets; then `restricted.devices.proxy=block`.
+
 ## Prove
 
 ```sh
@@ -1416,6 +1456,12 @@ Staged, so each stage leaves a working egress and proves against the last.
 - Before task 3: measure T-020's link (its three listed items: a guest connects
   to a unix socket on a read-only disk device; the owner and mode; the
   guest-side relay). T-090's Incus link cannot be built before T-020's is real.
+  **Done 2026-10-25** (see T-020's "Measured" section): a guest connects to a
+  unix socket on a read-only disk device (`num_connects=1`); the socket and its
+  directory are owned by errand (994:993), socket 0660, under `/var/lib/errand`;
+  the guest ships `systemd-socket-proxyd` for the relay. The reachability is
+  proven; T-020's link is not yet built (that implementation is the remaining
+  gate for task 3).
 - Before task 8: measure cfrs's premises in the target sandbox (`AF_INET`
   `EACCES`, namespaces `EPERM`, `LD_PRELOAD` honoured) and its open work
   (unbounded queues, the MTU floor) against the flow sizes errand needs.
