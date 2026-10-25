@@ -47,9 +47,15 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
 
 - **Last session:** 2026-10-25, attended, in a hosted container. It triaged
   the open issues into entries (the rulings above), implemented the security
-  cluster from them, filed T-090 and began it, then **provisioned this host
-  (`errand-box setup` installed Incus 6.0.7 and the guest image) and ran the
-  live suite**, which closed T-079 and caught a regression. All on `main`,
+  cluster from them, filed T-090 and began it (tasks 1 and 2 landed), then
+  **provisioned this host (`errand-box setup` installed Incus 6.0.7 and the
+  guest image) and ran the live suite**, which closed T-079 and caught a
+  regression. It then drove **T-090 task 3's gate, T-020**: turned CI green
+  (the `Phy::new` doc comment), ran the T-020 **measurement** checkpoint live,
+  **prototyped the whole unix-socket broker link live** (proving the data path
+  and finding the `/run`-tmpfs-shadow gotcha and its fix), and mapped the build,
+  leaving one open design point (the dynamic broker port). A worker restart
+  stopped incusd mid-session; `errand-box up` brought it back. All on `main`,
   pushed, each commit under the operator's identity.
 - **This host is now a working errand-box host.** `errand-box setup` finished
   with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
@@ -164,15 +170,23 @@ and now that this host is provisioned, the rest is drivable here:
 
 - **T-090** (the virtual network layer, which subsumes T-082 and T-022):
   partial. Task 1's gate extraction and task 2's smoltcp stack + `LinkDevice`
-  seam both landed (a loopback TCP round-trip test passes). Tasks 3 to 8 (the
-  Incus TUN link, DNS + resolve-then-route, the provider endpoint, raw TCP, the
-  upstream hop, the cfrs lite link) remain; 3 to 7 run on this host, 8 wants the
-  sealed sandbox.
-- **The host cluster** (T-020, T-021, T-024, T-025, T-019's native backend, and
-  the P1 host failures of T-027's run): drivable on this host now. Caveat: this
-  host has no AppArmor, so T-024/T-025's `apparmor_restrict_unprivileged_userns`
-  case is not reproducible here (the live `inside` check confirmed rootless
-  podman works where that restriction is absent).
+  seam both landed (a loopback TCP round-trip test passes). Task 3's gate,
+  **T-020**, is now driven (below). Tasks 3 to 8 (the Incus TUN link, DNS +
+  resolve-then-route, the provider endpoint, raw TCP, the upstream hop, the cfrs
+  lite link) remain; 3 to 7 run on this host, 8 wants the sealed sandbox.
+- **T-020** (the unix-socket broker link, the task-3 gate): the design is
+  **proven live** this session (its "Measured" and "Prototyped" sections: a
+  guest connects to a socket on a read-only disk device; the owner/mode; the
+  full `systemd-socket-proxyd` relay path round-trips and survives a restart
+  once the share is mounted on the rootfs, not `/run`). The build is mapped (its
+  "Touchpoints"). One decision gates it: the dynamic broker port (its "Open
+  design point"); recommend a fixed broker port in errand. No code landed yet.
+- **The rest of the host cluster** (T-021, T-024, T-025, T-019's native backend,
+  and the P1 host failures of T-027's run): drivable on this host now. Caveat:
+  this host has no AppArmor, so T-024/T-025's
+  `apparmor_restrict_unprivileged_userns` case is not reproducible here (the live
+  `inside` check confirmed rootless podman works where that restriction is
+  absent).
 
 ---
 
@@ -181,16 +195,21 @@ and now that this host is provisioned, the rest is drivable here:
 The host is provisioned and the live suite runs here, so host-touching work is
 no longer blocked.
 
-1. **T-090**, the virtual network layer, staged as the entry lays out. Task 1
-   (the `gate` module) and task 2 (the smoltcp stack + `LinkDevice` seam) have
-   landed. Next is **task 3**, the Incus TUN link: the guest boot step makes a
-   TUN and the guest-side relay pumps packets over T-020's unix socket into the
-   stack. It depends on T-020's link (do T-020 first, or build them together),
-   and it is live-testable on this host. Then tasks 4 to 7 live here, task 8 in
-   the sealed sandbox.
-   This closes T-022 and T-082 as it lands.
-3. **The host cluster, on an Incus host:** T-020 (the broker link that needs
-   no proxy devices, which T-090's Incus link rides), then T-024, T-021, T-025,
+1. **T-020**, the unix-socket broker link (the gate for T-090 task 3). Its design
+   is proven live this session; the build is mapped. First **settle the one open
+   design point** (the dynamic broker port; see the entry) with the operator;
+   the recommendation is a fixed broker port in errand's broker, which makes the
+   guest units static and is the simplest base for task 3. Then build it: the
+   per-session socket under `/var/lib/errand/links/<id>/` relayed to the broker,
+   a read-only disk device mounted at the rootfs path `/var/lib/errand-box/link`,
+   the guest `systemd-socket-proxyd` units, `restricted.devices.proxy=block`, the
+   image rebuild (E-31), a new edge-case row for the `/run`-tmpfs shadow, and
+   `sh tests/live/live.sh`. This closes E-61.
+2. **T-090 task 3**, the Incus TUN link, on top of T-020: the guest boot step
+   makes a TUN and the guest-side relay pumps packets over the same unix socket
+   into the smoltcp stack. Live-testable here. Then tasks 4 to 7 live here, task
+   8 in the sealed sandbox. This closes T-022 and T-082 as it lands.
+3. **The rest of the host cluster, on this Incus host:** T-024, T-021, T-025,
    and T-019's native backend, which retires the `bailey` stand-in. The P1 host
    failures of T-027's run and the capability layer under them (T-040, T-041,
    T-046, T-038, T-039, T-042, T-084) also need a host.

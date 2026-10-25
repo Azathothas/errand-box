@@ -749,6 +749,71 @@ shape the build:
 - **The guest relay adds no package:** `systemd-socket-proxyd` is in the image;
   the units are enabled in `provision.sh` the way `errand-box-guest.service` is.
 
+## Open design point (2026-10-25): the dynamic broker port
+
+The prototype used a fixed port; it did not settle the one piece the guest side
+turns on. errand's broker binds a kernel-picked `127.0.0.1` port that changes at
+each errand restart (`docs/bailey-contract.md:586-588`;
+`errand/src/serve.rs:702` `broker_instance.listen("127.0.0.1")`), and the shim
+passes it per run as `--egress-proxy 169.254.169.1:<P>`; the agent's
+`HTTPS_PROXY` (errand's policy) points at that same `<P>`. Today a per-session
+proxy device listens on exactly `<P>` inside the guest. A guest-side relay baked
+into the static image cannot know `<P>` at build time. The host side is
+unaffected: `relay::unix_to_tcp` dials `127.0.0.1:<P>` resolved per run.
+
+Both `<P>` and `guest_proxy_port` (3128) connect to the SAME host target (the
+one broker multiplexes the agent protocol and the HTTP proxy;
+`src/session.rs:94-105`), so the guest needs only "169.254.169.1 -> the shared
+socket", not a per-port fan-out.
+
+Options, each needing a live check, to decide before building:
+
+1. **A fixed broker port (recommended).** errand is errand-box's fork; have its
+   broker bind a configured fixed `127.0.0.1` port instead of `:0`, so the guest
+   units are static (`169.254.169.1:<fixed>` and `:3128`). A contract change
+   (`docs/bailey-contract.md:586-588`) and an errand change
+   (`serve.rs` `start_broker`), both in scope. Cleanest; also the simplest base
+   for T-090 task 3 (the TUN rides the same fixed mapping).
+2. **A per-session guest listener on `<P>`,** set up by errand-box each run via a
+   systemd template socket unit (`eb-broker@.socket`, `ListenStream=
+   169.254.169.1:%i`) started with `incus exec ... systemctl start
+   eb-broker@<P>.socket`. Keeps the port dynamic; adds an exec-systemctl step
+   whose bus reachability over `incus exec` must be confirmed (an early
+   prototype hit "Failed to connect to system scope bus" running systemctl
+   through `incus exec`, though boot-time start worked).
+3. **A guest nftables REDIRECT** of all `169.254.169.1` TCP to one local proxyd
+   -> the shared socket. Static and port-agnostic, but relies on nat in the
+   guest's own netns (an unprivileged container); needs a live check.
+
+Only this choice gates the build; the rest is mapped below.
+
+## Touchpoints for the build (mapped 2026-10-25)
+
+- `src/session.rs:73-108` `desired_devices`: for the socket mode, emit one disk
+  device (source the per-session dir under `/var/lib/errand`, path the ROOTFS
+  target `/var/lib/errand-box/link`, `readonly`) and no proxy devices.
+- `src/session.rs:321-332` `run_inner`: a branch like the `unix` one, but the
+  socket lives in `/var/lib/errand/links/<id>/` (dir 0750, socket 0660, both
+  994:993), not `state_dir()` (the guest writes state; SECURITY.md rule 1).
+  `reconcile` reruns each launch, so both `check()` (`src/shim.rs:310`,
+  `--isolate`) and `run()` must create the dir before the disk device is added.
+- Lifecycle: remove the per-session link dir with the instance (`run_inner`
+  end, and `reap`/`gc` for orphans); the relay thread already dies with the
+  launcher (`src/relay.rs:105`, `docs/bailey-contract.md:577-579`).
+- `src/setup.rs:1137-1156`: `restricted.devices.proxy` -> `block` (was `allow`);
+  set `broker_link` to the socket mode in `runtime.toml`; fix
+  `docs/operations.md:64`.
+- `image/provision.sh:86-120`: add the guest relay units and the
+  `/var/lib/errand-box/link` mountpoint, enabled the way
+  `errand-box-guest.service` is. `image/guest-init:5-7` and
+  `docs/design.md:50,73,77` describe the removed proxy devices; update them in
+  the same change. Changing `image/` triggers an E-31 rebuild on every host.
+- A new edge-case row (`docs/edge-cases.md`): a boot-time disk-device mount
+  under `/run` is shadowed by systemd's `/run` tmpfs; fallback a rootfs target;
+  test a live restart-and-reconnect.
+- Prove: `sh tests/live/live.sh` (broker and sysproxy pass with proxy blocked);
+  `incus project get user-994 restricted.devices.proxy` is `block`.
+
 ## Prove
 
 ```sh
