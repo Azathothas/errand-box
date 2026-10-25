@@ -886,7 +886,7 @@ cargo test --locked -p discord-mock
 **Category:** errand
 **Priority:** P1
 **Effort:** M
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -928,6 +928,59 @@ cargo test --locked -p errand pr
 
 A test whose fake runner swaps the git directory between the guard and the
 clone fails on the current code and passes once the clone reads a snapshot.
+
+## Closing
+
+**Closed 2026-10-25.** `push_work` (`errand/src/session/pr.rs`) no longer
+clones the live project. It copies the git directory `assert_contained`
+resolved to a staging path the guest cannot write
+(`cp -a --reflink=auto <git_dir> <staging>/source.git`), runs `refuse_borrowed`
+on that copy, and clones the copy (`git clone --shared --bare <staging>/source.git ...`).
+The check and the clone now read one snapshot nothing can swap under them, so
+the window between the guard and the clone is closed: a borrow planted before
+the copy is caught on the snapshot, and one planted after it cannot reach the
+clone. `cp -a` copies a symlink as a symlink rather than following it, so a
+`.git` (or a path inside it) turned into a link is caught by `refuse_borrowed`,
+not chased by `cp`. `assert_contained` still runs the live `refuse_borrowed`
+as an early, cheap refusal before the fork and the API calls, and now returns
+the resolved git directory for the snapshot step.
+
+The snapshot route (not the "stop the guest's processes" alternative) was
+taken, since it needs nothing of the engine. The copy and the clone run on the
+host as the errand account, where the staging directory (`tempfile::tempdir`)
+is outside every session's bind mount.
+
+Two regression tests (`errand/src/session/pr/tests.rs`), with the fake runner
+performing the `cp` for real so the snapshot and `refuse_borrowed` act on a
+real tree:
+
+- `a_borrow_planted_after_the_guard_is_caught_on_the_snapshot` plants a
+  `commondir` at the `remote` call, within the window and after the early
+  guard read a clean tree, and asserts the request is refused and nothing is
+  pushed. It fails when the snapshot check is removed (verified by neutering
+  `refuse_borrowed(&source)` and watching it fail), so it guards the window,
+  not just the static case.
+- `the_push_clones_a_snapshot_not_the_live_tree` asserts the clone's source is
+  the copy in staging, never the session's tree or its git directory.
+
+A `forbidden-patterns.md` row names the class: checking a path an untrusted
+party can write, then acting on that same live path instead of on an immutable
+copy.
+
+Prove, run 2026-10-25:
+
+```sh
+cargo test --locked -p errand --lib session::pr
+```
+
+```text
+test result: ok. 48 passed; 0 failed
+```
+
+fmt and clippy are clean. The change is in the fork's push path, not setup,
+`up`, the shim or the image, so RULES.md's live gate does not bind it; the
+host primitives it adds (`cp -a --reflink=auto`, then
+`git clone --shared --bare` from the copy) were exercised on this host.
 
 ---
 

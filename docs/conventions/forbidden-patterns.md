@@ -36,6 +36,7 @@ will add.
 | --- | --- |
 | A control gated on one of several paths into the same action | the single most recurring hole. Every other door reaches the same operation ungated. |
 | An operation that reads one resource and writes another, with one authorization | the read is checked and the write is not |
+| Checking a path an untrusted party can write, then acting on that same live path rather than on an immutable copy of what was checked | a time-of-check/time-of-use race. The borrow check and the `git clone` read one guest-writable git directory seconds apart (across a fork and API calls), so a session could plant a `commondir` or an alternates file in the window and have the host-side clone follow it, publishing another repository under the bot's token. Snapshot to a path the other party cannot write (`cp -a`, which copies a symlink rather than following it), check the snapshot, and act on the snapshot. T-030, T-081. |
 | Comparing a secret, token or signature with an equality operator | a timing attack |
 | A general-purpose hash used as a password hash | brute-forceable credentials |
 | A guard whose test has never been seen to fail | theatre. Plant the defect and read the exit code. |

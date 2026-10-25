@@ -84,6 +84,27 @@ impl FakeGit {
     }
 }
 
+/// Runs a `cp` for real, so the snapshot the push reads exists and
+/// `refuse_borrowed` sees exactly what the copy captured. Every other command
+/// is answered from the table (T-081).
+fn perform_cp(command: &[String]) -> Ran {
+    let status = std::process::Command::new(&command[0])
+        .args(&command[1..])
+        .status();
+    match status {
+        Ok(status) => Ran {
+            code: status.code().unwrap_or(1),
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+        Err(error) => Ran {
+            code: 127,
+            stdout: String::new(),
+            stderr: error.to_string(),
+        },
+    }
+}
+
 fn fake_git(answers: BTreeMap<String, Ran>) -> (Arc<FakeGit>, Run) {
     let fake = Arc::new(FakeGit {
         answers,
@@ -98,6 +119,9 @@ fn fake_git(answers: BTreeMap<String, Ran>) -> (Arc<FakeGit>, Run) {
                 env: Some(env),
                 cwd: cwd.clone(),
             });
+            if command.first().map(String::as_str) == Some("cp") {
+                return perform_cp(&command);
+            }
             fake.answer(&command, cwd.as_deref())
         })
     });
@@ -724,6 +748,11 @@ async fn the_sessions_repository_cannot_make_the_daemon_run_anything() {
 
     let calls = fake.calls.lock().unwrap();
     for call in calls.iter() {
+        // The snapshot copy is a `cp`, not a git call; the lock-downs below are
+        // about what the daemon's git is allowed to honour (T-081).
+        if call.args.first().map(String::as_str) != Some("git") {
+            continue;
+        }
         let line = call.args.join(" ");
         // Hooks are the direct route: a pre-push in the session's own tree.
         assert!(line.contains("core.hooksPath=/dev/null"));
@@ -793,8 +822,12 @@ async fn the_commit_is_never_read_in_the_tree_the_session_can_write() {
     assert_ne!(log.cwd.as_deref(), Some(kept.project.as_str()));
 
     // And every host-side git call refuses to verify a signature, which is
-    // what invoked the program a repository could name.
+    // what invoked the program a repository could name. The snapshot copy is a
+    // `cp`, not a git call, so it is not one of them (T-081).
     for call in calls.iter() {
+        if call.args.first().map(String::as_str) != Some("git") {
+            continue;
+        }
         assert!(call.args.join(" ").contains("log.showSignature=false"));
     }
 }
@@ -1219,4 +1252,86 @@ async fn a_pull_request_from_a_borrowing_git_directory_pushes_nothing() {
             .iter()
             .any(|word| word == "push" || word == "clone")
     }));
+}
+
+/// The git directory is live and guest-writable across the fork and the API
+/// calls. A borrow planted after the early guard, during that window, is still
+/// refused, because the push checks the snapshot it clones rather than the live
+/// tree a session can change under it. This is the T-081 window; it is open on
+/// the pre-snapshot code, where only the early guard checks, and it saw a clean
+/// tree before the plant.
+#[tokio::test]
+async fn a_borrow_planted_after_the_guard_is_caught_on_the_snapshot() {
+    let kept = with_repo();
+    let git_dir = std::path::PathBuf::from(format!("{}/.git", kept.repo));
+    let (fake, inner) = repo_git();
+    let (_api_fake, api) = working_api();
+
+    // Stand in for the guest: the early guard runs before any `remote` call and
+    // reads a clean tree, so plant the borrow at the `remote` call, within the
+    // window and before the snapshot is taken.
+    let planted = git_dir.clone();
+    let run: Run = Arc::new(move |command, cwd, env| {
+        if command.iter().any(|word| word == "remote") {
+            std::fs::write(planted.join("commondir"), "/elsewhere").unwrap();
+        }
+        inner(command, cwd, env)
+    });
+
+    let outcome = open_pull_request(
+        &request(&kept.project, "t", "amelia"),
+        &run,
+        &api,
+        &immediate_sleep(),
+    )
+    .await;
+
+    assert!(outcome.unwrap_err().to_string().contains("commondir"));
+    assert!(
+        !fake
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.args.iter().any(|word| word == "push"))
+    );
+}
+
+/// The clone reads the snapshot in the staging directory, never the session's
+/// live tree, so what a session does to its own git directory after the
+/// snapshot cannot reach the push (T-081).
+#[tokio::test]
+async fn the_push_clones_a_snapshot_not_the_live_tree() {
+    let kept = with_repo();
+    let (fake, run) = repo_git();
+    let (_api_fake, api) = working_api();
+
+    open_pull_request(
+        &request(&kept.project, "t", "amelia"),
+        &run,
+        &api,
+        &immediate_sleep(),
+    )
+    .await
+    .unwrap();
+
+    let calls = fake.calls.lock().unwrap();
+    let copy = calls
+        .iter()
+        .find(|call| call.args.first().map(String::as_str) == Some("cp"))
+        .expect("a snapshot copy happened");
+    // The copy reads the session's git directory and writes a staging path.
+    let git_dir = format!("{}/.git", kept.repo);
+    assert!(copy.args.iter().any(|word| word == &git_dir));
+    let snapshot = copy.args.last().expect("a snapshot destination");
+    assert!(snapshot.starts_with(std::env::temp_dir().to_str().unwrap_or("/tmp")));
+
+    let clone = calls
+        .iter()
+        .find(|call| call.args.iter().any(|word| word == "clone"))
+        .expect("a clone happened");
+    // The clone's source is the snapshot, not the live tree or its git dir.
+    assert!(clone.args.iter().any(|word| word == snapshot));
+    assert!(!clone.args.iter().any(|word| word == &kept.repo));
+    assert!(!clone.args.iter().any(|word| word == &git_dir));
 }

@@ -245,7 +245,7 @@ fn git(
 /// resolves a path and runs nothing the repository could name. A git
 /// directory inside the tree can still borrow from outside it, which
 /// [`refuse_borrowed`] refuses.
-async fn assert_contained(run: &Run, repo: &str) -> Result<(), PullRequestError> {
+async fn assert_contained(run: &Run, repo: &str) -> Result<String, PullRequestError> {
     let dir = git(run, repo, &["rev-parse", "--absolute-git-dir"], None).await;
     if dir.code != 0 {
         return Err(PullRequestError(format!(
@@ -263,7 +263,13 @@ async fn assert_contained(run: &Run, repo: &str) -> Result<(), PullRequestError>
                 .to_owned(),
         ));
     }
-    refuse_borrowed(Path::new(git_dir))
+    // An early, cheap refusal of a borrow already in place, before the fork and
+    // the API round-trips. It is not the one that counts: the git directory is
+    // live and guest-writable, so `push_work` snapshots it and checks the
+    // snapshot, which is what closes the window a session has to plant a borrow
+    // after this point (T-081).
+    refuse_borrowed(Path::new(git_dir))?;
+    Ok(git_dir.to_owned())
 }
 
 /// Refuses a git directory that borrows another repository's refs or
@@ -675,7 +681,7 @@ async fn default_branch(api: &Api, token: &str, repo: &Repo) -> String {
 /// learns of this directory and cannot write to it.
 async fn push_work(
     run: &Run,
-    project_path: &str,
+    git_dir: &str,
     branch: &str,
     url: &str,
     token: &str,
@@ -684,10 +690,44 @@ async fn push_work(
         .map_err(|error| PullRequestError(format!("could not prepare the push: {error}")))?;
     let repository = staging.path().join("repository.git");
 
+    // The project is bind-mounted into the guest read and write, so its git
+    // directory is live the whole time the push runs. Checking it in
+    // `assert_contained` and then cloning it are two reads of that one live
+    // path, seconds apart across the fork and the API calls, and a guest can
+    // plant a borrow (a commondir, an alternates file, a symlink) in between
+    // for the host-side clone to follow, publishing another repository under
+    // the bot's token (T-081, reopening T-030). Copy the git directory to a
+    // path the guest cannot write, check the copy, and clone the copy: the
+    // check and the clone then read one snapshot nothing can swap under them.
+    // `cp -a` copies a symlink as a symlink rather than following it, so a
+    // planted link is caught by `refuse_borrowed` rather than chased here.
+    let source = staging.path().join("source.git");
+    let source_path = source.display().to_string();
+    let copied = run(
+        vec![
+            "cp".to_owned(),
+            "-a".to_owned(),
+            "--reflink=auto".to_owned(),
+            git_dir.to_owned(),
+            source_path.clone(),
+        ],
+        None,
+        BTreeMap::new(),
+    )
+    .await;
+    if copied.code != 0 {
+        return Err(PullRequestError(format!(
+            "could not prepare the push: {}",
+            first_line(&copied.stderr)
+        )));
+    }
+    refuse_borrowed(&source)?;
+
     // A clone takes the refs and leaves the configuration: the copy gets a
     // fresh one, and hooks are never carried over. `--shared` borrows the
     // objects rather than copying them, so a long history costs nothing here,
-    // and objects are read-only data in any case.
+    // and the objects are the snapshot's, read-only and gone with the staging
+    // directory once the push is done.
     let cloned = git(
         run,
         staging.path().to_str().unwrap_or_default(),
@@ -696,7 +736,7 @@ async fn push_work(
             "--shared",
             "--bare",
             "--quiet",
-            project_path,
+            &source_path,
             &repository.display().to_string(),
         ],
         None,
@@ -759,7 +799,7 @@ pub async fn open_pull_request(
     sleep: &Sleep,
 ) -> Result<String, PullRequestError> {
     let project_path = find_repository(&request.project_path, request.repository.as_deref())?;
-    assert_contained(run, &project_path).await?;
+    let git_dir = assert_contained(run, &project_path).await?;
     let branch = current_branch(run, &project_path).await?;
     let origin = origin_remote(run, &project_path).await?;
 
@@ -776,7 +816,7 @@ pub async fn open_pull_request(
 
     let summary = push_work(
         run,
-        &project_path,
+        &git_dir,
         &branch,
         &format!(
             "https://github.com/{}/{}.git",
