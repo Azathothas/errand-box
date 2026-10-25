@@ -16,6 +16,20 @@ pub const REDACTION: &str = "[redacted]";
 /// Shortest secret worth scrubbing from free text, to avoid mangling prose.
 const MIN_SCRUBBABLE_LENGTH: usize = 8;
 
+/// The prefix every broker nonce carries.
+///
+/// A broker nonce stands in for a provider key in a session's environment, so
+/// it is key-shaped and worth hiding wherever a session echoes it. It is minted
+/// per run and never written to the config, so there is no value to add to the
+/// secret list at startup; this prefix lets it be recognised and scrubbed by
+/// shape instead. `serve::provider_nonce` mints nonces with it (T-032).
+pub const BROKER_NONCE_PREFIX: &str = "errand-nonce-";
+
+/// Shortest hex body after the prefix that is taken for a nonce rather than
+/// prose. A real nonce is 64 hex characters; this still catches a truncated one
+/// while leaving a bare mention of the prefix in documentation alone.
+const MIN_NONCE_BODY: usize = 16;
+
 /// Renders the effective configuration with every secret field blanked, for
 /// logging at startup.
 ///
@@ -85,7 +99,38 @@ pub fn redact_text(text: &str, secrets: &[String]) -> String {
         }
         scrubbed = scrubbed.replace(secret.as_str(), REDACTION);
     }
-    scrubbed
+    redact_nonces(&scrubbed)
+}
+
+/// Scrubs broker nonces by shape: the prefix and the hex body that follows it.
+///
+/// A nonce is minted per run, so it is not in the secret list, but it is a
+/// working credential through the broker until the daemon restarts and is
+/// shaped like a key. Judged by the prefix, so a value re-encoded by an agent
+/// is missed the same way a verbatim secret is (the layer above says as much).
+fn redact_nonces(text: &str) -> String {
+    if !text.contains(BROKER_NONCE_PREFIX) {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(BROKER_NONCE_PREFIX) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + BROKER_NONCE_PREFIX.len()..];
+        let body = after
+            .find(|c: char| !c.is_ascii_hexdigit())
+            .unwrap_or(after.len());
+        if body >= MIN_NONCE_BODY {
+            out.push_str(REDACTION);
+            rest = &after[body..];
+        } else {
+            // A bare mention of the prefix, not a nonce: leave it as it is.
+            out.push_str(BROKER_NONCE_PREFIX);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Walks a dotted path to the value it names, when every step is an object.

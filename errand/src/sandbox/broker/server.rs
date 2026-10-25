@@ -58,6 +58,12 @@ impl Broker {
     pub async fn listen(&mut self, host: &str) -> std::io::Result<u16> {
         let client = reqwest::Client::builder()
             .connect_timeout(DIAL_TIMEOUT)
+            // The provider client carries the provider's credential. Following a
+            // redirect would resend it to wherever the redirect points, which
+            // the upstream, not the allowlist, chooses, so a 30x to another host
+            // would hand that host the key. Refuse redirects and let the status
+            // reach the session unfollowed (errand#54, T-032).
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(std::io::Error::other)?;
         let provider_port = if self.routes.is_empty() {

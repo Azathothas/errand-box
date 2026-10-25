@@ -321,6 +321,140 @@ async fn the_credential_is_put_on_at_the_broker_never_given_to_the_session() {
     broker.close();
 }
 
+#[test]
+fn redact_bytes_replaces_every_complete_occurrence() {
+    assert_eq!(
+        super::redact_bytes(b"xKEYyKEYz", b"KEY"),
+        b"x[redacted]y[redacted]z".to_vec()
+    );
+    assert_eq!(
+        super::redact_bytes(b"no match here", b"KEY"),
+        b"no match here".to_vec()
+    );
+    // A needle longer than the text, and an empty needle, both pass through.
+    assert_eq!(super::redact_bytes(b"ab", b"abc"), b"ab".to_vec());
+    assert_eq!(super::redact_bytes(b"abc", b""), b"abc".to_vec());
+}
+
+/// The answer is streamed, so a secret split across chunk boundaries would slip
+/// past a per-chunk scrub. The redactor holds the tail of each chunk back until
+/// the next arrives, so the value is rejoined before it is matched (T-032).
+#[tokio::test]
+async fn the_answer_redactor_catches_a_secret_split_across_chunks() {
+    use futures_util::StreamExt;
+
+    let secret = b"sk-SECRETKEY-123456".to_vec();
+    let collect = |chunks: Vec<&'static str>| {
+        let secret = secret.clone();
+        async move {
+            let items = chunks
+                .into_iter()
+                .map(|chunk| Ok::<_, std::io::Error>(chunk.as_bytes().to_vec()));
+            let stream = futures_util::stream::iter(items);
+            let out: Vec<Vec<u8>> = super::redacting_stream(stream, secret)
+                .map(Result::unwrap)
+                .collect()
+                .await;
+            String::from_utf8(out.concat()).unwrap()
+        }
+    };
+
+    // Split down the middle, one byte each side of the boundary, and whole.
+    for chunks in [
+        vec!["before sk-SECRE", "TKEY-123456 after"],
+        vec!["before sk-SECRETKEY-12345", "6 after"],
+        vec!["before ", "sk-SECRETKEY-123456", " after"],
+        vec![
+            "b",
+            "e",
+            "f",
+            "o",
+            "r",
+            "e",
+            " ",
+            "sk-SECRETKEY-123456 after",
+        ],
+    ] {
+        let text = collect(chunks).await;
+        assert!(!text.contains("sk-SECRETKEY-123456"), "leaked: {text}");
+        assert!(
+            text.contains("before ") && text.contains(" after"),
+            "mangled: {text}"
+        );
+        assert!(text.contains("[redacted]"), "no marker: {text}");
+    }
+}
+
+/// An upstream that echoes the key it was sent, in a header and in the body,
+/// must not hand it back to the session: the broker put the real key on the
+/// request, so it scrubs the real key from the answer, keeping it out of the
+/// session's output and its memory alike (errand#46, T-032).
+#[tokio::test]
+async fn the_real_credential_is_scrubbed_from_the_answer() {
+    let app = axum::Router::new().fallback(|headers: axum::http::HeaderMap| async move {
+        let auth = headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let key = auth.strip_prefix("Bearer ").unwrap_or(&auth).to_owned();
+        (
+            [(
+                axum::http::HeaderName::from_static("x-echo-key"),
+                key.clone(),
+            )],
+            format!("{{\"you_sent\":\"{key}\"}}"),
+        )
+    });
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bound");
+    let upstream_port = listener.local_addr().expect("an address").port();
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serves") });
+
+    let mut broker = Broker::new(
+        Vec::new(),
+        vec![443],
+        silent(),
+        vec![ProviderRoute {
+            prefix: "/provider".to_owned(),
+            upstream: format!("http://127.0.0.1:{upstream_port}/v1"),
+            nonce: "the-session-nonce".to_owned(),
+            credential: "sk-the-real-key-abcdef".to_owned(),
+        }],
+        true,
+    );
+    let port = broker.listen("127.0.0.1").await.expect("bound");
+
+    let answered = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/provider/chat"))
+        .header("authorization", "Bearer the-session-nonce")
+        .body("{}")
+        .send()
+        .await
+        .expect("answered");
+    let echoed_header = answered
+        .headers()
+        .get("x-echo-key")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    let body = answered.text().await.expect("a body");
+    assert!(
+        !body.contains("sk-the-real-key-abcdef"),
+        "the body leaked the key: {body}"
+    );
+    assert!(
+        body.contains("[redacted]"),
+        "the body was not scrubbed: {body}"
+    );
+    assert!(
+        !echoed_header.contains("sk-the-real-key-abcdef"),
+        "a header leaked the key: {echoed_header}"
+    );
+    broker.close();
+}
+
 /// The session's key arrives in whichever header its provider kind sends one
 /// in: `Authorization` for an OpenAI-shaped provider, `x-api-key` for an
 /// Anthropic-shaped one.
@@ -721,6 +855,31 @@ fn v6_forms_that_are_internal_in_their_own_right() {
     // Something that is not an address at all is not one to dial.
     assert!(is_private_address("::ffff:zzzz:1"));
     assert!(is_private_address("1:2:3:4:5:6:7:8:9"));
+}
+
+/// The internal destinations issue #59 names: Azure's `WireServer`, and the v6
+/// transition ranges that wrap or stand in for an internal address. A name
+/// resolving to any of them is judged here, so each must read private.
+#[test]
+fn the_metadata_and_v6_transition_ranges_of_issue_59_are_refused() {
+    for address in [
+        "168.63.129.16",    // Azure WireServer
+        "2002:a9fe:a9fe::", // 6to4 of 169.254.169.254, the metadata address
+        "2002:0a00:0001::", // 6to4 of 10.0.0.1
+        "2001:db8::1",      // documentation
+        "2001:db8:dead:beef::1",
+        "fec0::1",            // site-local
+        "feff::1",            // site-local, the far end of fec0::/10
+        "2001::1",            // Teredo, 2001::/32
+        "2001:0:4136:e378::", // Teredo, a fuller spelling
+    ] {
+        assert!(is_private_address(address), "{address} must be refused");
+    }
+    // A 6to4 envelope around a public v4 is public, judged by its carried v4,
+    // and an ordinary 2001:: allocation that is neither Teredo nor the
+    // documentation block stays public.
+    assert!(!is_private_address("2002:0808:0808::")); // 6to4 of 8.8.8.8
+    assert!(!is_private_address("2001:4860:4860::8888")); // Google, a real 2001::
 }
 
 /// The provider route is what the JSON definitions compile into.

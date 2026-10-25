@@ -366,7 +366,7 @@ binary.
 **Category:** errand
 **Priority:** P2
 **Effort:** M
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -413,6 +413,69 @@ cargo test --locked -p errand broker
 A table test of `is_private_address` over the addresses in issue #59: the
 WireServer, the 6to4, documentation, site-local and Teredo spellings each
 read private.
+
+## Closing
+
+**Closed 2026-10-25.** All four in-scope defects fixed; the fifth (per-route
+method and path rules, errand#44) was always T-021's design, as the Approach
+says, and stays there.
+
+Address arms (`errand/src/sandbox/broker/mod.rs`, issues #51 and #59):
+`is_private_v4` now judges `168.63.129.16` (Azure's WireServer) private, so a
+name resolving to it is caught, not only the literal. `is_private_v6` judges
+6to4 (`2002::/16`) by the v4 it wraps, and the documentation (`2001:db8::/32`),
+Teredo (`2001::/32`) and site-local (`fec0::/10`) ranges. A table test,
+`the_metadata_and_v6_transition_ranges_of_issue_59_are_refused`, covers each
+and keeps an ordinary `2001::` allocation and a 6to4 of a public v4 public.
+`public_addresses` judges every resolved address through these, so a name is
+covered as well as a literal.
+
+Redirects (errand#54 item 2): the provider client is built with
+`redirect(reqwest::redirect::Policy::none())` (`server.rs`), so a 30x from an
+upstream is not followed with the real credential to a host the allowlist never
+cleared.
+
+Echoed credential (errand#46): `stream_answer` scrubs the real credential from
+the answer's headers and, through `redacting_stream`, from the streamed body,
+so an upstream that reflects the key cannot hand it back to the session; it
+stays out of the session's memory, not just its chat output (which the
+`Redacting` layer already covered). The streaming redactor holds back the tail
+of each chunk so a value split across a boundary is still caught; `Content-Length`
+is dropped because redaction changes the body's length and it is re-framed.
+Tests: `redact_bytes_replaces_every_complete_occurrence`,
+`the_answer_redactor_catches_a_secret_split_across_chunks`, and
+`the_real_credential_is_scrubbed_from_the_answer` (an upstream that echoes the
+key in a header and the body).
+
+Nonce (errand#45): `provider_nonce` (`serve.rs`) mints the nonce with a fixed
+`errand-nonce-` prefix (`config::redact::BROKER_NONCE_PREFIX`), and
+`redact_text` scrubs any value of that shape (`redact_nonces`), so a nonce a
+session echoes is hidden though it is minted per run and never a config secret.
+Judging by shape rather than threading each per-run nonce into the secret list
+keeps it self-contained and also catches a truncated or stale-run nonce; it is
+missed only if an agent re-encodes it, the same limit the verbatim-secret layer
+states. Test: `a_broker_nonce_is_scrubbed_by_its_shape`.
+
+Three `forbidden-patterns.md` rows name the classes: following a redirect while
+holding a credential, rewriting a proxied body while forwarding its
+`Content-Length`, and scrubbing a stream chunk by chunk with no carry across
+the boundary.
+
+Prove, run 2026-10-25:
+
+```sh
+cargo test --locked -p errand --lib sandbox::broker
+cargo test --locked -p errand --lib config::redact
+```
+
+```text
+sandbox::broker: ok. 37 passed; 0 failed
+config::redact:  ok. 9 passed; 0 failed
+```
+
+fmt and clippy are clean. The change is in the fork's broker and redaction
+logic, not setup, `up`, the shim or the image, so RULES.md's live gate does not
+bind it.
 
 ---
 

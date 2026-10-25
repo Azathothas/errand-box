@@ -263,6 +263,12 @@ pub fn is_private_v4(address: &str) -> bool {
         || (first == 192 && second == 88 && third == 99)
         // Benchmarking, 198.18.0.0/15.
         || (first == 198 && (18..=19).contains(&second))
+        // Azure's WireServer, 168.63.129.16: a host-internal endpoint that
+        // serves DNS and the instance's own metadata, and is not link-local or
+        // RFC 1918, so a name resolving to it would otherwise be dialled. It
+        // belongs here, not only in the literal branch of `public_addresses`,
+        // so a resolved name is caught too (issue #59).
+        || address.octets() == [168, 63, 129, 16]
         // Everything above multicast is reserved, and the last of it is the
         // broadcast address.
         || first >= 240
@@ -377,6 +383,22 @@ pub fn is_private_v6(address: &str) -> bool {
     }
     if (a & 0xff00) == 0xff00 {
         return true; // multicast
+    }
+    // 6to4, 2002::/16: bits 16 to 48 wrap a v4 address, so judge the carried v4
+    // rather than the envelope, or `2002:a9fe:a9fe::` reaches 169.254.169.254
+    // (issue #59).
+    if a == 0x2002 {
+        let v4 = format!("{}.{}.{}.{}", b >> 8, b & 0xff, c >> 8, c & 0xff);
+        return is_private_v4(&v4);
+    }
+    if a == 0x2001 && b == 0x0db8 {
+        return true; // documentation, 2001:db8::/32
+    }
+    if a == 0x2001 && b == 0x0000 {
+        return true; // Teredo, 2001::/32
+    }
+    if (a & 0xffc0) == 0xfec0 {
+        return true; // site-local, fec0::/10 (deprecated, still routed by some)
     }
     false
 }
@@ -627,7 +649,7 @@ pub(crate) async fn serve_provider_request(
                     ),
                 ]),
             );
-            stream_answer(answered)
+            stream_answer(answered, &route.credential)
         }
         Err(error) => {
             state.log.warn(
@@ -748,27 +770,126 @@ fn build_forwarded(
     forwarded.body(reqwest::Body::wrap_stream(body.into_data_stream()))
 }
 
-/// The provider's answer, with its hop-by-hop headers stripped.
-fn stream_answer(answered: reqwest::Response) -> axum::response::Response {
+/// The provider's answer, with its hop-by-hop headers stripped and the real
+/// credential scrubbed from everything that reaches the session.
+///
+/// The broker put the real credential on the request, so an upstream that
+/// reflects a request header, or names the key in an error body, would hand it
+/// straight back to the session (errand#46). The session never needs it: it
+/// holds a nonce the broker honours in the key's place. So the credential is
+/// removed from the answer's headers and body on the way back, which also keeps
+/// it out of the session's memory, not only its output. The body is streamed,
+/// so a value split across two chunks is caught by holding the tail of each
+/// back until the next arrives (T-032).
+fn stream_answer(answered: reqwest::Response, credential: &str) -> axum::response::Response {
     use axum::response::IntoResponse;
     use futures_util::TryStreamExt;
 
+    let secret = credential.as_bytes().to_vec();
     let mut builder = axum::http::Response::builder().status(answered.status().as_u16());
     for (name, value) in answered.headers() {
-        if !HOP_BY_HOP.contains(&name.as_str().to_lowercase().as_str())
-            && let Ok(value) = value.to_str()
-        {
-            builder = builder.header(name.as_str(), value);
+        let lower = name.as_str().to_lowercase();
+        // Content-Length is dropped, not forwarded: redaction changes the body's
+        // length, and the body is re-framed as a stream on the way out, so the
+        // upstream's count would truncate the answer the session reads.
+        if HOP_BY_HOP.contains(&lower.as_str()) || lower == "content-length" {
+            continue;
+        }
+        if let Ok(value) = value.to_str() {
+            let cleaned = if secret.is_empty() {
+                value.to_owned()
+            } else {
+                value.replace(credential, crate::config::redact::REDACTION)
+            };
+            builder = builder.header(name.as_str(), cleaned);
         }
     }
-    let stream = answered
+    let upstream = answered
         .bytes_stream()
         .map_err(|error| std::io::Error::other(error.to_string()));
     builder
-        .body(axum::body::Body::from_stream(stream))
+        .body(axum::body::Body::from_stream(redacting_stream(
+            upstream, secret,
+        )))
         .unwrap_or_else(|error| {
             (axum::http::StatusCode::BAD_GATEWAY, error.to_string()).into_response()
         })
+}
+
+/// Replaces every complete occurrence of `needle` in `haystack` with the
+/// redaction marker, byte for byte so a non-UTF-8 body is handled too.
+fn redact_bytes(haystack: &[u8], needle: &[u8]) -> Vec<u8> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return haystack.to_vec();
+    }
+    let marker = crate::config::redact::REDACTION.as_bytes();
+    let mut out = Vec::with_capacity(haystack.len());
+    let mut i = 0;
+    while i < haystack.len() {
+        if haystack[i..].starts_with(needle) {
+            out.extend_from_slice(marker);
+            i += needle.len();
+        } else {
+            out.push(haystack[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Wraps a byte stream so a secret split across chunk boundaries is still
+/// redacted.
+///
+/// Each chunk is appended to a carry buffer, complete matches are replaced, and
+/// the last `secret.len() - 1` bytes are held back in case the next chunk
+/// completes a match that began in them. The held tail is flushed, scrubbed,
+/// when the stream ends. An empty secret passes the bytes through unchanged.
+fn redacting_stream<S, B>(
+    inner: S,
+    secret: Vec<u8>,
+) -> impl futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send
+where
+    S: futures_util::Stream<Item = Result<B, std::io::Error>> + Send + 'static,
+    B: AsRef<[u8]> + Send + 'static,
+{
+    use futures_util::StreamExt;
+
+    let secret = Arc::new(secret);
+    let hold = secret.len().saturating_sub(1);
+    futures_util::stream::unfold(
+        (Box::pin(inner), Vec::<u8>::new(), false),
+        move |(mut stream, mut carry, ended)| {
+            let secret = Arc::clone(&secret);
+            async move {
+                if ended {
+                    return None;
+                }
+                loop {
+                    match stream.next().await {
+                        Some(Ok(chunk)) => {
+                            carry.extend_from_slice(chunk.as_ref());
+                            let scrubbed = redact_bytes(&carry, &secret);
+                            let split = scrubbed.len().saturating_sub(hold);
+                            if split == 0 {
+                                // Not enough yet to be sure a secret does not
+                                // start in what is held; keep it and read on.
+                                carry = scrubbed;
+                                continue;
+                            }
+                            let emit = scrubbed[..split].to_vec();
+                            let remainder = scrubbed[split..].to_vec();
+                            return Some((Ok(emit), (stream, remainder, false)));
+                        }
+                        Some(Err(error)) => return Some((Err(error), (stream, Vec::new(), true))),
+                        None => {
+                            let flushed = redact_bytes(&carry, &secret);
+                            return Some((Ok(flushed), (stream, Vec::new(), true)));
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 /// Where a resolved name comes back as.

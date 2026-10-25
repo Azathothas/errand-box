@@ -86,6 +86,9 @@ will add.
 | Unescaped filenames in markup or in a content header | script injection, and broken downloads for non-ASCII names |
 | Building a public URL from a hardcoded host | dead links everywhere except the machine that made them |
 | Redirecting a client to a URL that contains a credential | the credential leaked to every client |
+| Following a redirect on a request that carries a credential | the credential is resent to wherever the redirect points, which the upstream chooses, not the allowlist. The broker's provider client followed 30x by default, so an upstream could 302 to another host and be handed `x-api-key` (errand#54). Set the redirect policy to none and let the status reach the caller unfollowed. T-032. |
+| Rewriting a proxied body while forwarding the upstream's `Content-Length` | a truncated message. Redaction changed the body's length, the old count stayed on it, and the client read `IncompleteMessage` and got nothing. A body a proxy transforms is re-framed, so drop `Content-Length` (and let the transport chunk it) rather than forward a count that no longer fits. T-032. |
+| Scrubbing a secret from a stream chunk by chunk, with no carry across the boundary | a secret split between two chunks slips through, because neither chunk holds it whole. Hold back the last `len-1` bytes of each chunk until the next arrives, and flush the tail at the end. T-032, errand#46. |
 | Caching a fallback response under the key of a processed one | cache poisoning |
 | Forgetting to purge a cache on overwrite, delete or copy | stale reads after a write |
 

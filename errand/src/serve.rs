@@ -486,10 +486,16 @@ fn provider_nonce() -> String {
     use std::fmt::Write as _;
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).expect("the system generator is available");
-    bytes.iter().fold(String::new(), |mut out, byte| {
-        let _ = write!(out, "{byte:02x}");
-        out
-    })
+    // A fixed prefix, so a nonce a session echoes can be recognised and
+    // scrubbed by shape even though it is minted per run and never in the
+    // config (crate::config::redact::redact_nonces, T-032).
+    bytes.iter().fold(
+        crate::config::redact::BROKER_NONCE_PREFIX.to_owned(),
+        |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        },
+    )
 }
 
 /// The lower-cased host of a base URL, for the egress allowlist.

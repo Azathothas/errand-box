@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 61 open, 7 partial, 1 blocked, 20 done.**
+**89 items. 60 open, 7 partial, 1 blocked, 21 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 8 | 4 | 1 | 10 | 23 |
-| P2 | 36 | 2 | 0 | 6 | 44 |
+| P2 | 35 | 2 | 0 | 7 | 44 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 61 | 7 | 1 | 20 | 89 |
+| **All** | 60 | 7 | 1 | 21 | 89 |
 
 ---
 
@@ -134,7 +134,7 @@ decision).
 | [T-029](errand.md) | P0 | errand | done | A guest sends the operator's provider key to a host it names |
 | [T-030](errand.md) | P1 | errand | done | The host-side push can publish another session's repository |
 | [T-031](errand.md) | P2 | errand | done | The relay drops a connection with no log line when its target does not answer |
-| [T-032](errand.md) | P2 | errand | open | The broker's provider route: the smaller defects errand's tracker names |
+| [T-032](errand.md) | P2 | errand | done | The broker's provider route: the smaller defects errand's tracker names |
 | [T-033](errand.md) | P2 | errand | open | Files the daemon reads from a session are read whole, and an upload is not redacted |
 | [T-034](errand.md) | P3 | errand | partial | Remove from the fork what errand-box does not run |
 | [T-035](errand.md) | P1 | errand | partial | A Discord stand-in, so errand's chat path is tested without Discord |

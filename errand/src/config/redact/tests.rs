@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::{REDACTION, redact_config, redact_text, secret_values};
+use super::{BROKER_NONCE_PREFIX, REDACTION, redact_config, redact_text, secret_values};
 use crate::config::load::{Environment, load_config};
 use crate::config::schema::{Config, SECRET_PATHS};
 use crate::config::validate::validate_config;
@@ -177,4 +177,35 @@ fn a_defined_providers_credential_is_scrubbed_too() {
     assert!(secrets.contains(&"the-meta-key".to_owned()));
     assert!(secrets.contains(&"the-default-key".to_owned()));
     assert!(redact_text("key=the-meta-key here", &secrets).contains(REDACTION));
+}
+
+/// A broker nonce is scrubbed by its shape, since it is minted per run and is
+/// never a config secret, yet it is a working credential through the broker
+/// (T-032).
+#[test]
+fn a_broker_nonce_is_scrubbed_by_its_shape() {
+    // Built at runtime so no 64-character hex literal sits in the tree for the
+    // secret scanner to flag; a real nonce is this long.
+    let body = "0123456789abcdef".repeat(4);
+    let nonce = format!("{BROKER_NONCE_PREFIX}{body}");
+    // With no config secrets at all, and however the session echoes it.
+    let shown = redact_text(&format!("export KEY={nonce} done"), &[]);
+    assert!(
+        !shown.contains(&body),
+        "the nonce must not survive: {shown}"
+    );
+    assert!(shown.contains(REDACTION));
+
+    // A truncated nonce, still long enough to be unmistakable, is scrubbed too.
+    let truncated = format!("{BROKER_NONCE_PREFIX}a1b2c3d4e5f60718");
+    assert!(!redact_text(&truncated, &[]).contains("a1b2c3d4"));
+
+    // A bare mention of the prefix, with a body too short to be a nonce, is
+    // left alone so documentation about the prefix is not mangled.
+    for prose in [
+        "the errand-nonce- prefix marks a broker nonce",
+        "see errand-nonce-abc for the shape",
+    ] {
+        assert_eq!(redact_text(prose, &[]), prose);
+    }
 }
