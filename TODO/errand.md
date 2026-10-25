@@ -1057,7 +1057,7 @@ expects the defaults plus `example.org`.
 **Category:** errand
 **Priority:** P2
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -1092,3 +1092,40 @@ cargo test --locked -p errand broker
 A test starts the broker with a provider route and a bind that fails (an
 injected listener, or a port already taken) and expects an error return, not
 a panic.
+
+## Closing
+
+**Closed 2026-10-25.** `start_provider`
+(`errand/src/sandbox/broker/server.rs`) now returns `std::io::Result<u16>`:
+the provider endpoint's `TcpListener::bind` and `.local_addr()` propagate with
+`?` instead of `.expect`, and `listen` propagates that with `?` at the call
+site, so a denied loopback bind returns an error the way the main listener
+already does. `serve.rs` already matches on `listen(..).await` and logs the
+error, so a bind a host forbids declines that one session rather than aborting
+the daemon into T-037's restart loop. The serve future spawned on the runtime
+no longer `.expect`s either: a later serve error is logged (`the provider
+endpoint stopped serving`) through a cloned `Logger`, because an `.expect`
+there runs after `listen` returned and could not be caught by the caller.
+
+A regression test,
+`listen_returns_an_error_rather_than_panicking_when_it_cannot_bind`
+(`errand/src/sandbox/broker/tests.rs`), builds a broker with a provider route
+(so the provider path runs first) and calls `listen("192.0.2.1")`. That is
+TEST-NET-1 (RFC 5737), never assigned to an interface, so the bind fails with
+`EADDRNOTAVAIL` on every host, and the test asserts `listen` returns `Err`, not
+a panic. A `forbidden-patterns.md` row names the class: `.expect()`/`.unwrap()`
+on a fallible call in a long-lived daemon path under `panic = "abort"`.
+
+Prove, run 2026-10-25:
+
+```sh
+cargo test --locked -p errand --lib sandbox::broker
+```
+
+```text
+test sandbox::broker::tests::listen_returns_an_error_rather_than_panicking_when_it_cannot_bind ... ok
+test result: ok. 33 passed; 0 failed
+```
+
+fmt and clippy are clean. No host is needed: the change is entirely in the
+fork's logic, so the entry closes here.

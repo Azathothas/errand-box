@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 63 open, 7 partial, 1 blocked, 18 done.**
+**89 items. 62 open, 7 partial, 1 blocked, 19 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 9 | 4 | 1 | 9 | 23 |
-| P2 | 37 | 2 | 0 | 5 | 44 |
+| P2 | 36 | 2 | 0 | 6 | 44 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 63 | 7 | 1 | 18 | 89 |
+| **All** | 62 | 7 | 1 | 19 | 89 |
 
 ---
 
@@ -191,4 +191,4 @@ decision).
 | [T-086](sandbox.md) | P3 | sandbox | open | A lite engine for hosts Incus cannot serve |
 | [T-087](upkeep.md) | P2 | upkeep | open | The gate does not require an entry's prove output, and no live check crosses the provider boundary |
 | [T-088](upkeep.md) | P2 | upkeep | done | creds.env and errand-box.env are not ignored, and the secret check does not match them |
-| [T-089](errand.md) | P2 | errand | open | The broker panics instead of returning an error when a loopback bind is denied |
+| [T-089](errand.md) | P2 | errand | done | The broker panics instead of returning an error when a loopback bind is denied |

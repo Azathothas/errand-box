@@ -754,6 +754,37 @@ async fn closing_the_broker_stops_it_accepting() {
     panic!("the broker kept accepting after it was closed");
 }
 
+/// A listener that cannot bind must surface the failure to the caller, not
+/// panic. Under `panic = "abort"` a panic on the runtime takes the whole
+/// daemon down, and the T-037 supervisor then respawns straight back into the
+/// same failure. `listen` returns `Err`, so `serve` can decline this session
+/// and the daemon stays up for every other one (T-089).
+#[tokio::test]
+async fn listen_returns_an_error_rather_than_panicking_when_it_cannot_bind() {
+    // Routes are non-empty, so the provider endpoint is brought up first and
+    // its own bind path is exercised before the main listener is reached.
+    let mut broker = Broker::new(
+        vec!["github.com".to_owned()],
+        vec![443],
+        silent(),
+        vec![ProviderRoute {
+            prefix: "/provider/x".to_owned(),
+            upstream: "http://127.0.0.1:1/v1".to_owned(),
+            nonce: "nonce-x".to_owned(),
+            credential: "key-x".to_owned(),
+        }],
+        false,
+    );
+    // 192.0.2.0/24 is TEST-NET-1 (RFC 5737): never assigned to an interface,
+    // so binding it fails with EADDRNOTAVAIL on every host.
+    let result = broker.listen("192.0.2.1").await;
+    assert!(
+        result.is_err(),
+        "listen must return Err on an unbindable address, got {result:?}"
+    );
+    broker.close();
+}
+
 /// A head that never ends is not a request. Handing back what accumulated
 /// would serve a client that never finished asking as though it had.
 #[tokio::test]

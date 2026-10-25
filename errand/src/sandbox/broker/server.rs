@@ -63,7 +63,7 @@ impl Broker {
         let provider_port = if self.routes.is_empty() {
             0
         } else {
-            self.start_provider(client.clone()).await
+            self.start_provider(client.clone()).await?
         };
         let listener = TcpListener::bind((host, 0)).await?;
         let port = listener.local_addr()?.port();
@@ -93,7 +93,7 @@ impl Broker {
         Ok(port)
     }
 
-    async fn start_provider(&mut self, client: reqwest::Client) -> u16 {
+    async fn start_provider(&mut self, client: reqwest::Client) -> std::io::Result<u16> {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
         let app = axum::Router::new().fallback(
             |axum::extract::State(state): axum::extract::State<Arc<ProviderState>>,
@@ -111,21 +111,32 @@ impl Broker {
             provider_port: 0,
             client,
         });
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("a loopback port for the provider endpoint");
-        let port = listener.local_addr().expect("a local address").port();
+        // A bind that fails must not abort the daemon (panic = "abort" would,
+        // and the T-037 supervisor would then respawn into the same failure).
+        // Return the error so listen() surfaces it and serve declines to start
+        // this session (T-089).
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let port = listener.local_addr()?.port();
         self.provider_shutdown = Some(shutdown_sender);
+        // A later serve error is logged, not unwrapped: an .expect() here runs
+        // on the runtime after listen() has returned, so a panic could not be
+        // caught by the caller and would abort the daemon mid-session.
+        let log = self.log.clone();
         tokio::spawn(async move {
             let shutdown = async {
                 let _ = shutdown_receiver.await;
             };
-            axum::serve(listener, app.with_state(state))
+            if let Err(error) = axum::serve(listener, app.with_state(state))
                 .with_graceful_shutdown(shutdown)
                 .await
-                .expect("the provider server serves");
+            {
+                log.error(
+                    "the provider endpoint stopped serving",
+                    &fields([("detail", error.to_string().into())]),
+                );
+            }
         });
-        port
+        Ok(port)
     }
 
     /// Stops accepting and closes the listener. A tunnel already running is

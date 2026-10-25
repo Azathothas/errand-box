@@ -75,6 +75,7 @@ will add.
 | A sequential awaited loop over independent IO | wall-time blowups. Use bounded concurrency. |
 | Retrying a rate limit without honouring its stated delay, and without a cap | a spiral that makes the limit worse |
 | Re-consolidating data that is already correctly split | undoing the design |
+| `.expect()` or `.unwrap()` on a fallible call in a long-lived daemon path (a bind, a serve, a spawned task), under `panic = "abort"` | the whole daemon aborts on one session's transient failure, and the supervisor (T-037) respawns straight into it. The broker's provider endpoint did `TcpListener::bind(..).await.expect(..)`, so a momentary bind failure for one session took every session down. Return the error and let the caller decline just that one session; log a failure that surfaces only after the setup call returned. T-089. |
 
 ## Injection and output
 
