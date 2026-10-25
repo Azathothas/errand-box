@@ -46,10 +46,18 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
 ## State
 
 - **Last session:** 2026-10-25, attended, in a hosted container. It triaged
-  the open issues into entries (the rulings above), then implemented the
-  security cluster from them: eight entries fixed, one carried partway, on
-  `main`, pushed to `origin main` on the operator's word, each commit under
-  the operator's identity.
+  the open issues into entries (the rulings above), implemented the security
+  cluster from them, filed T-090 and began it, then **provisioned this host
+  (`errand-box setup` installed Incus 6.0.7 and the guest image) and ran the
+  live suite**, which closed T-079 and caught a regression. All on `main`,
+  pushed, each commit under the operator's identity.
+- **This host is now a working errand-box host.** `errand-box setup` finished
+  with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
+  dir pool, lxcfs 6, the two `/dev` modes). `sh tests/live/live.sh` runs here.
+  So host-touching entries are no longer blocked for want of Incus; they are
+  drivable on this host. errand itself stays stopped (no Discord creds given;
+  `setup` ran without `--env/--creds`), so the `errand:` live checks need the
+  operator's credentials (T-015), not a code change.
 - **Tree:** `main`, on top of `57231da`, through `47be7f1`, pushed to
   `origin main`.
 - **Deployed:** [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
@@ -70,12 +78,15 @@ Measure again with the same commands before you change anything.
 | `cargo test --locked -p errand-box --bins` | 115 pass |
 | `cargo fmt` / `cargo clippy --all-targets` | clean on both crates (`-D warnings`, pedantic) |
 | `sh scripts/ci-local.sh` (full) | not run to completion this session. The `musl` and `cross` steps were not re-run: no build-config changed, and the code changes cross-compile (std, `futures-util`, `libc` already in use). The `shellcheck` 0.9.0 SC2317 artifact on `tests/e2e/mock-session.sh:67-69` still stands (the file disables SC2329, the newer name; CI's newer shellcheck is green), and it is not this session's |
-| live tests | not run: this container has no Incus, so no entry that touches a host could be driven |
+| `errand-box setup` (this host) | 0 failed, 30 changed, 7 degraded (all host-inherent); Incus 6.0.7, golden image `eb-golden`, `bailey doctor as errand: ok` |
+| `sh tests/live/live.sh` (this host) | every sandbox check PASS: `probe`, `session` (uid, groups, no NIC, direct egress blocked, broker via proxy device, limits, instance stop, lease), `acp`, `inside` (docker, docker build, `sudo podman`, rootless podman E-30, FUSE, cpu/mem limits), `signals` (SIGTERM, SIGKILL), `reap`, `up` (restart; second up 0 changed), `maint` (after the fix below). The only non-expected FAIL was `maint --once` (the T-063 regression, fixed and re-verified `PASS`). The `errand:` checks FAIL only because errand is unconfigured (no Discord creds, T-015) |
 
-The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB. No
-Incus, no proxy.
+The build host: ubuntu 24.04, kernel 6.18, x86_64, 4 CPUs, 16 GiB, cgroup v1,
+no init, no AppArmor, ~15 GiB writable. Now provisioned with Incus 6.0.7 (dir
+pool, no btrfs module). The agent proxy is its only egress, and incusd pulls
+images through it (E-13).
 
-**90 entries: 22 done, 9 partial, 1 blocked, 58 open.**
+**90 entries: 23 done, 8 partial, 1 blocked, 58 open.**
 
 ---
 
@@ -136,35 +147,43 @@ the admission verdict (`target_admission`, lifted out of the transport's
 parity (the 38 broker tests pass unchanged, plus a direct gate unit test). The
 address and host predicates stay in the parent, already transport-free.
 
+Then the operator corrected a wrong assumption: this host was never incapable,
+only unprovisioned. **Provisioned it** (`errand-box setup`: Incus 6.0.7 + the
+guest image, 0 failures) and **ran `sh tests/live/live.sh`**. Every sandbox
+check passed. The live run **closed T-079** (its `up` re-exercise) and **caught
+a T-063 regression**: the unknown-option guard whitelisted only `--loop` for
+`maint`, so `maint --once` (a documented flag) was refused. Fixed (maint allows
+`--once` and `--loop`), the test gained a both-sides check, re-verified `PASS
+maint`, and a `forbidden-patterns.md` row names the class (an eighth row). The
+`errand:` live checks fail only for want of Discord creds (T-015), not code.
+
 ## What is in progress
 
-Nothing mid-edit. The egress work is now T-090, whose task 1 is partly done
-(the gate module above); its remaining stages need an Incus host or the sealed
-sandbox. The rest of the open security and host work has a real blocker, not an
-oversight:
+Nothing mid-edit. T-090 is the open egress work; its task 1 gate module landed,
+and now that this host is provisioned, the rest is drivable here:
 
 - **T-090** (the virtual network layer, which subsumes T-082 and T-022):
-  partial. Task 1's gate extraction landed this session; tasks 2 to 8 (the
-  smoltcp stack, the Incus TUN link, the live egress checks, the cfrs lite link)
-  need a host or the sealed sandbox.
+  partial. Task 1's gate extraction landed; tasks 2 to 8 (the smoltcp stack, the
+  Incus TUN link, the live egress checks, the cfrs lite link) remain. Tasks 3 to
+  7 can now run on this host; task 8 still wants the sealed sandbox.
 - **The host cluster** (T-020, T-021, T-024, T-025, T-019's native backend, and
-  the P1 host failures of T-027's run): needs an Incus host and kernel features
-  (AppArmor, user namespaces, rootless podman) this container does not have.
+  the P1 host failures of T-027's run): drivable on this host now. Caveat: this
+  host has no AppArmor, so T-024/T-025's `apparmor_restrict_unprivileged_userns`
+  case is not reproducible here (the live `inside` check confirmed rootless
+  podman works where that restriction is absent).
 
 ---
 
 ## Start here next session
 
-The host-free security cluster is done; what is left needs a host or the sealed
-sandbox.
+The host is provisioned and the live suite runs here, so host-touching work is
+no longer blocked.
 
-1. **Close T-079:** one `sh tests/live/live.sh up` on a host with Incus; no
-   code work remains, only the live re-exercise of `up`'s `write_if_changed`.
-2. **T-090**, the virtual network layer, staged as the entry lays out. Task 1's
+1. **T-090**, the virtual network layer, staged as the entry lays out. Task 1's
    first slice (the `gate` module: admission verdict + provider routing, with
-   verdict parity) landed this session; finish task 1 by gathering the predicates
-   and shaping the flow-level API, then task 2 (the smoltcp stack, host-free and
-   unit-testable). Tasks 3 to 7 need an Incus host, task 8 the sealed sandbox.
+   verdict parity) landed; finish task 1 by gathering the predicates and shaping
+   the flow-level API, then task 2 (the smoltcp stack, host-free and
+   unit-testable), then tasks 3 to 7 live on this host, task 8 the sealed sandbox.
    This closes T-022 and T-082 as it lands.
 3. **The host cluster, on an Incus host:** T-020 (the broker link that needs
    no proxy devices, which T-090's Incus link rides), then T-024, T-021, T-025,

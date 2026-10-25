@@ -386,10 +386,16 @@ fn cli(args: &[String], runner: &dyn run::Runner) -> i32 {
                     return 1;
                 }
             };
-            // Each takes one flag of its own; refuse anything else before a
-            // pass runs, so a misspelt `gc --dryrun` does not delete (T-063).
-            let known = if cmd == "gc" { "--dry-run" } else { "--loop" };
-            if let Some(bad) = rest.iter().find(|a| a.as_str() != known) {
+            // Refuse an unknown flag before a pass runs, so a misspelt
+            // `gc --dryrun` does not delete (T-063). `maint` takes `--once` (one
+            // pass, the default) or `--loop`; `gc` takes `--dry-run`. The usage
+            // line documents `maint [--once|--loop]`, so both are known.
+            let known: &[&str] = if cmd == "gc" {
+                &["--dry-run"]
+            } else {
+                &["--once", "--loop"]
+            };
+            if let Some(bad) = rest.iter().find(|a| !known.contains(&a.as_str())) {
                 eprintln!("errand-box {cmd}: unknown option {bad:?}");
                 return 2;
             }

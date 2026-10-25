@@ -1381,6 +1381,17 @@ loads and before `runtime.toml`, so a rejection needs no host state. A new
 `doctor --nope` (each exit 2, "unknown option") and confirms `gc --dry-run`
 is not rejected; it passed. fmt and clippy are clean.
 
+**Follow-up, 2026-10-25 (found live).** The first fix whitelisted only one flag
+per command, so `maint` refused `maint --once` (one pass, the default), a flag
+the usage line documents beside `--loop`. The `maint` live test caught it
+(`FAIL maint: maint --once exit 2: unknown option "--once"`) on the first full
+live run on a provisioned host. Fixed: the maint whitelist is now `--once` and
+`--loop`; `gc` stays `--dry-run`. The test gained a both-flags check
+(`maint --once` and `gc --dry-run` accepted, with `ERRAND_BOX_RUNTIME` pointed
+at a missing path so no real pass runs), and a `forbidden-patterns.md` row names
+the class: a rejecting guard tested only on the bad input, never on the good it
+must still accept. Re-verified: `PASS maint: maint --once exit 0`.
+
 ---
 
 # T-064: `logs` with no name is refused under systemd
@@ -1673,7 +1684,7 @@ cargo test --locked config:: errandcfg::
 **Category:** setup
 **Priority:** P1
 **Effort:** M
-**Status:** partial
+**Status:** done
 
 ## Problem
 
@@ -1760,10 +1771,17 @@ test up::tests::write_if_changed_does_not_follow_a_symlink_at_the_temp_name ... 
 test result: ok. (procs 4, up 2)
 ```
 
-fmt and clippy are clean. **Open:** `write_if_changed` is a helper `up` and
-`setup` use, so RULES.md asks for a live run before the entry closes; this
-host has no Incus. The only step left is `sh tests/live/live.sh up` on a host,
-which re-exercises the helper through `up`. No code work remains.
+fmt and clippy are clean.
+
+**Live run done, 2026-10-25. Closed.** A host was provisioned this session
+(`errand-box setup` installed Incus 6.0.7 and the guest image on this Ubuntu
+24.04 / cgroup v1 / no-init / no-AppArmor host), and `write_if_changed` was
+exercised through the real path many times: setup wrote every runtime file
+through it, and `sh tests/live/live.sh up` passed, including "a second up
+changes nothing: 0 changed", which is the helper's compare-then-write path
+working idempotently after the `O_NOFOLLOW`/`create_new` hardening. The normal
+`up`/`setup` path is unbroken by the fix, which was the live run RULES.md asked
+for. The symlink-refusal itself stays proven by the unit tests above.
 
 # T-084: doctor, setup and the shim report capability by literal, by euid, or not at all
 

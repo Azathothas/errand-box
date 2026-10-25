@@ -41,6 +41,7 @@ will add.
 | A general-purpose hash used as a password hash | brute-forceable credentials |
 | A guard whose test has never been seen to fail | theatre. Plant the defect and read the exit code. |
 | A test whose name claims more than it checks | a green suite over a defect it was written to catch |
+| A new guard that rejects input, tested only that it refuses the bad, never that it still accepts the good | over-rejection ships. A CLI change that refused an unknown option whitelisted only `--loop` for `maint`, so it rejected `maint --once`, a documented flag; the test checked a bogus flag was refused but never that `--once` still ran, and a live run caught it. Test both sides of a guard: the rejected and the still-accepted. T-063. |
 | Root opening, writing or chowning a path under a directory an unprivileged account controls, without `O_NOFOLLOW`/`O_EXCL` | privilege escalation. The account plants a symlink or a hardlink at the name and redirects root's write or chown to any file. Create with `create_new` + `O_NOFOLLOW`, `fchmod`/`fchown` the descriptor, and chown only a file you created. E-54, T-079. |
 
 ## Fake anything

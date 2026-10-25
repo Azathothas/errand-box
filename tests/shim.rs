@@ -394,11 +394,25 @@ fn unknown_options_are_refused_not_run() {
         );
         assert!(err.contains("unknown option"), "{cmd} {bad}: {err}");
     }
-    // The command's own flag is accepted: `gc --dry-run` may fail for want of
-    // runtime.toml, but never as an unknown option.
-    let mut c = Command::new(env!("CARGO_BIN_EXE_errand-box"));
-    c.args(["gc", "--dry-run"]);
-    let out = c.output().unwrap();
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(!err.contains("unknown option"), "gc --dry-run: {err}");
+    // A command's own flags are accepted: they may fail for want of
+    // runtime.toml, but never as an unknown option. `maint` takes `--once` and
+    // `--loop`, `gc` takes `--dry-run`. The live `maint --once` check caught the
+    // regression where the maint whitelist held only `--loop`; this guards it.
+    // ERRAND_BOX_RUNTIME points at a path that does not exist, so the command
+    // stops at the missing runtime (exit 1) rather than running a real pass on a
+    // host where setup has finished. `--loop` is left out: with no runtime it
+    // waits for setup rather than returning.
+    for (cmd, good) in [("gc", "--dry-run"), ("maint", "--once")] {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_errand-box"));
+        c.env("ERRAND_BOX_RUNTIME", "/nonexistent/errand-box/runtime.toml");
+        c.args([cmd, good]);
+        let out = c.output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!err.contains("unknown option"), "{cmd} {good}: {err}");
+        assert_ne!(
+            out.status.code(),
+            Some(2),
+            "{cmd} {good} must not be a usage error: {err}"
+        );
+    }
 }
