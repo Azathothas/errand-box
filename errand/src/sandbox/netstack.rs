@@ -38,6 +38,7 @@ pub(crate) struct Phy<L: LinkDevice> {
 }
 
 impl<L: LinkDevice> Phy<L> {
+    /// Wraps a backend's link so a smoltcp stack can run over it.
     pub(crate) fn new(link: L) -> Self {
         Self { link }
     }
