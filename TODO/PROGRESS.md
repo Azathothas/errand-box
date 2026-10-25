@@ -45,12 +45,13 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
 
 ## State
 
-- **Last session:** the triage of 2026-10-25, attended, in a hosted
-  container. It read every open issue, verified the 17 with no entry against
-  the code, and filed 11 entries; it changed only `TODO/`, on `main`. It
-  built nothing and changed no code.
-- **Tree:** the triage commit on `main`, on top of `57231da`, pushed to
-  `origin main` on the operator's word.
+- **Last session:** 2026-10-25, attended, in a hosted container. It triaged
+  the open issues into entries (the rulings above), then implemented the
+  security cluster from them: eight entries fixed, one carried partway, on
+  `main`, pushed to `origin main` on the operator's word, each commit under
+  the operator's identity.
+- **Tree:** `main`, on top of `57231da`, through `47be7f1`, pushed to
+  `origin main`.
 - **Deployed:** [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
   the latest release, on `2ead3fd`. The prerelease
   [`artefacts`](https://github.com/Azathothas/errand-box/releases/tag/artefacts)
@@ -64,12 +65,15 @@ Measure again with the same commands before you change anything.
 
 | check | result |
 | --- | --- |
-| `sh scripts/ci-local.sh --step gate` | 9 of 9, and `check-todo` reports 89 entries consistent, on the triage tree. The step covers the only checks a `TODO/`-only change can move (docs, markers, one-home, placeholders, control-bytes, changelog, attribution, secrets) |
-| `sh scripts/ci-local.sh` | every step passed but `shellcheck`: gate, kill-by-name, fmt, clippy, test, discord-contract, pins, errand-config, musl and cross all exit 0 (cross with zig 0.16 from pip, qemu-aarch64-static and a `binfmt_misc` handler installed this session). `shellcheck` exits 1 on this host's shellcheck 0.9.0, which raises SC2317 on the EXIT-trap handler `cleanup` in `tests/e2e/mock-session.sh:67-69`; the file disables SC2329, newer shellcheck's name for the same false positive, but not SC2317, so CI's newer shellcheck is green. No code changed this session, so this is a pre-existing version artifact, not a defect in the tree |
-| `cargo test --locked --workspace` | run this session inside `ci-local` (the `test` step, 147 s): every test passed, cross included under qemu-aarch64. The last full count was 1,243 pass, 1 ignored (Rust 1.99.1) |
-| live tests | not run this session (no host change). Last run 54 of 54 on `9b27e60` ([output](../tests/live/2026-10-24-errand-library.txt)) |
+| `sh scripts/ci-local.sh --step gate` | 9 of 9, `check-todo` 89 consistent, after each entry's commit |
+| `cargo test --locked -p errand --lib` | 1,106 pass, 1 ignored |
+| `cargo test --locked -p errand-box --bins` | 115 pass |
+| `cargo fmt` / `cargo clippy --all-targets` | clean on both crates (`-D warnings`, pedantic) |
+| `sh scripts/ci-local.sh` (full) | not run to completion this session. The `musl` and `cross` steps were not re-run: no build-config changed, and the code changes cross-compile (std, `futures-util`, `libc` already in use). The `shellcheck` 0.9.0 SC2317 artifact on `tests/e2e/mock-session.sh:67-69` still stands (the file disables SC2329, the newer name; CI's newer shellcheck is green), and it is not this session's |
+| live tests | not run: this container has no Incus, so no entry that touches a host could be driven |
 
-The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
+The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB. No
+Incus, no proxy.
 
 **89 entries: 22 done, 8 partial, 1 blocked, 58 open.**
 
@@ -77,63 +81,84 @@ The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
 
 ## What this session did
 
-- **Read all 58 open issues** (#2 to #59) in full, from a read-only fetch of
-  the tracker.
-- **Verified the 17 issues with no entry** (#43 to #59) against the tree at
-  `57231da` and the errand fork at `715e9b0`: each claim re-derived at file
-  and line. All confirmed, except #46 and #49, which are a design and a
-  timing window the reporter reproduced in a shell, not against live errand.
-- **Filed 11 entries, grouped by root cause** (the operator's ruling):
-  T-079 (root follows a symlink under errand's home, #43, #44), T-080
-  (freshness `sh -c`, #45), T-081 (refuse_borrowed timing, #46), T-082 (the
-  broker's egress through a proxy and the CA, #56, #57), T-083 (the egress
-  allowlist and its silent refusals, #58), T-084 (the capability probe and
-  tier, #50, #51), T-085 (constrained-host sizing and errand's limits, #53,
-  #54, #55), T-086 (the `lite` engine, #49), T-087 (the gate and the live
-  boundary check, #48), T-088 (the two credential files, #47), T-089 (the
-  broker panic, #52).
-- **Folded #59 into T-032** (the broker's private-address arms) and
-  **corrected T-029's closing evidence** (#48).
-- Issues #2 to #42 already had entries T-038 to T-078 (one per issue); the
-  new entries cross-link them where a root cause is shared.
+After the triage (above), implemented the security cluster. Each fix carries a
+regression test that fails without it (the TOCTOU and panic ones were watched
+to fail), and a class-prevention artifact: a `forbidden-patterns.md` row or a
+mechanical check. Committed on `main` under the operator's identity.
+
+- **T-088** (done): `creds.env` and `errand-box.env` are git-ignored and the
+  secret check scans for them tracked.
+- **T-080** (done): upstream tags are validated and `freshness.sh` no longer
+  builds an `sh -c` string from one.
+- **T-063** (done): the CLI refuses an unknown option, so `gc --dryrun` (a
+  typo for `--dry-run`) cannot fall through to a real delete.
+- **T-079** (partial, live pending): root opens lock and temp paths under
+  errand-owned directories with `O_NOFOLLOW` + `create_new`, and chowns only a
+  file it created. Unit-proven; the one step left is a live `up` run on a host.
+- **T-089** (done): `start_provider` returns `Result` instead of `.expect`, so
+  a denied loopback bind declines one session rather than aborting the daemon
+  into T-037's restart loop.
+- **T-081** (done): the pull-request push clones a snapshot of the git
+  directory (`cp -a`, checked with `refuse_borrowed`), so the check and the
+  clone read one immutable copy, closing T-030's borrow-swap window.
+- **T-032** (done): the broker's SSRF address arms (Azure WireServer, 6to4,
+  documentation, Teredo, site-local), no redirects on the provider client, the
+  real credential scrubbed from the streamed answer and its headers, and a
+  prefixed nonce scrubbed by shape.
+- **T-033** (done): bounded file reads (`read_beneath` ceiling, `!file` read
+  through the upload limit) and an upload's bytes scrubbed like every other
+  report.
+- **T-083** (partial): distinct host/port reasons in the 403 refusal body, and
+  `ERRAND_EGRESS_ALLOW_EXTRA` extends the allowlist rather than replacing it.
+
+Seven `forbidden-patterns.md` rows added for the classes behind these: the
+TOCTOU check-then-use on a live path, a `.expect` on the runtime under
+`panic = abort`, following a redirect with a credential, rewriting a proxied
+body while keeping its `Content-Length`, scrubbing a stream with no carry
+across the chunk boundary, an unbounded or metadata-trusting file read, and a
+reported raw-bytes field that skips the redactor.
 
 ## What is in progress
 
-Nothing. The triage is complete: every open issue is in an entry, new or
-existing.
+Nothing mid-edit. Two parts of the security cluster are not started, each with
+a real blocker, not an oversight:
+
+- **T-082** (egress through an HTTP proxy, and the TLS-intercept CA): not
+  started. It is cross-crate (`network.proxy_ca` spans errand-box and the
+  fork), and it **changes the SSRF posture**: through a proxy the broker
+  resolves nothing itself, so the address-level check on a `CONNECT` target is
+  lost and only the name check remains. Shipping that without a real proxy to
+  verify against, and without the operator weighing the weakened check, is the
+  wrong trade for a security batch, so it waits for a session with a proxy.
+- **The host cluster** (T-020, T-021, T-022, T-024, T-025, and T-019's native
+  backend): needs an Incus host and kernel features (AppArmor, user
+  namespaces, rootless podman) this container does not have.
 
 ---
 
 ## Start here next session
 
-Worked by root cause, security first.
+The security cluster is done but for T-082 and the host-dependent work.
 
-1. **The P1 security findings:** T-079 (root follows a symlink under errand's
-   home, a second route to root), T-080 (the freshness workflow runs an
-   upstream tag through `sh -c`), T-081 (the pull-request clone reads the
-   guest-writable git directory after the check). Then T-020, the broker link
-   that lets the project forbid proxy devices.
-2. **The P1 host failures of T-027's run, and the capability layer under
-   them:** T-040, T-041, T-046, T-038, T-039, T-042, and T-084 (probe the
-   host and choose the tier, which T-044 and T-086 both need).
-3. **setup proves a guest starts, and refuses where none can:** T-043, T-044,
-   then T-037 with T-050 and T-089 (the broker panic that feeds the restart
-   loop).
-4. **The broker's provider and egress boundary:** T-032 (the provider route,
-   now with the private-address arms), T-082 (egress through a proxy, the
-   CA), T-083 (the allowlist and its refusals), and T-087 (the live boundary
-   check and the recorded-output gate).
-5. **Constrained hosts:** T-085 (sizing and errand's limits), then T-086, the
-   researched `lite` engine design.
-6. **The other P2 entries of T-027's run, smallest first:** T-051, T-063,
-   T-047, T-048, T-058, T-059, T-060, T-061, T-062, T-064, T-065, T-045,
-   T-052, T-053, T-055, T-057, T-049, T-054, T-066, and T-088.
-7. **errand's chat and files:** T-035's open items, then T-033.
-8. **The backend:** T-019's incus backend in the fork (needs T-020), which
-   retires the `bailey` stand-in.
-9. T-024, then T-021 and T-022, which wait on T-020's link.
-10. T-034's podman and `issues`, T-036, T-014, T-026, T-023, T-025, and the
-    P3 entries of the run.
+1. **Close T-079:** one `sh tests/live/live.sh up` on a host with Incus; no
+   code work remains, only the live re-exercise of `up`'s `write_if_changed`.
+2. **T-082**, on a host with or behind a real HTTP proxy: implement
+   `upstreamProxy` for `CONNECT` and point the provider client at it, decide
+   and document the address-check posture through a proxy, and pass
+   `proxy_ca` into the session environment and the broker's provider client.
+   The entry carries the full plan and the fake-proxy test to write.
+3. **T-083's open items:** the rate-limited refusal line in the session's
+   thread (broker-to-session wiring), per-host `host:port` ports (end-to-end,
+   or not at all), and the suggestion-only egress CLI.
+4. **The host cluster, on an Incus host:** T-020 (the broker link that needs
+   no proxy devices), then T-024, T-021, T-022, T-025, and T-019's native
+   backend, which retires the `bailey` stand-in. The P1 host failures of
+   T-027's run and the capability layer under them (T-040, T-041, T-046,
+   T-038, T-039, T-042, T-084) also need a host.
+5. **Then** the remaining P2/P3 entries of T-027's run, smallest first
+   (T-051, T-047, T-048, T-058, T-059, T-060, T-061, T-062, T-064, T-065,
+   T-045, T-052, T-053, T-055, T-057, T-049, T-054, T-066), T-085, T-086, and
+   T-034's podman/`issues` removal.
 
 ---
 

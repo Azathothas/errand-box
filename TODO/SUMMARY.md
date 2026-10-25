@@ -3,18 +3,17 @@
 The last session's summary table. Overwritten every session. The record is
 [`PROGRESS.md`](PROGRESS.md).
 
-Session of 2026-10-25T01:08:41Z, attended, in a hosted container, on `main`,
-on top of `57231da`. The counts of lines and files are from `git diff`,
-through the triage commit, this file included.
+Session of 2026-10-25, attended, in a hosted container, on `main`, from the
+triage commit through `47be7f1`. It triaged the open issues (see PROGRESS) and
+then implemented the security cluster.
 
 | row | before | after |
 | --- | --- | --- |
-| Elapsed | 2026-10-25T01:08:41Z | about 25 min to the writes; the triage commit stamps the end |
-| Commits | `57231da` | 1, by the operator's identity, no trailer |
-| Work | 58 open issues to triage, 4 scope and design questions | all 58 in an entry (17 of them newly); the 4 questions settled by the operator |
-| Changes | | 8 files changed, about 830 insertions, 62 deletions, all under `TODO/` (`git diff --stat`) |
-| Size | 112,483 tracked lines before the commit | the delta is the record only; no code changed |
-| Entries | 78 (15 done, 6 partial, 1 blocked, 56 open) | 89 (15 done, 6 partial, 1 blocked, 67 open): T-079 to T-089 new; T-032 extended, T-029 evidence corrected |
-| Checks | `gate` 9 of 9, check-todo 89 consistent | `gate` 9 of 9; full `ci-local` every step but `shellcheck`, which this host's shellcheck 0.9.0 fails on an SC2317 false positive in `tests/e2e/mock-session.sh` that CI's newer shellcheck does not raise (not this session's change); `cargo test` green in the run; live tests not run (no host change) |
-| Cost | | one read-only tracker fetch (59 issues); apt installed shellcheck, musl-tools, qemu-user-static and binfmt-support, and pip installed ziglang 0.16, to run the full gate; no subagents spawned |
-| Health | 58 open issues, 17 with no entry | every open issue in an entry; 3 P1 security findings filed (T-079, T-080, T-081); tree clean on `main`, pushed to origin; v0.1.1 deployed. A pre-existing shellcheck-version artifact in `tests/e2e/mock-session.sh` surfaced (SC2317 not disabled beside SC2329); left for the next session |
+| Commits | triage on `main` | 9 more, each the operator's identity, no trailer: T-088, T-080, T-063, T-079, T-089, T-081, T-032, T-033, T-083 |
+| Work | the security cluster, triaged but unbuilt | 7 entries fixed (T-088, T-080, T-063, T-089, T-081, T-032, T-033) and 2 carried partway (T-079 live-pending, T-083) |
+| Entries | 89 (15 done, 6 partial, 1 blocked, 67 open) | 89 (22 done, 8 partial, 1 blocked, 58 open) |
+| Tests | | each fix has a regression test that fails without it; `cargo test -p errand --lib` 1,106 pass (1 ignored), `-p errand-box --bins` 115 pass |
+| Prevention | | 7 `forbidden-patterns.md` rows: TOCTOU check-then-use, `.expect` under `panic = abort`, redirect-with-credential, body rewrite keeping `Content-Length`, chunked scrub with no boundary carry, unbounded/metadata read, raw-bytes field skipping the redactor |
+| Checks | `gate` 9 of 9 | `gate` 9 of 9 after each commit; fmt and clippy clean on both crates; `errand-config` green. Full `ci-local` not re-run (`musl`/`cross` unaffected; pre-existing `shellcheck` SC2317 artifact stands). Live tests not run: no Incus |
+| Left | | T-082 (egress through a proxy; needs a real proxy, changes the SSRF posture) and the host cluster (need Incus) not started; T-079's one live `up` run remains. All in PROGRESS "Start here next session" |
+| Cost | | one read-only tracker fetch during triage; no subagents spawned; no host objects created |
