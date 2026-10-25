@@ -1371,6 +1371,18 @@ Staged, so each stage leaves a working egress and proves against the last.
    subnet with a `LinkDevice` trait (cfrs's "in-process queue or tunnel").
    Invariant: a userspace TCP handshake and transfer over an in-process link
    round-trips. Prove: `cargo test --locked -p errand netstack`.
+
+   **Done 2026-10-25.** `errand/src/sandbox/netstack.rs`: the `LinkDevice` trait
+   (the per-backend seam that carries raw IP frames, `recv_frame`/`send_frame`,
+   with an MTU) and `Phy<L>`, a smoltcp `phy::Device` adapter over any
+   `LinkDevice` (`Medium::Ip`, RX/TX tokens). smoltcp 0.14 is pinned in
+   `Cargo.toml` with only `std`, `medium-ip`, `proto-ipv4`, `socket-tcp` (pure
+   Rust, cross-compatible; the phy backends are this crate's own). The module is
+   `#[allow(dead_code)]` scaffolding until task 3 feeds it from a transport. A
+   test cross-wires two in-process links and two stacks and round-trips a TCP
+   handshake plus a two-way transfer (`ping`/`pong`): `PASS`. fmt and clippy
+   (pedantic) clean. The flow-level `allow/refuse/route` API that joins this
+   stack to the task-1 gate, and the predicate gathering, land with task 3.
 3. **The Incus link: a TUN over T-020's socket.** The guest boot step makes a
    TUN, routes default via it, and the guest-side relay pumps packets over
    T-020's unix socket; errand-box feeds the stack. Invariant: one allowlisted

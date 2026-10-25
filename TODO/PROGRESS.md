@@ -163,9 +163,11 @@ Nothing mid-edit. T-090 is the open egress work; its task 1 gate module landed,
 and now that this host is provisioned, the rest is drivable here:
 
 - **T-090** (the virtual network layer, which subsumes T-082 and T-022):
-  partial. Task 1's gate extraction landed; tasks 2 to 8 (the smoltcp stack, the
-  Incus TUN link, the live egress checks, the cfrs lite link) remain. Tasks 3 to
-  7 can now run on this host; task 8 still wants the sealed sandbox.
+  partial. Task 1's gate extraction and task 2's smoltcp stack + `LinkDevice`
+  seam both landed (a loopback TCP round-trip test passes). Tasks 3 to 8 (the
+  Incus TUN link, DNS + resolve-then-route, the provider endpoint, raw TCP, the
+  upstream hop, the cfrs lite link) remain; 3 to 7 run on this host, 8 wants the
+  sealed sandbox.
 - **The host cluster** (T-020, T-021, T-024, T-025, T-019's native backend, and
   the P1 host failures of T-027's run): drivable on this host now. Caveat: this
   host has no AppArmor, so T-024/T-025's `apparmor_restrict_unprivileged_userns`
@@ -179,11 +181,13 @@ and now that this host is provisioned, the rest is drivable here:
 The host is provisioned and the live suite runs here, so host-touching work is
 no longer blocked.
 
-1. **T-090**, the virtual network layer, staged as the entry lays out. Task 1's
-   first slice (the `gate` module: admission verdict + provider routing, with
-   verdict parity) landed; finish task 1 by gathering the predicates and shaping
-   the flow-level API, then task 2 (the smoltcp stack, host-free and
-   unit-testable), then tasks 3 to 7 live on this host, task 8 the sealed sandbox.
+1. **T-090**, the virtual network layer, staged as the entry lays out. Task 1
+   (the `gate` module) and task 2 (the smoltcp stack + `LinkDevice` seam) have
+   landed. Next is **task 3**, the Incus TUN link: the guest boot step makes a
+   TUN and the guest-side relay pumps packets over T-020's unix socket into the
+   stack. It depends on T-020's link (do T-020 first, or build them together),
+   and it is live-testable on this host. Then tasks 4 to 7 live here, task 8 in
+   the sealed sandbox.
    This closes T-022 and T-082 as it lands.
 3. **The host cluster, on an Incus host:** T-020 (the broker link that needs
    no proxy devices, which T-090's Incus link rides), then T-024, T-021, T-025,

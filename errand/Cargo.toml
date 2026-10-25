@@ -33,6 +33,10 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 serenity = { version = "0.12.5", default-features = false, features = ["builder", "client", "gateway", "model", "http", "rustls_backend", "cache"] }
+# The userspace TCP/IP stack for the virtual network layer (T-090). Only the
+# IP medium (a TUN or an interposed AF_UNIX link carries raw IP, no ethernet)
+# and TCP are needed; the phy backends are this crate's own.
+smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp"] }
 tempfile = "3.27.0"
 thiserror = "2.0.20"
 url = "2.5.8"

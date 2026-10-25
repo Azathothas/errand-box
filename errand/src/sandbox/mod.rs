@@ -24,6 +24,11 @@ pub mod backend;
 pub mod bailey;
 /// The egress broker every confined session dials out through.
 pub mod broker;
+/// The userspace TCP/IP stack for the virtual network layer (T-090). Scaffolding
+/// for the coming tasks; not yet wired into a transport, so its items are not
+/// called from production code until then.
+#[allow(dead_code)]
+pub mod netstack;
 /// Whether a path stays inside the directory a session is confined to.
 pub mod paths;
 /// The podman backend: a session in a container.
