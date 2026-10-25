@@ -49,8 +49,8 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   container. It read every open issue, verified the 17 with no entry against
   the code, and filed 11 entries; it changed only `TODO/`, on `main`. It
   built nothing and changed no code.
-- **Tree:** the triage commit on `main`, on top of `57231da`. Not pushed:
-  the operator pushes.
+- **Tree:** the triage commit on `main`, on top of `57231da`, pushed to
+  `origin main` on the operator's word.
 - **Deployed:** [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
   the latest release, on `2ead3fd`. The prerelease
   [`artefacts`](https://github.com/Azathothas/errand-box/releases/tag/artefacts)
@@ -147,8 +147,6 @@ Worked by root cause, security first.
 3. **The credentials T-015 lists**, for a real Discord application. T-027's
    run tested a real model turn through a gateway the operator named, and no
    real chat service.
-4. **Push `main`** when you want these entries on the remote: this session
-   committed to `main` and did not push, per the repository's push rule.
 
 ---
 
