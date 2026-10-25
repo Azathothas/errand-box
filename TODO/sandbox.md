@@ -716,6 +716,39 @@ E-23, already does this for rootless); the directory is shared read-only by a
 disk device; the guest's `systemd-socket-proxyd` units listen on 169.254.169.1
 and connect to the shared sockets; then `restricted.devices.proxy=block`.
 
+## Prototyped (2026-10-25, on the provisioned host)
+
+The full guest-relay path, proven live end to end against a stand-in broker
+(scripts in the session's scratch):
+
+```
+guest curl 169.254.169.1:PORT
+  -> a systemd .socket unit (FreeBind, ListenStream=169.254.169.1:PORT)
+    -> systemd-socket-proxyd (guest root), upstream a unix socket path
+      -> the shared socket on a read-only disk device
+        -> relay::unix_to_tcp on the host -> errand's broker tcp port
+```
+
+Both the broker port and the `guest_proxy_port` listener returned the broker's
+answer (curl exit 0), and the path survives an instance restart. Findings that
+shape the build:
+
+- **The share must mount at a rootfs path, not under `/run`.** A disk device
+  targeted at `/run/errand-box/link` is gone after a restart: the guest's
+  systemd mounts a fresh tmpfs over `/run` during boot, shadowing the bind mount
+  Incus placed there (the socket vanishes, the relay fails). Mounted at
+  `/var/lib/errand-box/link` (on the rootfs) the bind mount survives (`findmnt`
+  shows `/dev/vda[...]`, the socket is present, the relay works). An edge case to
+  record with a row and a test when the build lands. The env file at
+  `/run/errand-box/env.sh` is unaffected: the shim writes it through the Incus
+  API after boot, onto the live tmpfs.
+- **One host socket, two guest listeners.** Both proxy devices today connect to
+  the same host target (errand's single broker port), so the build needs one
+  per-session host socket, relayed to the broker, and two guest proxyd units
+  (the broker port and `guest_proxy_port`) pointing at it.
+- **The guest relay adds no package:** `systemd-socket-proxyd` is in the image;
+  the units are enabled in `provision.sh` the way `errand-box-guest.service` is.
+
 ## Prove
 
 ```sh
