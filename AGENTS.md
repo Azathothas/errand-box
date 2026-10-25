@@ -79,7 +79,9 @@ Each of these was broken once, somewhere.
 2. **Commit on `main`. Push to `origin main` only when the operator asks for
    it in the session. Never force-push.**
 3. **Every other repository is read-only.** No issue, pull request,
-   discussion, comment, review, fork or star anywhere else.
+   discussion, comment, review, fork or star anywhere else. This repository's
+   own issues are closed as their entries finish
+   ([`docs/conventions/git.md`](docs/conventions/git.md)).
 4. **No secret goes into the tree, a log, an argument list, a URL, a commit
    message, an issue or a summary.** This repository is public: also nothing
    that names a private host, account or path.
@@ -128,7 +130,7 @@ routes before anything is recorded as not possible.
 | know the host | `sh scripts/doctor/doctor.sh` |
 | know whether the tree is green | `sh scripts/ci-local.sh` (every CI step) or `--step NAME` |
 | know whether the record agrees with itself | `sh scripts/check-todo.sh` |
-| close an entry and move the counts | `sh scripts/check-todo.sh --set T-NNN done`. Do not type a count. |
+| close an entry and move the counts | `sh scripts/check-todo.sh --set T-NNN done`. Do not type a count. Then close its source issue, if it came from one ([`docs/conventions/git.md`](docs/conventions/git.md)). |
 | add a new upstream version | `sh scripts/pins.sh bump <tool> <version>` |
 | test on a host with Incus | `sh tests/live/live.sh` (root; it starts real guests) |
 | know what a host lacks | `errand-box doctor` (read-only) |
@@ -144,7 +146,9 @@ specification. In short, whether the session went well or not:
 - the gate run, all of it;
 - the summary table, in chat;
 - the next prompt, in chat, and a resume prompt when anything is unfinished;
-- every host object the session made for a test, removed.
+- every host object the session made for a test, removed;
+- the source issue of every entry marked `done` this session, closed on this
+  repository ([`docs/conventions/git.md`](docs/conventions/git.md)).
 
 ---
 

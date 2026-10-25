@@ -157,7 +157,9 @@ never checked off from memory. Then:
 - the record is updated in the same change as the work, not after it;
 - the documentation that describes the changed behaviour changes with it;
 - the handoff is written, including the driven-pass log and the review findings;
-- what the reviews surfaced is **fixed**, not just listed.
+- what the reviews surfaced is **fixed**, not just listed;
+- an entry built from a GitHub issue has that issue closed on the remote
+  ([`../conventions/git.md`](../conventions/git.md)).
 
 A unit of work whose scope grew during implementation re-passes the gate
 against its **new** scope. The gate is against what the work is now, not what it

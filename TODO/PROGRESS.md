@@ -79,7 +79,9 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   were closed with a comment naming the fix commit: #27 (T-063); #43 and #44
   (T-079); #45 (T-080); #46 (T-081); #47 (T-088); #52 (T-089); #59 (T-032). 50
   issues stay open, each mapping to an entry that is open, partial, or
-  superseded (T-082 and T-090). Close an issue once its entry reaches `done`.
+  superseded (T-082 and T-090). The practice is now documented in
+  `docs/conventions/git.md` section 7, reached from AGENTS.md's routing table,
+  absolute 3, and the session-owes list.
 - **This host is now a working errand-box host.** `errand-box setup` finished
   with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
   dir pool, lxcfs 6, the two `/dev` modes). `sh tests/live/live.sh` runs here.

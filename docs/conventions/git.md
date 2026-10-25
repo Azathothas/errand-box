@@ -12,8 +12,8 @@ because everything else is a preference by comparison.
 **Every commit is attributed to the operator alone.**
 
 - No `Co-Authored-By` trailer naming a model, a vendor or a tool.
-- No "generated with" line, in a commit message, a pull request body, a tag or
-  a release note.
+- No "generated with" line, in a commit message, an issue or pull-request
+  comment, a pull request body, a tag or a release note.
 - No tool name in the commit body.
 
 **A tool's own defaults may ask for such a trailer, and several do.** That is
@@ -203,3 +203,39 @@ rotated first and the rewrite does not un-publish it. See
   documentation-only.** A "docs" push carrying a source file is exactly the one
   that needed the run. `.github/` is never safe to skip, because a workflow
   edit is the change whose effect is visible only in a run.
+
+---
+
+## 7. Issues are closed when their entry is done
+
+An entry built from a GitHub issue on **this** repository names it on its
+`Source` line as `issue #N`. When that entry reaches `done`, close the issue,
+in the session that finished it, so the tracker and the record stay in step: an
+open issue whose fix is already merged is a question the next reader
+re-investigates for nothing.
+
+Close it only when the entry is fully `done`. An entry that is `partial`,
+`blocked`, `open`, or superseded by another leaves its issue open, because the
+work the issue describes is not finished. Match the issue to the entry by the
+entry's `Source` line, not by a guess from the title.
+
+Each close is two steps:
+
+1. Comment, naming the fix: the commit (short hash) and the entry (`T-NNN`),
+   with one or two plain sentences on what changed. The fix is usually on `main`
+   ahead of the latest tagged release, so say that, or a reader wonders why the
+   release lacks it.
+2. Set the state closed, with the reason `completed`.
+
+The comment is the operator's, in their voice, with no tool credit (section 1):
+no footer and no line naming a model or a tool, whatever a default appends.
+
+Commenting on and closing this repository's own issues are the only API writes
+an agent makes; [`../security/remote-ops.md`](../security/remote-ops.md) holds
+every other API call to read-only, and every other repository's issues stay
+read-only (the absolutes).
+
+This runs per entry as each is finished, and once more as an end-of-session
+sweep: any `done` entry whose source issue is still open is closed then.
+[`../methodology/sessions.md`](../methodology/sessions.md) lists the sweep among
+what a session owes.

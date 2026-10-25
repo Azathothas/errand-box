@@ -123,7 +123,8 @@ In this order.
    session read a lie first.
 4. **Update the documentation the work changed**, in the same change.
 5. **Write the handoff**, in stage mode, or close the entry with its evidence,
-   in todo mode.
+   in todo mode. An entry closed in todo mode that came from a GitHub issue has
+   that issue closed too ([`../conventions/git.md`](../conventions/git.md)).
 6. **Print the summary table.** Below.
 7. **Print the next prompt.** Below.
 8. **Tear down** anything this session created on a remote system.

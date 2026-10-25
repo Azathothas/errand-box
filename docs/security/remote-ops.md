@@ -138,7 +138,10 @@ a capability limit, and that is exactly why it has to be written down.
 
 The rules that follow from it:
 
-- Treat an API call as read-only. No POST, PATCH, PUT or DELETE.
+- Treat an API call as read-only, with one exception: closing or commenting on
+  this repository's own issues, which the issue lifecycle in
+  [`../conventions/git.md`](../conventions/git.md) directs and bounds. Otherwise
+  no POST, PATCH, PUT or DELETE, and never against another repository.
 - Never enumerate or read the operator's private repositories, even when a
   task would be easier with them.
 - Prefer a credential-free path when one exists. A route that structurally
