@@ -198,6 +198,34 @@ async fn the_broker_refuses_what_is_not_allowed_by_name_port_and_address() {
     broker.close();
 }
 
+/// A refusal says whether the host or the port was the problem, so a session
+/// that was refused learns which to fix (issue #58, T-083).
+#[tokio::test]
+async fn a_refusal_says_whether_the_host_or_the_port_was_the_problem() {
+    let mut broker = Broker::new(
+        vec!["example.com".to_owned()],
+        vec![443],
+        silent(),
+        Vec::new(),
+        false,
+    );
+    let port = broker.listen("127.0.0.1").await.expect("bound");
+
+    // A host not on the list, on an allowed port: the host is named, not the port.
+    let host_reason = try_connect(port, "evil.example.net:443").await;
+    assert!(host_reason.contains("403"), "{host_reason}");
+    assert!(host_reason.contains("allowlist"), "{host_reason}");
+    assert!(!host_reason.contains("port"), "{host_reason}");
+
+    // An allowed host on a port the broker will not open: the port is named.
+    let port_reason = try_connect(port, "example.com:22").await;
+    assert!(port_reason.contains("403"), "{port_reason}");
+    assert!(port_reason.contains("port 22"), "{port_reason}");
+    assert!(!port_reason.contains("allowlist"), "{port_reason}");
+
+    broker.close();
+}
+
 #[tokio::test]
 async fn the_broker_refuses_a_non_connect_opener() {
     let mut broker = Broker::new(

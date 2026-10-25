@@ -1164,7 +1164,7 @@ TLS fixture signed by it.
 **Category:** errand
 **Priority:** P2
 **Effort:** M
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -1211,6 +1211,54 @@ cargo test --locked -p errand broker
 A broker test refuses a port and a host and expects two different reasons in
 the body; a config test sets `ERRAND_EGRESS_ALLOW_EXTRA=example.org` and
 expects the defaults plus `example.org`.
+
+## Done, and open
+
+**Done 2026-10-25: the distinct refusal reasons and the extending allowlist,
+the two the Prove names.**
+
+The broker's `admit` (`errand/src/sandbox/broker/server.rs`) checks the host
+and the port separately and puts one reason per cause in the 403 body: the
+host named when it is off the allowlist, the port named when it is not open,
+or both when both. A session that was refused now reads which to fix rather
+than one "not on the egress allowlist" for either. Test:
+`a_refusal_says_whether_the_host_or_the_port_was_the_problem`.
+
+`ERRAND_EGRESS_ALLOW_EXTRA` adds to whatever allowlist is in force, the
+defaults or the set `ERRAND_EGRESS_ALLOW` replaces them with
+(`src/errandcfg.rs`), so an operator who needs one more host keeps github.com,
+pypi.org, crates.io and the rest. `examples/errand-box.env` documents both,
+that `ERRAND_EGRESS_ALLOW` replaces and `ERRAND_EGRESS_ALLOW_EXTRA` extends.
+Test: `allow_extra_extends_the_defaults_and_allow_still_replaces_them`. fmt,
+clippy and the `errand-config` check are clean.
+
+**Open, each its own change:**
+
+1. **The refusal in the thread.** A rate-limited line posted into the session's
+   thread with the host, the port and the reason (no credentials), for when the
+   agent does not surface the 403 itself. The broker has only a `Logger`, no
+   handle to the session's views, so this is broker-to-session wiring, not a
+   line in `admit`. The informative 403 body (done) already reaches the agent,
+   so this is the belt-and-suspenders half.
+2. **Per-host ports (`host:port`).** `sandbox.egressPorts` is global, so a port
+   opened for one host is open for all. Doing it properly is end-to-end: accept
+   `host:port` in the allowlist, match the host part, and enforce the port per
+   entry with the global list as the fallback, in the broker and the schema.
+   Not started rather than half-wired (a `host:port` the engine parsed but did
+   not enforce would be the "setting nobody reads" the conventions forbid). The
+   default list is 443 only, so this bites only a non-standard port an operator
+   adds.
+3. **`errand-box egress test` / `egress suggest`.** Suggestion-only tooling the
+   Approach marks "consider"; no behaviour depends on it.
+
+## Prove, run 2026-10-25
+
+```sh
+cargo test --locked -p errand-box --bins errandcfg::
+cargo test --locked -p errand --lib sandbox::broker
+```
+
+Both green (the two tests above among them).
 
 ---
 

@@ -207,12 +207,28 @@ async fn admit<W: tokio::io::AsyncWrite + Unpin>(
 ) -> Option<TcpStream> {
     let host = target.host.as_str();
     let port = i64::from(target.port);
-    if !state.ports.contains(&target.port) || !host_allowed(host, &state.allow) {
+    let host_ok = host_allowed(host, &state.allow);
+    let port_ok = state.ports.contains(&target.port);
+    if !host_ok || !port_ok {
+        // One reason per cause, in the body, so a session that fetched and was
+        // refused learns whether to add the host or open the port, rather than
+        // reading one "not on the allowlist" for both (issue #58, T-083).
+        let reason = if !host_ok && !port_ok {
+            format!("{host} is not on the egress allowlist, and port {port} is not open to egress")
+        } else if !host_ok {
+            format!("{host} is not on the egress allowlist")
+        } else {
+            format!("port {port} is not open to egress")
+        };
         state.log.info(
             "egress refused",
-            &fields([("host", host.into()), ("port", port.into())]),
+            &fields([
+                ("host", host.into()),
+                ("port", port.into()),
+                ("reason", reason.as_str().into()),
+            ]),
         );
-        let _ = refuse(writer, 403, "not on the egress allowlist").await;
+        let _ = refuse(writer, 403, &reason).await;
         return None;
     }
 

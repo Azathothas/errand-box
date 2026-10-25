@@ -124,9 +124,18 @@ pub fn build(
     if let Some(m) = settings.get("ERRAND_MODEL").filter(|v| !v.is_empty()) {
         agent["model"] = json!(m);
     }
+    // ERRAND_EGRESS_ALLOW replaces the defaults; ERRAND_EGRESS_ALLOW_EXTRA adds
+    // to whatever is in force. So an operator who only needs one more host sets
+    // EXTRA and keeps github.com, pypi.org, crates.io and the rest, rather than
+    // losing them by setting ALLOW to the one host (issue #58, T-083).
     let mut allow = list(settings.get("ERRAND_EGRESS_ALLOW"));
     if allow.is_empty() {
         allow = DEFAULT_ALLOW.iter().map(|s| (*s).to_owned()).collect();
+    }
+    for extra in list(settings.get("ERRAND_EGRESS_ALLOW_EXTRA")) {
+        if !allow.contains(&extra) {
+            allow.push(extra);
+        }
     }
     let mut cfg = json!({
         "chat": {
@@ -237,5 +246,39 @@ mod tests {
     fn env_parsing_refuses_junk() {
         assert!(parse_env("NOEQUALS\n").is_err());
         assert!(parse_env("1BAD=x\n").is_err());
+    }
+
+    #[test]
+    fn allow_extra_extends_the_defaults_and_allow_still_replaces_them() {
+        // With no ALLOW, EXTRA adds to the defaults rather than replacing them.
+        let mut s = settings();
+        s.insert(
+            "ERRAND_EGRESS_ALLOW_EXTRA".into(),
+            "example.org, mirror.internal".into(),
+        );
+        let c = build(&s, &creds(), "/h").unwrap();
+        let hosts: Vec<&str> = c["sandbox"]["egress"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(hosts.contains(&"github.com"), "defaults kept");
+        assert!(hosts.contains(&"pypi.org"), "defaults kept");
+        assert!(hosts.contains(&"example.org"), "extra added");
+        assert!(hosts.contains(&"mirror.internal"), "extra added");
+
+        // ALLOW still replaces the defaults, and EXTRA adds to that set.
+        let mut s = settings();
+        s.insert("ERRAND_EGRESS_ALLOW".into(), "only.example".into());
+        s.insert("ERRAND_EGRESS_ALLOW_EXTRA".into(), "also.example".into());
+        let c = build(&s, &creds(), "/h").unwrap();
+        let hosts: Vec<&str> = c["sandbox"]["egress"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(hosts, vec!["only.example", "also.example"]);
     }
 }

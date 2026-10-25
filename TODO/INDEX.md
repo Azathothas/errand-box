@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 59 open, 7 partial, 1 blocked, 22 done.**
+**89 items. 58 open, 8 partial, 1 blocked, 22 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 8 | 4 | 1 | 10 | 23 |
-| P2 | 34 | 2 | 0 | 8 | 44 |
+| P2 | 33 | 3 | 0 | 8 | 44 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 59 | 7 | 1 | 22 | 89 |
+| **All** | 58 | 8 | 1 | 22 | 89 |
 
 ---
 
@@ -185,7 +185,7 @@ decision).
 | [T-080](upkeep.md) | P1 | upkeep | done | freshness.sh runs an upstream release tag through sh -c, with the write token |
 | [T-081](errand.md) | P1 | errand | done | refuse_borrowed is checked seconds before the clone, so the git directory can be swapped |
 | [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA |
-| [T-083](errand.md) | P2 | errand | open | A refused egress is silent, ERRAND_EGRESS_ALLOW replaces the defaults, and ports are global |
+| [T-083](errand.md) | P2 | errand | partial | A refused egress is silent, ERRAND_EGRESS_ALLOW replaces the defaults, and ports are global |
 | [T-084](setup.md) | P2 | setup | open | doctor, setup and the shim report capability by literal, by euid, or not at all |
 | [T-085](setup.md) | P2 | setup | open | errand-box is sized for a roomy host, and does not tell errand the real numbers |
 | [T-086](sandbox.md) | P3 | sandbox | open | A lite engine for hosts Incus cannot serve |
