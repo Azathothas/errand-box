@@ -518,28 +518,6 @@ pub(crate) struct ProviderState {
     pub client: reqwest::Client,
 }
 
-/// Whether a request is served by the provider endpoint, per its path.
-fn route_for<'a>(state: &'a ProviderState, path: &str) -> Option<&'a ProviderRoute> {
-    let mut routes = state.routes.iter().collect::<Vec<_>>();
-    // Longest prefix first, so a provider named under another's path is still
-    // reached rather than shadowed by it.
-    routes.sort_by_key(|route| std::cmp::Reverse(route.prefix.len()));
-    routes
-        .into_iter()
-        .find(|candidate| under_prefix(path, &candidate.prefix))
-}
-
-/// Whether `path` is `prefix` itself or a path below it.
-///
-/// A match on the bare string would let `/provider/NAME.other.example/...` and
-/// `/provider/NAME:443@other.example/...` reach the route for `NAME`, and what
-/// follows the prefix is pasted onto the provider's address.
-fn under_prefix(path: &str, prefix: &str) -> bool {
-    let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
-    path.strip_prefix(prefix)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-}
-
 /// The address a provider call goes to: the provider's base URL with the
 /// session's path below it, or `None` when the result is anywhere else.
 ///
@@ -592,7 +570,7 @@ pub(crate) async fn serve_provider_request(
         .query()
         .map(|query| format!("?{query}"))
         .unwrap_or_default();
-    let Some(route) = route_for(&state, &path) else {
+    let Some(route) = gate::route_for(&state.routes, &path) else {
         return (
             axum::http::StatusCode::NOT_FOUND,
             "not a provider this broker serves\n",
@@ -886,6 +864,9 @@ fn url_host(target: &str) -> Option<String> {
         url::Host::Ipv6(address) => Some(address.to_string()),
     }
 }
+
+/// The backend-agnostic egress gate: the policy, apart from the transport.
+pub(crate) mod gate;
 
 /// The listener that admits a session's connections and tunnels them.
 pub(crate) mod server;

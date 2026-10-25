@@ -1245,7 +1245,7 @@ Virtual Networking in a Sealed Sandbox", read on 2026-10-25 at
 **Category:** sandbox
 **Priority:** P2
 **Effort:** XL
-**Status:** open
+**Status:** partial
 
 ## What it is, and what it is not
 
@@ -1354,6 +1354,19 @@ Staged, so each stage leaves a working egress and proves against the last.
    on the same inputs. Reuse: the broker functions, moved not rewritten. Prove:
    the current broker tests pass against the gate unchanged,
    `cargo test --locked -p errand broker`.
+
+   **Started 2026-10-25 (first slice).** `errand/src/sandbox/broker/gate.rs` now
+   holds the admission verdict (`target_admission`, the host/port decision and
+   its T-083 reason, lifted out of the transport's `admit`) and the provider
+   routing (`route_for`, now data-driven on `&[ProviderRoute]`, with
+   `under_prefix`). `admit` and `serve_provider_request` call the gate; the 38
+   broker tests pass unchanged (verdict parity), and a direct unit test reads
+   the verdict off the gate with no transport. Still in the parent module, where
+   they are already transport-free: the host and address predicates
+   (`host_allowed`, `is_private_v4/v6`, `is_private_address`, `public_addresses`)
+   and the redaction. Gathering those physically into `gate`, and the flow-level
+   `allow/refuse/route` + dialer API the netstack calls, is the rest of the task
+   and lands with the stack (task 2) and the Incus link (task 3).
 2. **The smoltcp stack and a link-device seam.** A smoltcp stack on a private
    subnet with a `LinkDevice` trait (cfrs's "in-process queue or tunnel").
    Invariant: a userspace TCP handshake and transfer over an in-process link

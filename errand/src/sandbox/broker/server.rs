@@ -11,7 +11,7 @@ use tokio::sync::oneshot;
 
 use super::{
     DIAL_BUDGET, DIAL_TIMEOUT, LOOKUP_TIMEOUT, NoAddress, ProviderRoute, ProviderState, Target,
-    host_allowed, parse_connect, parse_forward, public_addresses,
+    parse_connect, parse_forward, public_addresses,
 };
 use crate::log::Logger;
 use crate::log::fields;
@@ -207,19 +207,12 @@ async fn admit<W: tokio::io::AsyncWrite + Unpin>(
 ) -> Option<TcpStream> {
     let host = target.host.as_str();
     let port = i64::from(target.port);
-    let host_ok = host_allowed(host, &state.allow);
-    let port_ok = state.ports.contains(&target.port);
-    if !host_ok || !port_ok {
-        // One reason per cause, in the body, so a session that fetched and was
-        // refused learns whether to add the host or open the port, rather than
-        // reading one "not on the allowlist" for both (issue #58, T-083).
-        let reason = if !host_ok && !port_ok {
-            format!("{host} is not on the egress allowlist, and port {port} is not open to egress")
-        } else if !host_ok {
-            format!("{host} is not on the egress allowlist")
-        } else {
-            format!("port {port} is not open to egress")
-        };
+    // The host and port verdict, with its refusal reason, is the gate's; the
+    // transport only logs it and answers. A session that fetched and was refused
+    // reads whether to add the host or open the port (issue #58, T-083, T-090).
+    if let Err(reason) =
+        super::gate::target_admission(&state.allow, &state.ports, host, target.port)
+    {
         state.log.info(
             "egress refused",
             &fields([

@@ -75,7 +75,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB. No
 Incus, no proxy.
 
-**90 entries: 22 done, 8 partial, 1 blocked, 59 open.**
+**90 entries: 22 done, 9 partial, 1 blocked, 58 open.**
 
 ---
 
@@ -127,17 +127,26 @@ Incus backend, and the operator's `cfrs` `LD_PRELOAD` interposition in the lite
 backend (no root, no namespaces). Enforcement stays the backend's own seal (the
 netns; the sandbox's `AF_INET` block). **T-090 supersedes T-022 and T-082**,
 whose rulings are kept verbatim under a pointer to it. The operator ruled this
-direction over four questions this session.
+direction over several questions this session.
+
+Then, on the operator's word, **implemented T-090 task 1's first slice** (the
+host-free part): a `gate` module (`errand/src/sandbox/broker/gate.rs`) now holds
+the admission verdict (`target_admission`, lifted out of the transport's
+`admit`) and the provider routing (`route_for`, data-driven), with verdict
+parity (the 38 broker tests pass unchanged, plus a direct gate unit test). The
+address and host predicates stay in the parent, already transport-free.
 
 ## What is in progress
 
-Nothing mid-edit. The egress work is now T-090 (design filed, not started: it
-can only be proven on an Incus host and a sealed sandbox). The rest of the open
-security and host work has a real blocker, not an oversight:
+Nothing mid-edit. The egress work is now T-090, whose task 1 is partly done
+(the gate module above); its remaining stages need an Incus host or the sealed
+sandbox. The rest of the open security and host work has a real blocker, not an
+oversight:
 
-- **T-090** (the virtual network layer, which subsumes T-082 and T-022): a
-  staged XL design, filed this session. Each stage needs a host (the Incus
-  link, the live egress checks) or the sealed sandbox (the cfrs lite link).
+- **T-090** (the virtual network layer, which subsumes T-082 and T-022):
+  partial. Task 1's gate extraction landed this session; tasks 2 to 8 (the
+  smoltcp stack, the Incus TUN link, the live egress checks, the cfrs lite link)
+  need a host or the sealed sandbox.
 - **The host cluster** (T-020, T-021, T-024, T-025, T-019's native backend, and
   the P1 host failures of T-027's run): needs an Incus host and kernel features
   (AppArmor, user namespaces, rootless podman) this container does not have.
@@ -151,10 +160,12 @@ sandbox.
 
 1. **Close T-079:** one `sh tests/live/live.sh up` on a host with Incus; no
    code work remains, only the live re-exercise of `up`'s `write_if_changed`.
-2. **T-090**, the virtual network layer, staged as the entry lays out. Task 1
-   (factor the broker's gating into a backend-agnostic gate with verdict-parity
-   tests) is host-free and is the place to start; tasks 3 to 7 need an Incus
-   host, task 8 the sealed sandbox. This closes T-022 and T-082 as it lands.
+2. **T-090**, the virtual network layer, staged as the entry lays out. Task 1's
+   first slice (the `gate` module: admission verdict + provider routing, with
+   verdict parity) landed this session; finish task 1 by gathering the predicates
+   and shaping the flow-level API, then task 2 (the smoltcp stack, host-free and
+   unit-testable). Tasks 3 to 7 need an Incus host, task 8 the sealed sandbox.
+   This closes T-022 and T-082 as it lands.
 3. **The host cluster, on an Incus host:** T-020 (the broker link that needs
    no proxy devices, which T-090's Incus link rides), then T-024, T-021, T-025,
    and T-019's native backend, which retires the `bailey` stand-in. The P1 host

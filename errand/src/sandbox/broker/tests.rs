@@ -7,10 +7,11 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use super::gate::under_prefix;
 use super::server::{Broker, dial, read_request_head};
 use super::{
     NoAddress, ProviderRoute, Resolve, carries_nonce, host_allowed, is_private_address,
-    parse_connect, parse_forward, provider_target, public_addresses, under_prefix, url_host,
+    parse_connect, parse_forward, provider_target, public_addresses, url_host,
 };
 use crate::log::{LogFields, Logger};
 
@@ -224,6 +225,36 @@ async fn a_refusal_says_whether_the_host_or_the_port_was_the_problem() {
     assert!(!port_reason.contains("allowlist"), "{port_reason}");
 
     broker.close();
+}
+
+/// The same verdict, read straight off the gate, with no transport in the way:
+/// the admission decision and its reason are the gate's, so a backend other than
+/// the HTTP proxy gets the identical answer (T-090 task 1).
+#[test]
+fn the_gate_admits_a_target_and_names_which_cause_refused_it() {
+    use super::gate::target_admission;
+    let allow = vec!["example.com".to_owned()];
+    let ports = vec![443u16];
+
+    assert!(target_admission(&allow, &ports, "example.com", 443).is_ok());
+
+    let host = target_admission(&allow, &ports, "evil.example.net", 443).unwrap_err();
+    assert!(
+        host.contains("allowlist") && !host.contains("port"),
+        "{host}"
+    );
+
+    let port = target_admission(&allow, &ports, "example.com", 22).unwrap_err();
+    assert!(
+        port.contains("port 22") && !port.contains("allowlist"),
+        "{port}"
+    );
+
+    let both = target_admission(&allow, &ports, "evil.example.net", 22).unwrap_err();
+    assert!(
+        both.contains("allowlist") && both.contains("port 22"),
+        "{both}"
+    );
 }
 
 #[tokio::test]

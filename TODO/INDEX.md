@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**90 items. 59 open, 8 partial, 1 blocked, 22 done.**
+**90 items. 58 open, 9 partial, 1 blocked, 22 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 8 | 4 | 1 | 10 | 23 |
-| P2 | 34 | 3 | 0 | 8 | 45 |
+| P2 | 33 | 4 | 0 | 8 | 45 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 59 | 8 | 1 | 22 | 90 |
+| **All** | 58 | 9 | 1 | 22 | 90 |
 
 ---
 
@@ -192,4 +192,4 @@ decision).
 | [T-087](upkeep.md) | P2 | upkeep | open | The gate does not require an entry's prove output, and no live check crosses the provider boundary |
 | [T-088](upkeep.md) | P2 | upkeep | done | creds.env and errand-box.env are not ignored, and the secret check does not match them |
 | [T-089](errand.md) | P2 | errand | done | The broker panics instead of returning an error when a loopback bind is denied |
-| [T-090](sandbox.md) | P2 | sandbox | open | A virtual network layer: one gated egress path (smoltcp + policy gate), two link devices (Incus TUN, lite cfrs); subsumes T-022 and T-082 |
+| [T-090](sandbox.md) | P2 | sandbox | partial | A virtual network layer: one gated egress path (smoltcp + policy gate), two link devices (Incus TUN, lite cfrs); subsumes T-022 and T-082 |
