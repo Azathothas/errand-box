@@ -641,7 +641,7 @@ fn a_malformed_allowlist_entry_is_refused_rather_than_handed_to_the_broker() {
     // A broker told to permit "http://x" or "x/y" either permits nothing or
     // more than was meant, so a non-hostname is a configuration error.
     assert!(problems_contain(
-        &valid(json!({ "sandbox": { "egress": { "allow": ["http://evil.com/x"] } } })),
+        &valid(json!({ "sandbox": { "egress": { "allow": ["http://other.example/x"] } } })),
         "is not a hostname"
     ));
 }

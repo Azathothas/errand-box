@@ -75,7 +75,7 @@ fn normalize(path: &str) -> String {
 /// Resolves `wanted` against `root` and returns it only if it stays inside.
 ///
 /// Traversal is removed before the comparison rather than searched for, so a
-/// path does not have to be recognised as hostile to be refused. The root
+/// path does not have to be recognised as a traversal to be refused. The root
 /// itself counts as inside.
 ///
 /// Returns the resolved absolute path, or nothing when it escapes.

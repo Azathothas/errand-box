@@ -840,7 +840,7 @@ async fn a_project_whose_git_directory_is_a_redirect_file_is_not_opened() {
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("project");
     std::fs::create_dir(&project).unwrap();
-    // The attacker's redirect: `.git` is a file naming a repo outside the tree.
+    // The crafted redirect: `.git` is a file naming a repo outside the tree.
     std::fs::write(project.join(".git"), "gitdir: /home/someone/private/.git\n").unwrap();
 
     let (_fake, run) = plain_git();

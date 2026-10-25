@@ -306,14 +306,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("eb-locklink-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let victim = dir.join("victim");
-        std::fs::write(&victim, "ROOT-OWNED").unwrap();
+        let target = dir.join("target");
+        std::fs::write(&target, "ROOT-OWNED").unwrap();
         let lp = dir.join("eb-x.lock");
-        std::os::unix::fs::symlink(&victim, &lp).unwrap();
+        std::os::unix::fs::symlink(&target, &lp).unwrap();
         // The lock must not open through the planted link, and the target is
         // untouched (neither created, written, nor chowned).
         assert!(lock(&lp, false).is_err());
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ROOT-OWNED");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "ROOT-OWNED");
         // A normal lock path still works: create, then re-open the existing one.
         let ok = dir.join("eb-ok.lock");
         drop(lock(&ok, false).unwrap());

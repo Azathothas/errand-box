@@ -1,19 +1,19 @@
 # errand-box and sandhome
 
 [sandhome](https://github.com/talaria0101/sandhome) (read at commit
-5792a3e) is a home for an agent inside a sealed sandbox: one bootstrap that
+5792a3e) is a home for an agent inside an isolated sandbox: one bootstrap that
 finds a directory that can run programs, installs toolchains there, and
 works around a sandbox with no pty, no passwd entry and no bind mounts. It
 was written inside errand's own bailey sandbox, where the session's home
 (`/state/home`) can be written but cannot run programs.
 
-errand-box solves a different problem: it replaces the seal. This page
+errand-box solves a different problem: it replaces that isolation. This page
 compares the two, with each claim measured inside an errand-box session on
 2026-10-23 (the host of [tests.md](../tests.md)), or marked READ.
 
 ## The conditions sandhome works around, inside an errand-box session
 
-| condition in a sealed sandbox (READ, sandhome README) | inside errand-box, measured |
+| condition in an isolated sandbox (READ, sandhome README) | inside errand-box, measured |
 | --- | --- |
 | the home can be written and cannot run a program | `/state/home` and `/workspace` both run a program; `sandhome space --probe` says `exec=yes` for both |
 | no pty | stdin is not a tty (errand speaks ACP on it, by design), but a program gets a pty: `script -qec tty` prints `/dev/pts/1` |
@@ -33,8 +33,8 @@ it.
 
 ## The answer
 
-The two are complementary, not alternatives. sandhome makes a sealed
-sandbox usable; errand-box makes the sandbox a whole system, so the seal's
+The two are complementary, not alternatives. sandhome makes an isolated
+sandbox usable; errand-box makes the sandbox a whole system, so those
 restrictions are gone and the host boundary is the container's. An agent in
 errand-box does not need sandhome, and sandhome still works there.
 

@@ -222,7 +222,7 @@ if [ "$FOUND" -gt 0 ]; then
   printf '%s\n\n' "$REPORT"
   printf 'FAIL: %s category/categories matched.\n\n' "$FOUND"
   printf 'If any of it is a real credential, IN THIS ORDER:\n'
-  printf '  1. ROTATE IT. Now, before anything else. It is compromised from the\n'
+  printf '  1. ROTATE IT. Now, before anything else. It is exposed from the\n'
   printf '     moment it was written, and removing the file does not change that.\n'
   printf '  2. Tell the operator. They own the account.\n'
   printf '  3. Remove it from the tree, and add the ignore rule.\n'

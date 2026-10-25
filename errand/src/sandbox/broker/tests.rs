@@ -35,10 +35,10 @@ fn a_bare_allow_rule_matches_only_itself() {
     let allow = vec!["github.com".to_owned()];
     assert!(host_allowed("github.com", &allow));
     assert!(host_allowed("GitHub.com", &allow));
-    assert!(!host_allowed("evil.com", &allow));
+    assert!(!host_allowed("other.example", &allow));
     // A suffix that is not a subdomain must not match a bare rule.
     assert!(!host_allowed("notgithub.com", &allow));
-    assert!(!host_allowed("github.com.evil.com", &allow));
+    assert!(!host_allowed("github.com.other.example", &allow));
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn a_wildcard_rule_matches_subdomains_but_not_the_apex() {
     // apex is not what is talked to.
     assert!(!host_allowed("githubusercontent.com", &allow));
     // A lookalike that merely ends in the string but is not a subdomain.
-    assert!(!host_allowed("evilgithubusercontent.com", &allow));
+    assert!(!host_allowed("notgithubusercontent.com", &allow));
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn a_star_without_its_dot_is_a_literal_rule_and_matches_nothing() {
     let allow = vec!["*githubusercontent.com".to_owned()];
     assert!(!host_allowed("codeload.githubusercontent.com", &allow));
     assert!(!host_allowed("githubusercontent.com", &allow));
-    assert!(!host_allowed("evilgithubusercontent.com", &allow));
+    assert!(!host_allowed("notgithubusercontent.com", &allow));
 }
 
 #[test]
@@ -104,7 +104,10 @@ fn a_connect_line_yields_its_host_and_port_or_nothing() {
     assert_eq!(parse_connect("CONNECT github.com HTTP/1.1"), None);
     assert_eq!(parse_connect("CONNECT github.com:https HTTP/1.1"), None);
     assert_eq!(parse_connect("CONNECT github.com:99999 HTTP/1.1"), None);
-    assert_eq!(parse_connect("CONNECT evil.com/path:443 HTTP/1.1"), None);
+    assert_eq!(
+        parse_connect("CONNECT other.example/path:443 HTTP/1.1"),
+        None
+    );
 }
 
 #[test]
@@ -213,7 +216,7 @@ async fn a_refusal_says_whether_the_host_or_the_port_was_the_problem() {
     let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     // A host not on the list, on an allowed port: the host is named, not the port.
-    let host_reason = try_connect(port, "evil.example.net:443").await;
+    let host_reason = try_connect(port, "other.example.net:443").await;
     assert!(host_reason.contains("403"), "{host_reason}");
     assert!(host_reason.contains("allowlist"), "{host_reason}");
     assert!(!host_reason.contains("port"), "{host_reason}");
@@ -238,7 +241,7 @@ fn the_gate_admits_a_target_and_names_which_cause_refused_it() {
 
     assert!(target_admission(&allow, &ports, "example.com", 443).is_ok());
 
-    let host = target_admission(&allow, &ports, "evil.example.net", 443).unwrap_err();
+    let host = target_admission(&allow, &ports, "other.example.net", 443).unwrap_err();
     assert!(
         host.contains("allowlist") && !host.contains("port"),
         "{host}"
@@ -250,7 +253,7 @@ fn the_gate_admits_a_target_and_names_which_cause_refused_it() {
         "{port}"
     );
 
-    let both = target_admission(&allow, &ports, "evil.example.net", 22).unwrap_err();
+    let both = target_admission(&allow, &ports, "other.example.net", 22).unwrap_err();
     assert!(
         both.contains("allowlist") && both.contains("port 22"),
         "{both}"
@@ -1135,11 +1138,11 @@ fn a_route_matches_only_at_a_path_boundary() {
         "/provider/anthropic/"
     ));
     assert!(!under_prefix(
-        "/provider/anthropic.attacker.example/v1",
+        "/provider/anthropic.other.example/v1",
         "/provider/anthropic"
     ));
     assert!(!under_prefix(
-        "/provider/anthropic:443@evil.example/v1",
+        "/provider/anthropic:443@elsewhere.example/v1",
         "/provider/anthropic"
     ));
     assert!(!under_prefix("/provider/anthropicx", "/provider/anthropic"));
@@ -1166,9 +1169,9 @@ fn a_provider_target_keeps_the_providers_address() {
     assert!(provider_target(pathed, "", "").is_some());
 
     // Another host, by a suffix on the name or by a user part.
-    assert_eq!(provider_target(bare, ".attacker.example/v1", ""), None);
-    assert_eq!(provider_target(bare, ":443@evil.example/v1", ""), None);
-    assert_eq!(provider_target(bare, "@evil.example/v1", ""), None);
+    assert_eq!(provider_target(bare, ".other.example/v1", ""), None);
+    assert_eq!(provider_target(bare, ":443@elsewhere.example/v1", ""), None);
+    assert_eq!(provider_target(bare, "@elsewhere.example/v1", ""), None);
     // Another port.
     assert_eq!(provider_target(bare, ":8443/v1", ""), None);
     // Out of the base URL's path, plainly or encoded.
@@ -1185,8 +1188,8 @@ fn a_provider_target_keeps_the_providers_address() {
 #[test]
 fn a_host_is_read_from_the_parsed_address() {
     assert_eq!(
-        url_host("https://api.anthropic.com:443@evil.example/v1").as_deref(),
-        Some("evil.example")
+        url_host("https://api.anthropic.com:443@elsewhere.example/v1").as_deref(),
+        Some("elsewhere.example")
     );
     assert_eq!(
         url_host("https://api.anthropic.com/v1").as_deref(),

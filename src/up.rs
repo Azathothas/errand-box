@@ -1643,15 +1643,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("eb-wic-link-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let victim = dir.join("victim");
-        fs::write(&victim, "ROOT-OWNED").unwrap();
+        let target = dir.join("target");
+        fs::write(&target, "ROOT-OWNED").unwrap();
         let final_path = dir.join("config");
         let tmp = final_path.with_extension("errand-box-tmp");
-        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+        std::os::unix::fs::symlink(&target, &tmp).unwrap();
         // The write removes the planted link and writes a fresh file; the
-        // victim is never written through the link.
+        // target is never written through the link.
         let _ = write_if_changed(&final_path, "new\n", 0o600);
-        assert_eq!(fs::read_to_string(&victim).unwrap(), "ROOT-OWNED");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "ROOT-OWNED");
         assert_eq!(fs::read_to_string(&final_path).unwrap(), "new\n");
         let _ = fs::remove_dir_all(&dir);
     }
