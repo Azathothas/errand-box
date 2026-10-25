@@ -60,6 +60,20 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   push before `/run/errand-box` existed) was fixed. T-020 done, E-61 closed.
   Worker restarts stopped incusd twice; `errand-box up` recovered it. All on
   `main`, pushed, each commit under the operator's identity.
+- **Also last session, after the above:** a strictly-technical (ASD-STE100)
+  wording pass, on the operator's word. Flagged or metaphorical vocabulary was
+  neutralised across the security pages and the record (`f19d1a0`) and then the
+  rest of the live tree (`7752b89`): `docs/research/sandhome.md`, the
+  secret-check message, errand broker and config test data (example hosts are
+  now `other.example` and `elsewhere.example`), two code comments, and a test
+  variable (`victim` to `target`). A pre-existing shellcheck 0.9.0 false
+  positive (SC2317 on `mock-session.sh`) that blocked a clean local gate was
+  fixed (`fca6d33`). No behaviour changed and no entry counts moved; only the
+  cited cfrs title keeps "Sealed Sandbox", and `docs/history/` was left
+  untouched as the append-only record. The `gates` CI for `7752b89` (run
+  40176641403) had every confirmable job green (both `musl`; gate through
+  clippy); the final `test` and trivial downstream steps were unread behind a
+  stale GitHub API cache, and a self check-in is set for 09:16 UTC to confirm it.
 - **This host is now a working errand-box host.** `errand-box setup` finished
   with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
   dir pool, lxcfs 6, the two `/dev` modes). `sh tests/live/live.sh` runs here.
@@ -67,7 +81,7 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   drivable on this host. errand itself stays stopped (no Discord creds given;
   `setup` ran without `--env/--creds`), so the `errand:` live checks need the
   operator's credentials (T-015), not a code change.
-- **Tree:** `main`, on top of `57231da`, through `47be7f1`, pushed to
+- **Tree:** `main`, on top of `57231da`, through `7752b89`, pushed to
   `origin main`.
 - **Deployed:** [v0.1.1](https://github.com/Azathothas/errand-box/releases/tag/v0.1.1),
   the latest release, on `2ead3fd`. The prerelease
@@ -86,7 +100,7 @@ Measure again with the same commands before you change anything.
 | `cargo test --locked -p errand --lib` | 1,106 pass, 1 ignored |
 | `cargo test --locked -p errand-box --bins` | 115 pass |
 | `cargo fmt` / `cargo clippy --all-targets` | clean on both crates (`-D warnings`, pedantic) |
-| `sh scripts/ci-local.sh` (full) | not run to completion this session. The `musl` and `cross` steps were not re-run: no build-config changed, and the code changes cross-compile (std, `futures-util`, `libc` already in use). The `shellcheck` 0.9.0 SC2317 artifact on `tests/e2e/mock-session.sh:67-69` still stands (the file disables SC2329, the newer name; CI's newer shellcheck is green), and it is not this session's |
+| `sh scripts/ci-local.sh` (full) | the affected steps run green locally (gate, kill-by-name, shellcheck, fmt, clippy, test, errand-config); `musl` ran green on CI for `7752b89` (both arches). The old `shellcheck` 0.9.0 SC2317 false positive on `tests/e2e/mock-session.sh` is now fixed: `fca6d33` extends the file's existing SC2329 suppression to SC2317 |
 | `errand-box setup` (this host) | 0 failed, 30 changed, 7 degraded (all host-inherent); Incus 6.0.7, golden image `eb-golden`, `bailey doctor as errand: ok` |
 | `sh tests/live/live.sh` (this host) | every sandbox check PASS: `probe`, `session` (uid, groups, no NIC, direct egress blocked, broker via proxy device, limits, instance stop, lease), `acp`, `inside` (docker, docker build, `sudo podman`, rootless podman E-30, FUSE, cpu/mem limits), `signals` (SIGTERM, SIGKILL), `reap`, `up` (restart; second up 0 changed), `maint` (after the fix below). The only non-expected FAIL was `maint --once` (the T-063 regression, fixed and re-verified `PASS`). The `errand:` checks FAIL only because errand is unconfigured (no Discord creds, T-015) |
 
@@ -166,6 +180,14 @@ a T-063 regression**: the unknown-option guard whitelisted only `--loop` for
 maint`, and a `forbidden-patterns.md` row names the class (an eighth row). The
 `errand:` live checks fail only for want of Discord creds (T-015), not code.
 
+Finally, on the operator's word, a strictly-technical (ASD-STE100) wording pass,
+record- and docs-only in effect. Flagged or metaphorical vocabulary was
+neutralised across the security pages and the record (`f19d1a0`), then the rest
+of the live tree (`7752b89`), and a pre-existing shellcheck false positive was
+fixed (`fca6d33`). No behaviour and no entry counts changed; `docs/history/` was
+left untouched as the append-only record. The "Also last session" note under
+State has the files and the CI state.
+
 ## What is in progress
 
 Nothing mid-edit. T-090 is the open egress work; its task 1 gate module landed,
@@ -201,6 +223,11 @@ and now that this host is provisioned, the rest is drivable here:
 The host is provisioned and the live suite runs here, so host-touching work is
 no longer blocked.
 
+First, two carry-overs from last session: confirm the `gates` CI for `7752b89`
+(run 40176641403) finished `success` (the 09:16 UTC self check-in may already
+have noted it in chat), and see Open question 4 on whether to neutralise
+`docs/history/` too. Neither blocks the work below.
+
 1. **T-090 task 3**, the Incus TUN link, now that T-020's socket link is done.
    The guest boot step makes a TUN, routes default via it, and the guest-side
    relay pumps IP frames over T-020's same unix socket into the smoltcp stack
@@ -231,6 +258,11 @@ no longer blocked.
 3. **The credentials T-015 lists**, for a real Discord application. T-027's
    run tested a real model turn through a gateway the operator named, and no
    real chat service.
+4. **Whether to neutralise `docs/history/` too.** Last session made the live
+   tree strictly technical (ASD-STE100) but left the dated research captures in
+   `docs/history/` as they are, because that tree is append-only. They still
+   hold terms like `attacker.example` and `evil.*`. Say if you want them
+   neutralised as a sanctioned exception, or kept as the immutable record.
 
 ---
 
