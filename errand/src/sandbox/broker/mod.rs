@@ -816,27 +816,6 @@ fn stream_answer(answered: reqwest::Response, credential: &str) -> axum::respons
         })
 }
 
-/// Replaces every complete occurrence of `needle` in `haystack` with the
-/// redaction marker, byte for byte so a non-UTF-8 body is handled too.
-fn redact_bytes(haystack: &[u8], needle: &[u8]) -> Vec<u8> {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return haystack.to_vec();
-    }
-    let marker = crate::config::redact::REDACTION.as_bytes();
-    let mut out = Vec::with_capacity(haystack.len());
-    let mut i = 0;
-    while i < haystack.len() {
-        if haystack[i..].starts_with(needle) {
-            out.extend_from_slice(marker);
-            i += needle.len();
-        } else {
-            out.push(haystack[i]);
-            i += 1;
-        }
-    }
-    out
-}
-
 /// Wraps a byte stream so a secret split across chunk boundaries is still
 /// redacted.
 ///
@@ -868,7 +847,7 @@ where
                     match stream.next().await {
                         Some(Ok(chunk)) => {
                             carry.extend_from_slice(chunk.as_ref());
-                            let scrubbed = redact_bytes(&carry, &secret);
+                            let scrubbed = crate::config::redact::replace_bytes(&carry, &secret);
                             let split = scrubbed.len().saturating_sub(hold);
                             if split == 0 {
                                 // Not enough yet to be sure a secret does not
@@ -882,7 +861,7 @@ where
                         }
                         Some(Err(error)) => return Some((Err(error), (stream, Vec::new(), true))),
                         None => {
-                            let flushed = redact_bytes(&carry, &secret);
+                            let flushed = crate::config::redact::replace_bytes(&carry, &secret);
                             return Some((Ok(flushed), (stream, Vec::new(), true)));
                         }
                     }

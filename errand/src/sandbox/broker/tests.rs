@@ -322,18 +322,19 @@ async fn the_credential_is_put_on_at_the_broker_never_given_to_the_session() {
 }
 
 #[test]
-fn redact_bytes_replaces_every_complete_occurrence() {
+fn replace_bytes_replaces_every_complete_occurrence() {
+    use crate::config::redact::replace_bytes;
     assert_eq!(
-        super::redact_bytes(b"xKEYyKEYz", b"KEY"),
+        replace_bytes(b"xKEYyKEYz", b"KEY"),
         b"x[redacted]y[redacted]z".to_vec()
     );
     assert_eq!(
-        super::redact_bytes(b"no match here", b"KEY"),
+        replace_bytes(b"no match here", b"KEY"),
         b"no match here".to_vec()
     );
     // A needle longer than the text, and an empty needle, both pass through.
-    assert_eq!(super::redact_bytes(b"ab", b"abc"), b"ab".to_vec());
-    assert_eq!(super::redact_bytes(b"abc", b""), b"abc".to_vec());
+    assert_eq!(replace_bytes(b"ab", b"abc"), b"ab".to_vec());
+    assert_eq!(replace_bytes(b"abc", b""), b"abc".to_vec());
 }
 
 /// The answer is streamed, so a secret split across chunk boundaries would slip

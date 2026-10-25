@@ -204,7 +204,7 @@ impl Running {
                 shown
             }
         };
-        let mut file = match paths::open_beneath(&root, &display, &paths::OpenOptions::read()) {
+        let file = match paths::open_beneath(&root, &display, &paths::OpenOptions::read()) {
             Ok(file) => file,
             Err(error) => {
                 self.say(&format!("could not read `{wanted}`: {error}"))
@@ -240,10 +240,21 @@ impl Running {
             .await;
             return;
         }
+        // Read through the limit, not just up to the metadata's word for it: a
+        // file the session can write may grow between the size check above and
+        // this read, so one more byte than the limit is read and a file that
+        // reaches it is refused rather than streamed whole (T-033).
         let mut bytes = Vec::new();
-        if let Err(error) = file.read_to_end(&mut bytes) {
+        if let Err(error) = file.take(limit.saturating_add(1)).read_to_end(&mut bytes) {
             self.say(&format!("could not read `{wanted}`: {error}"))
                 .await;
+            return;
+        }
+        if bytes.len() as u64 > limit {
+            self.say(&format!(
+                "`{wanted}` grew past the {limit} byte upload limit while being read"
+            ))
+            .await;
             return;
         }
         let name = host.rsplit('/').next().unwrap_or("file").to_owned();

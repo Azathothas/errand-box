@@ -108,7 +108,10 @@ pub fn redact_event(event: SessionEvent, secrets: &[String]) -> SessionEvent {
             caption,
         } => SessionEvent::Upload {
             name: clean(&name),
-            bytes,
+            // The file's own bytes are posted as they are, so a key held inside
+            // one would leave the machine. Scrubbed like any other report
+            // (errand#53, T-033).
+            bytes: crate::config::redact::redact_bytes(&bytes, secrets),
             caption: clean(&caption),
         },
         SessionEvent::Waiting { text } => SessionEvent::Waiting { text: maybe(&text) },

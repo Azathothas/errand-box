@@ -133,6 +133,53 @@ fn redact_nonces(text: &str) -> String {
     out
 }
 
+/// Replaces every complete occurrence of `needle` with the marker, byte for
+/// byte so a non-text body is handled too. The primitive the streaming redactor
+/// and the upload scrubber share.
+pub(crate) fn replace_bytes(haystack: &[u8], needle: &[u8]) -> Vec<u8> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return haystack.to_vec();
+    }
+    let marker = REDACTION.as_bytes();
+    let mut out = Vec::with_capacity(haystack.len());
+    let mut i = 0;
+    while i < haystack.len() {
+        if haystack[i..].starts_with(needle) {
+            out.extend_from_slice(marker);
+            i += needle.len();
+        } else {
+            out.push(haystack[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Scrubs secret values, and broker nonces by shape, out of arbitrary bytes.
+///
+/// A file a session hands back with `!file` is posted to the thread as its raw
+/// bytes, so a key held in those bytes would leave the machine (errand#53). The
+/// same secrets scrubbed from text are scrubbed here, byte for byte, and the
+/// nonce shape too when the result reads as text. A value shorter than the
+/// floor is left alone, as in text, to avoid mangling an ordinary file.
+pub fn redact_bytes(bytes: &[u8], secrets: &[String]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    for secret in secrets {
+        if secret.len() < MIN_SCRUBBABLE_LENGTH {
+            continue;
+        }
+        out = replace_bytes(&out, secret.as_bytes());
+    }
+    // A nonce is judged by its shape, which means something only as text.
+    if let Ok(text) = std::str::from_utf8(&out) {
+        let scrubbed = redact_nonces(text);
+        if scrubbed != text {
+            return scrubbed.into_bytes();
+        }
+    }
+    out
+}
+
 /// Walks a dotted path to the value it names, when every step is an object.
 fn read_path_mut<'a>(source: &'a mut Value, path: &str) -> Option<&'a mut Value> {
     let mut current = source;

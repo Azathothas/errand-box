@@ -188,3 +188,24 @@ fn truncating_through_a_link_leaves_the_target_alone() {
         ""
     );
 }
+
+/// A file a session can write is bounded on read, so a sparse or oversized one
+/// planted in a writable tree cannot make the daemon read gigabytes (T-033).
+#[test]
+fn read_beneath_refuses_a_file_over_its_limit() {
+    let root = tempfile::tempdir().expect("a temporary directory");
+    let inside = root.path().display().to_string();
+
+    // A sparse file one byte over the ceiling: no gigabytes written, but it
+    // reads as that many, so the bounded read refuses it.
+    let big = std::fs::File::create(root.path().join("big")).expect("created");
+    big.set_len(super::MAX_BENEATH_BYTES + 1).expect("sized");
+    assert!(read_beneath(&inside, "big").is_err(), "an oversized file");
+
+    // A file at the ceiling, and an ordinary small one, still read.
+    std::fs::write(root.path().join("small"), "ok").expect("written");
+    assert_eq!(
+        read_beneath(&inside, "small").expect("the small file"),
+        "ok"
+    );
+}

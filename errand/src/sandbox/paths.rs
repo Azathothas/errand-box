@@ -225,11 +225,29 @@ impl OpenOptions {
     }
 }
 
+/// A ceiling on a single `read_beneath`, so a sparse or oversized file a
+/// session planted in a tree it can write cannot make the daemon read gigabytes
+/// into memory (T-033). Far above any file errand reads this way: the largest is
+/// a diff snapshot, and its caller already guards that at 512 KiB.
+pub const MAX_BENEATH_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Reads a file beneath `root` as text, following no symlink to get there.
+///
+/// Bounded at [`MAX_BENEATH_BYTES`]: a larger file is an error rather than an
+/// unbounded read, so a planted file cannot exhaust memory. The size is counted
+/// from what is read, not from the metadata, so a file that grows after it is
+/// opened is caught too.
 pub fn read_beneath(root: &str, relative: &str) -> std::io::Result<String> {
-    let mut file = open_beneath(root, relative, &OpenOptions::read())?;
+    let file = open_beneath(root, relative, &OpenOptions::read())?;
     let mut text = String::new();
-    file.read_to_string(&mut text)?;
+    let mut bounded = file.take(MAX_BENEATH_BYTES + 1);
+    bounded.read_to_string(&mut text)?;
+    if text.len() as u64 > MAX_BENEATH_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file is larger than the {MAX_BENEATH_BYTES} byte read limit"),
+        ));
+    }
     Ok(text)
 }
 

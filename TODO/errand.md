@@ -486,7 +486,7 @@ bind it.
 **Category:** errand
 **Priority:** P2
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -508,6 +508,53 @@ it is posted.
 ```sh
 cargo test --locked -p errand files
 ```
+
+## Closing
+
+**Closed 2026-10-25.** Both halves fixed.
+
+Bounded reads. `paths::read_beneath` reads through a ceiling
+(`MAX_BENEATH_BYTES`, 16 MiB) counted from the bytes read, not the metadata, so
+a sparse or oversized file a session planted in a writable tree is an error
+rather than a gigabyte read; the ceiling is far above the largest control file
+errand reads this way (a diff snapshot, already guarded at 512 KiB by its
+caller). The `!file` upload (`session/files.rs`) reads `max_upload_bytes + 1`
+through `Read::take` and refuses a file that reached the limit, so one that
+grew between the size check and the read is caught rather than streamed whole.
+
+Redacted uploads. `redact_event`'s `Upload` arm now scrubs `bytes` through a new
+`config::redact::redact_bytes`, so a key in a file handed back by `!file` is
+removed like every text field, keeping it off the thread. `redact_bytes` reuses
+the shared byte primitive `replace_bytes` (the broker's streaming redactor was
+moved onto the same primitive, so there is one byte-level scrubber, not two) and
+also scrubs a broker nonce by shape when the bytes read as text.
+
+The 8-byte redaction floor (errand#36's other note) is left as it is: it is a
+deliberate guard against mangling prose with a too-short "secret", documented at
+`redact.rs`, and lowering it trades a real leak-surface question for noise. The
+provider credentials and the chat and GitHub tokens are all well above it.
+
+Tests: `redact_bytes_scrubs_secrets_and_nonces_in_a_files_bytes`
+(`config/redact`), `an_uploads_bytes_are_scrubbed` (`session/redacted`),
+`read_beneath_refuses_a_file_over_its_limit` (`sandbox/paths`), and the broker's
+`replace_bytes_replaces_every_complete_occurrence` over the shared primitive.
+Two `forbidden-patterns.md` rows name the classes: an unbounded or
+metadata-trusting file read, and a reported field of raw bytes that skips the
+redactor.
+
+Prove, run 2026-10-25:
+
+```sh
+cargo test --locked -p errand --lib
+```
+
+```text
+test result: ok. 1105 passed; 0 failed; 1 ignored
+```
+
+fmt and clippy are clean. The change is in the fork's read and redaction paths,
+not setup, `up`, the shim or the image, so RULES.md's live gate does not bind
+it.
 
 ---
 

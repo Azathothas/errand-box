@@ -2,7 +2,9 @@
 
 use serde_json::{Value, json};
 
-use super::{BROKER_NONCE_PREFIX, REDACTION, redact_config, redact_text, secret_values};
+use super::{
+    BROKER_NONCE_PREFIX, REDACTION, redact_bytes, redact_config, redact_text, secret_values,
+};
 use crate::config::load::{Environment, load_config};
 use crate::config::schema::{Config, SECRET_PATHS};
 use crate::config::validate::validate_config;
@@ -208,4 +210,36 @@ fn a_broker_nonce_is_scrubbed_by_its_shape() {
     ] {
         assert_eq!(redact_text(prose, &[]), prose);
     }
+}
+
+/// An upload's bytes are scrubbed the same as text: a secret or a nonce held in
+/// a file the session hands back must not leave on the thread (T-033).
+#[test]
+fn redact_bytes_scrubs_secrets_and_nonces_in_a_files_bytes() {
+    let secrets = ["sk-live-9f3c7a11d4e6".to_owned()];
+    // A secret amid non-text bytes is replaced byte for byte.
+    let mut file = vec![0u8, 1, 2];
+    file.extend_from_slice(b"GH_TOKEN=sk-live-9f3c7a11d4e6\nmore");
+    let out = redact_bytes(&file, &secrets);
+    assert!(
+        !out.windows(secrets[0].len())
+            .any(|w| w == secrets[0].as_bytes()),
+        "the secret survived"
+    );
+    assert!(String::from_utf8_lossy(&out).contains(REDACTION));
+
+    // A nonce-shaped value in a text file is scrubbed with no config secret.
+    let body = "0123456789abcdef".repeat(4);
+    let with_nonce = format!("KEY={BROKER_NONCE_PREFIX}{body}").into_bytes();
+    assert!(
+        !String::from_utf8(redact_bytes(&with_nonce, &[]))
+            .unwrap()
+            .contains(&body)
+    );
+
+    // A file with nothing to scrub is returned unchanged.
+    assert_eq!(
+        redact_bytes(b"an ordinary file", &secrets),
+        b"an ordinary file".to_vec()
+    );
 }

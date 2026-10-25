@@ -72,6 +72,7 @@ will add.
 | forbidden | what it caused |
 | --- | --- |
 | Buffering a whole body into memory | a hard ceiling reached in production and not in the fixture |
+| Reading a file whole with no cap, or trusting its metadata's size and then reading it | an unbounded read a session can trigger. A sparse file in a tree the session writes reports its logical size yet reads as gigabytes, and a file can grow between the size check and the read. Read through a limit counted from the bytes actually read, not from what the metadata promised. T-033. |
 | Fetching all rows and filtering in memory | slow, then out of memory, as the data grows |
 | A sequential awaited loop over independent IO | wall-time blowups. Use bounded concurrency. |
 | Retrying a rate limit without honouring its stated delay, and without a cap | a spiral that makes the limit worse |
@@ -91,6 +92,7 @@ will add.
 | Scrubbing a secret from a stream chunk by chunk, with no carry across the boundary | a secret split between two chunks slips through, because neither chunk holds it whole. Hold back the last `len-1` bytes of each chunk until the next arrives, and flush the tail at the end. T-032, errand#46. |
 | Caching a fallback response under the key of a processed one | cache poisoning |
 | Forgetting to purge a cache on overwrite, delete or copy | stale reads after a write |
+| A reported field carrying raw bytes or file content that the redactor passes through untouched | a secret leaves on the one surface the scrubber skipped. An upload event's `bytes` were posted as they were, so `!file` of a file holding a token put it on the thread while every text field around it was scrubbed. Every field an output path carries, bytes included, goes through the redactor. T-033, errand#53. |
 
 ## Tooling and review
 

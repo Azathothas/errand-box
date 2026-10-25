@@ -181,6 +181,27 @@ fn what_is_reported_is_otherwise_unchanged() {
     assert_eq!(busy, SessionEvent::Busy { busy: true });
 }
 
+/// An upload's bytes are the file itself, posted as they are, so a key held in
+/// one must be scrubbed like any other report (T-033, errand#53).
+#[test]
+fn an_uploads_bytes_are_scrubbed() {
+    let secrets = [SECRET.to_owned()];
+    let reported = redact_event(
+        SessionEvent::Upload {
+            name: "dump.txt".to_owned(),
+            bytes: format!("GH_TOKEN={SECRET}\n").into_bytes(),
+            caption: "here it is".to_owned(),
+        },
+        &secrets,
+    );
+    let SessionEvent::Upload { bytes, .. } = reported else {
+        panic!("still an upload");
+    };
+    let text = String::from_utf8(bytes).expect("utf-8");
+    assert!(!text.contains(SECRET), "the upload leaked the key: {text}");
+    assert!(text.contains(REDACTION));
+}
+
 /// The house rules reach the agent as a file it can read, so a session that
 /// reads its own prompt back must not put the operator's rules in the channel.
 /// Everything else in the same output still goes through.
