@@ -185,7 +185,7 @@ async fn the_broker_refuses_what_is_not_allowed_by_name_port_and_address() {
         Vec::new(),
         false,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
     // Allowed by name, but an internal address, so refused all the same.
     assert!(try_connect(port, "127.0.0.1:443").await.contains("403"));
     // Not on the allowlist.
@@ -210,7 +210,7 @@ async fn a_refusal_says_whether_the_host_or_the_port_was_the_problem() {
         Vec::new(),
         false,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     // A host not on the list, on an allowed port: the host is named, not the port.
     let host_reason = try_connect(port, "evil.example.net:443").await;
@@ -266,7 +266,7 @@ async fn the_broker_refuses_a_non_connect_opener() {
         Vec::new(),
         false,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let mut conn = TcpStream::connect(("127.0.0.1", port))
         .await
@@ -350,7 +350,7 @@ async fn the_credential_is_put_on_at_the_broker_never_given_to_the_session() {
         }],
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let client = reqwest::Client::new();
     let allowed = client
@@ -484,7 +484,7 @@ async fn the_real_credential_is_scrubbed_from_the_answer() {
         }],
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let answered = reqwest::Client::new()
         .post(format!("http://127.0.0.1:{port}/provider/chat"))
@@ -562,7 +562,7 @@ async fn a_session_key_in_x_api_key_is_accepted_and_translated() {
         }],
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let client = reqwest::Client::new();
     let allowed = client
@@ -626,7 +626,7 @@ async fn each_provider_has_its_own_route_and_its_own_nonce() {
         ],
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let client = reqwest::Client::new();
     let a = client
@@ -776,7 +776,7 @@ async fn a_name_that_does_not_resolve_is_not_called_internal() {
 #[tokio::test]
 async fn a_tunnel_to_loopback_is_refused_even_under_a_lone_star() {
     let mut broker = Broker::new(vec!["*".to_owned()], vec![443], silent(), Vec::new(), false);
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
     let reply = try_connect(port, "127.0.0.1:443").await;
     assert!(reply.contains("403"));
     broker.close();
@@ -821,7 +821,7 @@ async fn an_allowlisted_internal_address_is_dialled_only_when_allowed_on_purpose
         Vec::new(),
         false,
     );
-    let off_port = off.listen("127.0.0.1").await.expect("bound");
+    let off_port = off.listen("127.0.0.1", 0).await.expect("bound");
     assert!(try_connect(off_port, "127.0.0.1:443").await.contains("403"));
     off.close();
 
@@ -832,7 +832,7 @@ async fn an_allowlisted_internal_address_is_dialled_only_when_allowed_on_purpose
         Vec::new(),
         true,
     );
-    let on_port = on.listen("127.0.0.1").await.expect("bound");
+    let on_port = on.listen("127.0.0.1", 0).await.expect("bound");
     // Admitted now, so it gets as far as dialling: nothing listens on 443, so
     // it fails upstream rather than being refused at the gate.
     assert!(!try_connect(on_port, "127.0.0.1:443").await.contains("403"));
@@ -857,7 +857,7 @@ async fn a_provider_at_an_internal_address_is_refused_unless_allowed_on_purpose(
         }],
         false,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let client = reqwest::Client::new();
     let refused = client
@@ -957,7 +957,7 @@ async fn closing_the_broker_stops_it_accepting() {
         Vec::new(),
         false,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_ok());
 
     broker.close();
@@ -996,7 +996,7 @@ async fn listen_returns_an_error_rather_than_panicking_when_it_cannot_bind() {
     );
     // 192.0.2.0/24 is TEST-NET-1 (RFC 5737): never assigned to an interface,
     // so binding it fails with EADDRNOTAVAIL on every host.
-    let result = broker.listen("192.0.2.1").await;
+    let result = broker.listen("192.0.2.1", 0).await;
     assert!(
         result.is_err(),
         "listen must return Err on an unbindable address, got {result:?}"
@@ -1081,7 +1081,7 @@ async fn a_plain_http_request_is_forwarded_only_on_an_allowed_port() {
         Vec::new(),
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     let mut conn = TcpStream::connect(("127.0.0.1", port))
         .await
@@ -1220,7 +1220,7 @@ async fn a_session_cannot_steer_a_providers_key_to_another_address() {
         }],
         true,
     );
-    let port = broker.listen("127.0.0.1").await.expect("bound");
+    let port = broker.listen("127.0.0.1", 0).await.expect("bound");
 
     // Sent raw, so neither the client nor its URL parser changes the path.
     let raw = |path: String| async move {

@@ -215,12 +215,17 @@
             "allowInternal": {
               "type": "boolean",
               "description": "Whether the broker may dial an address on the host's own network.  Only an address written as a literal: a name that resolves somewhere internal stays refused, since what it points at is not the operator's to decide."
+            },
+            "brokerPort": {
+              "type": "number",
+              "description": "The loopback port the broker binds. `0` (the default) lets the kernel pick one; a fixed value gives a host a stable port to wire a static path to (errand-box's T-020 link)."
             }
           },
           "required": [
             "mode",
             "allow",
-            "allowInternal"
+            "allowInternal",
+            "brokerPort"
           ]
         },
         "image": {

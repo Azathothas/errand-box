@@ -35,6 +35,7 @@ fn defaults_only() -> SandboxConfig {
             mode: EgressMode::Proxy,
             allow: vec!["*".to_owned()],
             allow_internal: defaults::EGRESS_ALLOW_INTERNAL,
+            broker_port: defaults::EGRESS_BROKER_PORT,
         },
         hide_host_address: defaults::HIDE_HOST_ADDRESS,
         image: defaults::IMAGE.to_owned(),
@@ -482,6 +483,7 @@ fn proxy_egress_passes_the_proxy_flag_and_drops_the_plain_one() {
         mode: EgressMode::Proxy,
         allow: vec!["github.com".to_owned()],
         allow_internal: false,
+        broker_port: 0,
     };
     let args = bailey_args(&config, &launch(), "/p.toml", Some(54_321));
     assert!(
@@ -501,6 +503,7 @@ fn proxy_egress_without_a_running_broker_adds_no_flag() {
         mode: EgressMode::Proxy,
         allow: Vec::new(),
         allow_internal: false,
+        broker_port: 0,
     };
     let args = bailey_args(&config, &launch(), "/p.toml", None);
     assert!(!args.contains(&"--egress-proxy".to_owned()));
@@ -513,6 +516,7 @@ fn open_egress_never_names_the_proxy_even_given_a_port() {
         mode: EgressMode::Open,
         allow: Vec::new(),
         allow_internal: false,
+        broker_port: 0,
     };
     let args = bailey_args(&open, &launch(), "/p.toml", Some(54_321));
     assert!(!args.contains(&"--egress-proxy".to_owned()));

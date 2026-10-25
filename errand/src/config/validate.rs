@@ -88,7 +88,7 @@ const KNOWN_SANDBOX: [&str; 20] = [
     "pathExtra",
     "env",
 ];
-const KNOWN_EGRESS: [&str; 3] = ["mode", "allow", "allowInternal"];
+const KNOWN_EGRESS: [&str; 4] = ["mode", "allow", "allowInternal", "brokerPort"];
 const KNOWN_POLICY_EXTRA: [&str; 3] = ["read", "write", "execute"];
 const KNOWN_SHUTDOWN: [&str; 1] = ["allowedUserIds"];
 const KNOWN_OUTPUT: [&str; 7] = [
@@ -1302,10 +1302,23 @@ fn validate_egress(source: &Map<String, Value>, problems: &mut Problems) -> Egre
         }
     };
 
+    let broker_port = match egress.get("brokerPort") {
+        None => schema::defaults::EGRESS_BROKER_PORT,
+        Some(value) => {
+            if let Some(port) = value.as_u64().and_then(|v| u16::try_from(v).ok()) {
+                port
+            } else {
+                problems.add("sandbox.egress.brokerPort must be a port number (0 to 65535)");
+                schema::defaults::EGRESS_BROKER_PORT
+            }
+        }
+    };
+
     EgressConfig {
         mode,
         allow,
         allow_internal,
+        broker_port,
     }
 }
 
@@ -1317,6 +1330,7 @@ fn default_egress() -> EgressConfig {
             .map(|host| (*host).to_owned())
             .collect(),
         allow_internal: schema::defaults::EGRESS_ALLOW_INTERNAL,
+        broker_port: schema::defaults::EGRESS_BROKER_PORT,
     }
 }
 

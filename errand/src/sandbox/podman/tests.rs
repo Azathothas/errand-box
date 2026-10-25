@@ -47,6 +47,7 @@ fn defaults_config() -> SandboxConfig {
             mode: EgressMode::Proxy,
             allow: vec!["*".to_owned()],
             allow_internal: defaults::EGRESS_ALLOW_INTERNAL,
+            broker_port: defaults::EGRESS_BROKER_PORT,
         },
         hide_host_address: defaults::HIDE_HOST_ADDRESS,
         image: defaults::IMAGE.to_owned(),

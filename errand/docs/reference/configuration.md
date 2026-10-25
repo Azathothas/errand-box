@@ -127,6 +127,7 @@ What a session may reach outbound, and how that is enforced.
 | `mode` | `EgressMode` | none | Whether egress is port-only or forced through the broker. |
 | `allow` | `Vec<String` | none | Hosts the broker permits, on top of the provider. A leading `*.` matches subdomains; a lone `*` admits any host. |
 | `allowInternal` | `boolean` | none | Whether the broker may dial an address on the host's own network.  Only an address written as a literal: a name that resolves somewhere internal stays refused, since what it points at is not the operator's to decide. |
+| `brokerPort` | `number` | none | The loopback port the broker binds. `0` (the default) lets the kernel pick one; a fixed value gives a host a stable port to wire a static path to (errand-box's T-020 link). |
 
 ## sandbox.policyExtra
 

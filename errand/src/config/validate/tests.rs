@@ -473,6 +473,29 @@ fn configured_egress_ports_are_read_in_order() {
 }
 
 #[test]
+fn the_broker_port_defaults_to_the_kernel_picking_one() {
+    let config = validate_config(&valid(json!({}))).expect("resolves");
+    assert_eq!(config.sandbox.egress.broker_port, 0);
+}
+
+#[test]
+fn a_configured_broker_port_is_read() {
+    let config = validate_config(&valid(
+        json!({ "sandbox": { "egress": { "mode": "proxy", "brokerPort": 8040 } } }),
+    ))
+    .expect("resolves");
+    assert_eq!(config.sandbox.egress.broker_port, 8040);
+}
+
+#[test]
+fn a_broker_port_outside_the_port_range_is_refused() {
+    assert!(problems_contain(
+        &valid(json!({ "sandbox": { "egress": { "mode": "proxy", "brokerPort": 70000 } } })),
+        "brokerPort must be a port number"
+    ));
+}
+
+#[test]
 fn a_port_outside_the_socket_range_is_refused() {
     assert!(problems_contain(
         &valid(json!({ "sandbox": { "egressPorts": [80, 70000] } })),

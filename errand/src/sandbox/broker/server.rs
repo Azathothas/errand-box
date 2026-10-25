@@ -51,11 +51,12 @@ impl Broker {
     }
 
     /// Binds to a loopback port and starts admitting connections. Returns the
-    /// port.
+    /// port actually bound. `port` is `0` to let the kernel choose, or a fixed
+    /// value a host wants a stable path to (errand-box's T-020 link).
     ///
     /// Runs on the async runtime, which owns the accept loop and the provider
     /// endpoint from here on.
-    pub async fn listen(&mut self, host: &str) -> std::io::Result<u16> {
+    pub async fn listen(&mut self, host: &str, port: u16) -> std::io::Result<u16> {
         let client = reqwest::Client::builder()
             .connect_timeout(DIAL_TIMEOUT)
             // The provider client carries the provider's credential. Following a
@@ -71,7 +72,7 @@ impl Broker {
         } else {
             self.start_provider(client.clone()).await?
         };
-        let listener = TcpListener::bind((host, 0)).await?;
+        let listener = TcpListener::bind((host, port)).await?;
         let port = listener.local_addr()?.port();
         let state = Arc::new(ProviderState {
             routes: self.routes.clone(),

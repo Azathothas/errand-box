@@ -71,6 +71,10 @@ pub struct EgressConfig {
     /// internal stays refused, since what it points at is not the operator's
     /// to decide.
     pub allow_internal: bool,
+    /// The loopback port the broker binds. `0` (the default) lets the kernel
+    /// pick one; a fixed value gives a host a stable port to wire a static
+    /// path to (errand-box's T-020 link).
+    pub broker_port: u16,
 }
 
 /// Chat connection and who may drive the bot.
@@ -608,6 +612,11 @@ pub mod defaults {
     pub const EGRESS_ALLOW: [&str; 1] = ["*"];
     /// Whether the broker may dial the host's own network.
     pub const EGRESS_ALLOW_INTERNAL: bool = false;
+    /// The loopback port the broker binds. `0` lets the kernel pick one, which
+    /// changes at each start; a fixed value lets a host wire a static path to
+    /// it (errand-box's T-020 unix-socket link needs this, since the guest
+    /// relay is baked into the image and cannot learn a per-start port).
+    pub const EGRESS_BROKER_PORT: u16 = 0;
     /// Whether a session sees the host's network identity.
     pub const HIDE_HOST_ADDRESS: bool = false;
     /// The image the podman backend runs.

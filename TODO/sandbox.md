@@ -787,6 +787,22 @@ Options, each needing a live check, to decide before building:
 
 Only this choice gates the build; the rest is mapped below.
 
+**Decided 2026-10-25: option 1, a fixed broker port.** Build in progress, in
+slices that keep `main` green:
+
+- **Slice 1 (done):** errand's broker port is configurable. `EgressConfig`
+  gains `brokerPort` (default `0`, the kernel picks one, so standalone errand is
+  unchanged); `Broker::listen(host, port)` binds it; `serve.rs` passes
+  `config.sandbox.egress.broker_port`. Tests for the default, a set value and an
+  out-of-range value; the generated config reference regenerated. Non-breaking:
+  errand-box does not set it yet, so every host stays on an ephemeral port until
+  the switch.
+- **Slice 2 (next):** errand-box sets the fixed port (its config + `errandcfg`
+  writes `brokerPort`, `runtime.toml` carries it), still over proxy devices.
+- **Slice 3 (the switch):** the disk-share link, the guest relay units,
+  `restricted.devices.proxy=block`, the image rebuild, the edge-case row, and
+  the live run. Validated live before it is pushed.
+
 ## Touchpoints for the build (mapped 2026-10-25)
 
 - `src/session.rs:73-108` `desired_devices`: for the socket mode, emit one disk
