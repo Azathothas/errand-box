@@ -421,7 +421,7 @@ The gate step refuses a `done` entry with no recorded prove output; the live
 **Category:** upkeep
 **Priority:** P2
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -461,3 +461,25 @@ sh scripts/ci-local.sh --step gate
 In a scratch tree with the new `.gitignore`, `git status --short` prints
 nothing for `creds.env` or `errand-box.env`, and `check-no-secrets.sh`
 refuses either when it is tracked.
+
+## Closing
+
+**Closed 2026-10-25.** `.gitignore` ignores `creds.env` and `errand-box.env`
+by name, re-including the tracked twins `examples/creds.env`,
+`examples/errand-box.env` and `tests/data/creds.env`.
+`scripts/common/check-no-secrets.sh` gained a scan that refuses a tracked
+`creds.env` or `errand-box.env` outside `examples/` and `tests/`, so a
+force-added one is caught. Verified:
+
+```text
+git check-ignore creds.env errand-box.env   -> both printed (ignored)
+git check-ignore examples/creds.env examples/errand-box.env tests/data/creds.env
+                                            -> none (the twins stay tracked)
+check-no-secrets.sh, and --public           -> ok on the tree
+git add -f creds.env; check-no-secrets.sh   -> FAIL, "an operator credential
+                                               file is tracked (creds.env or
+                                               errand-box.env)"
+```
+
+The mechanism is the prevention: a real credential input can no longer be
+staged by `git add -A`, and one force-added turns the gate red.

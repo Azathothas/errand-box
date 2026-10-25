@@ -95,6 +95,15 @@ CREDS=$(list_files \
   | grep -vE '\.example$|\.sample$|\.template$' || true)
 [ -n "$CREDS" ] && hit "a credential file is tracked" "$CREDS"
 
+# creds.env and errand-box.env are the operator's setup inputs (T-088). The
+# examples/ twins and the tests/ fixtures are tracked fakes; a tracked one
+# anywhere else is the operator's real credential file, which .gitignore keeps
+# out, so finding one tracked means it was force-added.
+CREDS_INPUTS=$(list_files \
+  | grep -E '(^|/)(creds\.env|errand-box\.env)$' \
+  | grep -vE '^(examples|tests)/' || true)
+[ -n "$CREDS_INPUTS" ] && hit "an operator credential file is tracked (creds.env or errand-box.env)" "$CREDS_INPUTS"
+
 # --- 2. secret-shaped strings ------------------------------------------------
 # Each pattern is a vendor's documented token shape. A generic "high entropy"
 # rule is deliberately absent: it fires on hashes, minified code and base64

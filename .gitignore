@@ -25,6 +25,15 @@ service-account*.json
 *.token
 .*_token
 .*-token
+# The two setup inputs the operator writes beside the command (T-088). The
+# examples/ twins and the tests/ fixtures are tracked fakes; a creds.env or
+# errand-box.env anywhere else is a real credential file and is never
+# committed. Re-excluded by name so no rule above re-includes a real one.
+creds.env
+errand-box.env
+!examples/creds.env
+!examples/errand-box.env
+!tests/data/creds.env
 
 # -- scratch and temporary work ---------------------------------------------
 .tmp/
