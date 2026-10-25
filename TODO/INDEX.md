@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**90 items. 58 open, 8 partial, 1 blocked, 23 done.**
+**90 items. 57 open, 8 partial, 1 blocked, 24 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 8 | 3 | 1 | 11 | 23 |
+| P1 | 7 | 3 | 1 | 12 | 23 |
 | P2 | 33 | 4 | 0 | 8 | 45 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 58 | 8 | 1 | 23 | 90 |
+| **All** | 57 | 8 | 1 | 24 | 90 |
 
 ---
 
@@ -122,7 +122,7 @@ decision).
 | [T-017](upkeep.md) | P3 | upkeep | open | A documentation check: every command, key and path a page names exists |
 | [T-018](setup.md) | P2 | setup | done | Choose a pool size that fits the host disk |
 | [T-019](sandbox.md) | P2 | sandbox | open | An incus backend in errand |
-| [T-020](sandbox.md) | P1 | sandbox | open | A broker link that does not need proxy devices |
+| [T-020](sandbox.md) | P1 | sandbox | done | A broker link that does not need proxy devices |
 | [T-021](sandbox.md) | P2 | sandbox | open | Operator-chosen session credentials, safely |
 | [T-022](sandbox.md) | P2 | sandbox | open | Egress a session can use beyond the HTTP broker (superseded by T-090) |
 | [T-023](setup.md) | P2 | setup | open | Observability: metrics over time, and session traces |

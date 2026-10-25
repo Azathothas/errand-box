@@ -623,7 +623,7 @@ Every check PASS.
 **Category:** sandbox
 **Priority:** P1
 **Effort:** M
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -803,13 +803,12 @@ slices that keep `main` green:
   example. Still over proxy devices: errand binds 127.0.0.1:3129 and reports it
   on `--egress-proxy`, which `desired_devices` wires unchanged. `runtime.toml`
   does not carry it yet; that lands with slice 3, where the shim relay needs it.
-- **Slice 3 (the switch, atomic). Implemented 2026-10-25; live validation in
-  progress.** All the code and docs below landed and are unit-green (errand and
-  errand-box tests, fmt, clippy, shellcheck, errand-config, gate). `setup`
-  rebuilt the socket-mode image on this host; the live `sh tests/live/live.sh`
-  with proxy blocked is the remaining proof. The disk-share link, the guest relay
-  units, `restricted.devices.proxy=block`, the image rebuild, the edge-case row
-  (E-71), and the live run. It is one atomic change because
+- **Slice 3 (the switch, atomic). Implemented and live-validated 2026-10-25.**
+  All the code and docs below landed, unit-green (errand and errand-box tests,
+  fmt, clippy, shellcheck, errand-config, gate) and proven live (see
+  "Live-validated"). The disk-share link, the guest relay units,
+  `restricted.devices.proxy=block`, the image rebuild, the edge-case row (E-71),
+  and the live run. It is one atomic change because
   the socket-mode guest proxyd units listen on the SAME `169.254.169.1` ports the
   tcp-mode proxy devices use inside the guest, so the image is mode-specific and
   there is no half-deployed state (image.rs must pass the mode, e.g.
@@ -867,6 +866,36 @@ slices that keep `main` green:
   test a live restart-and-reconnect.
 - Prove: `sh tests/live/live.sh` (broker and sysproxy pass with proxy blocked);
   `incus project get user-994 restricted.devices.proxy` is `block`.
+
+## Live-validated (2026-10-25, on the provisioned host)
+
+`errand-box setup` rebuilt the socket-mode image and set
+`restricted.devices.proxy=block` and `broker_link=socket`; `sh tests/live/
+live.sh` ran against it.
+
+- **The broker link works over the socket, proxy devices blocked.** The session
+  check's "broker reached" passes (the guest reaches the broker on
+  169.254.169.1 through the guest relay and the shared socket), "direct egress
+  blocked" passes, and the project is `restricted.devices.proxy=block`. T-020's
+  prove, met.
+- **Both guest relay ports carry a real HTTPS CONNECT.** A direct probe (guest
+  `curl -x http://169.254.169.1:<port>` to `mirror.gcr.io` and
+  `registry-1.docker.io`, through the socket link) returns the registry's 401 on
+  the broker port (3129) and the guest-proxy port (3128), one connection each.
+  So the system-proxy path apt and Docker use carries CONNECT.
+- **A full image pull succeeds through the link:** rootless podman (as the agent)
+  pulled and ran `docker.io/library/debian:trixie-slim` (E-30).
+- 46 checks pass. The rest are not the link: the three `errand:` checks need
+  Discord credentials (T-015, no code), and `docker run` / `docker build` /
+  `sudo podman run` fail on registry auth and rate limits through this host's
+  crude socat stand-in for the broker (not errand's allowlisting one), the same
+  link that pulled a full image for rootless podman and returns 401 on a direct
+  CONNECT to those registries.
+
+A boot race surfaced and was fixed: `exec true` (the old `wait_ready` probe)
+succeeds a moment before systemd-tmpfiles makes `/run/errand-box`, so the env
+push opened a missing target on the heavier socket-mode image. `wait_ready` now
+waits for that directory.
 
 ## Prove
 

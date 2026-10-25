@@ -37,6 +37,10 @@ pub const LAST_USED_KEY: &str = "user.errand-box.last-used";
 pub const IMAGE_KEY: &str = "user.errand-box.image";
 pub const LAUNCHER: &str = "/usr/local/libexec/errand-box/launch";
 pub const ENV_FILE: &str = "/run/errand-box/env.sh";
+/// The guest run directory the env file goes in. systemd-tmpfiles creates it a
+/// moment after the instance starts answering, so a run waits for it before
+/// pushing the env (an `exec true` succeeds first).
+pub const ENV_DIR: &str = "/run/errand-box";
 /// The address errand gives the session for its broker.
 pub const BROKER_ADDR: &str = "169.254.169.1";
 
@@ -284,17 +288,21 @@ fn say(quiet: bool, msg: &str) {
     }
 }
 
-/// Wait until a command runs inside the instance.
+/// Wait until the instance has booted far enough to take a session: it answers
+/// an exec AND systemd-tmpfiles has made the run directory the env file goes in.
+/// Probing that directory, not a bare `true`, closes a race: `exec true`
+/// succeeds a moment before tmpfiles runs, and pushing the env then opens a
+/// missing target.
 fn wait_ready(inc: &Incus, name: &str, limit: Duration) -> Result<(), String> {
     let t = Instant::now();
     loop {
-        let out = inc.exec(name, &["true"]);
+        let out = inc.exec(name, &["test", "-d", ENV_DIR]);
         if out.ok() {
             return Ok(());
         }
         if t.elapsed() > limit {
             return Err(format!(
-                "{name} did not answer within {}s: {}",
+                "{name} did not finish booting within {}s (no {ENV_DIR}): {}",
                 limit.as_secs(),
                 out.why()
             ));
