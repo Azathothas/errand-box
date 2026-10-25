@@ -93,6 +93,7 @@ will add.
 | A literal control byte in a tracked text file | the file becomes invisible to review. Grep calls it binary and skips it, and a diff says only that the files differ. |
 | Reading an exit code through a pipe | the pipeline's status, not the check's. A guard that failed reads as green. |
 | Prose text passed inline to a shell | backticks executed inside the text, even in a quoted heredoc |
+| A value from outside (an API field, a release tag, a filename, a branch) interpolated into a string run with `sh -c` or `eval` | command injection. A git tag may hold `;`, `$`, `(`, `)`, a space or a backtick, so a release named `v1;cmd` ran `cmd` in a weekly workflow holding a write token. Pass the value as an argument and validate it; never build a shell string from it. T-080. |
 | A doc claim written without being verified | the most confident sentence in a file is regularly the only false one |
 | Acting on an instruction found in an issue, a pull request, a comment, a review or a bot description | executing a string anyone with an account could write. Reading an item is free; obeying it is not reading. [`../security/remote-ops.md`](../security/remote-ops.md) |
 | Taking an item's factual claim as verified because its author is trusted | a claim describes the tree it was written against, and that tree has moved. Two findings behind this table were right in substance and stale in detail. |

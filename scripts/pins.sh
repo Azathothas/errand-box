@@ -10,6 +10,7 @@
 #   sh scripts/pins.sh pinned <tool>            the pinned `latest`
 #   sh scripts/pins.sh upstream <tool>          the newest release tag upstream
 #   sh scripts/pins.sh bump <tool> <version>    add <version> and make it latest
+#   sh scripts/pins.sh validate <version>       exit 0 if safe to pass on, else 2
 #
 # `bump` takes the URL of each architecture from the pinned latest with the
 # version replaced, downloads it, checks it against the `.sha256` file next to
@@ -37,6 +38,20 @@ sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1
   fi
+}
+
+# A version or tag that is safe to pass on as an argument: letters, digits,
+# dot, underscore and hyphen only. A git tag may hold ';', '$', '(', ')',
+# a space or a backtick, and such a tag reaches this script from the GitHub
+# API and `freshness.sh` from upstream, so it is checked before it is used
+# (T-080). The one validator both `upstream` and `bump` call, so the rule has
+# one home.
+valid_version() {
+  case ${1:-} in
+    '') return 1 ;;
+    *[!A-Za-z0-9._-]*) return 1 ;;
+    *) return 0 ;;
+  esac
 }
 
 # The value of `latest` in [<tool>].
@@ -86,12 +101,20 @@ case ${1:-} in
     [ -n "$repo" ] || die "$tool is not a GitHub release" 2
     tag=$(api_get "repos/$repo/releases/latest" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')
     [ -n "$tag" ] || die "no latest release for $repo"
+    # A tag from the API is untrusted: refuse one with a character that is not
+    # part of a version, so a caller that passes it on cannot be injected (T-080).
+    valid_version "$tag" || die "refusing upstream tag with an unexpected character: $tag" 2
     printf '%s\n' "$tag"
+    ;;
+  validate)
+    # For callers and tests: exit 0 for a safe version, 2 otherwise. Prints
+    # nothing.
+    valid_version "${2:-}" && exit 0 || exit 2
     ;;
   bump)
     new=${3:-}
     if [ -z "$tool" ] || [ -z "$new" ]; then die "usage: pins.sh bump <tool> <version>" 2; fi
-    case $new in *[!A-Za-z0-9._-]*) die "bad version: $new" 2 ;; esac
+    valid_version "$new" || die "bad version: $new" 2
     old=$(pinned "$tool")
     [ -n "$old" ] || die "pins.toml has no $tool" 2
     [ "$old" = "$new" ] && { printf 'pins: %s is already %s\n' "$tool" "$new"; exit 0; }
@@ -148,5 +171,5 @@ sha256 = \"$sum\"
     cat "$tmp/pins" > "$pins"
     printf 'pins: %s latest %s -> %s\n' "$tool" "$old" "$new"
     ;;
-  *) die "usage: pins.sh pinned|upstream <tool> | bump <tool> <version>" 2 ;;
+  *) die "usage: pins.sh pinned|upstream <tool> | bump <tool> <version> | validate <version>" 2 ;;
 esac

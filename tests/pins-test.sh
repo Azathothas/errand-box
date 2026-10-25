@@ -56,4 +56,20 @@ rc=$?
 
 sh "$pins_sh" bump a 'v1;rm' >/dev/null 2>&1
 [ $? = 2 ] && ok "a version with a shell character is refused (exit 2)" || no "bad version not refused"
+
+# T-080: one validator guards every version, so a release tag that holds shell
+# syntax cannot inject through `pins.sh bump` or through `freshness.sh`, which
+# calls `pins.sh validate` and runs the change as a command rather than a
+# shell string. The metacharacter cases are single-quoted so the test's own
+# shell does not expand them.
+vfail=0
+# The metacharacters are literal test input, single-quoted on purpose.
+# shellcheck disable=SC2016
+for bad in 'v1;rm' 'v1$(id)' 'v1 2' 'a/b' '`id`' ''; do
+  sh "$pins_sh" validate "$bad" && vfail=1
+done
+for good in v1.2.0 1.99.1 v0.5.0; do
+  sh "$pins_sh" validate "$good" || vfail=1
+done
+[ "$vfail" = 0 ] && ok "pins.sh validate accepts plain versions and rejects shell syntax (T-080)" || no "pins.sh validate"
 exit $fail

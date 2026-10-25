@@ -37,11 +37,30 @@ latest_rust() {
     awk '/^\[pkg\.rust\]$/ { s = 1; next } /^\[/ { s = 0 } s && $1 == "version" && !v { gsub(/"/, "", $3); v = $3 } END { print v }'
 }
 
-# One update on its own branch. $1 tool, $2 version, $3 the command that
-# makes the change, $4 the steps of ci-local.sh that cover it.
+# The change an update makes, by tool, run as a command and never through a
+# shell string built from the version. $2 is a version `pins.sh validate` has
+# accepted, so the sed expression and the argument carry no shell or sed
+# metacharacter (T-080). `$have` is the current Rust channel, from our own
+# rust-toolchain.toml.
+apply_change() {
+  case $1 in
+    rust) sed -i "s/^channel = \"$have\"\$/channel = \"$2\"/" rust-toolchain.toml ;;
+    *) sh scripts/pins.sh bump "$1" "$2" ;;
+  esac
+}
+
+# One update on its own branch. $1 tool, $2 version, $3 the steps of
+# ci-local.sh that cover it. The version is validated before anything runs,
+# and the change runs as a command, not a shell string built from it, so a
+# release tag that holds shell syntax cannot inject (T-080).
 update() {
   tool=$1
   version=$2
+  steps=$3
+  if ! sh scripts/pins.sh validate "$version"; then
+    say "$tool: refusing version '$version': not a plain version"
+    return 1
+  fi
   branch="freshness/$tool-$version"
   if [ "$dry" = 1 ]; then
     say "$tool: $version is out (would open $branch)"
@@ -52,14 +71,14 @@ update() {
     return 0
   fi
   git checkout -q -B "$branch" "$base" || return 1
-  if ! sh -c "$3" > "$RUNNER_LOG" 2>&1; then
+  if ! apply_change "$tool" "$version" > "$RUNNER_LOG" 2>&1; then
     say "$tool: the change failed:"
     cat "$RUNNER_LOG"
     git checkout -q --detach "$base"
     return 1
   fi
   status="passed"
-  for st in $4; do
+  for st in $steps; do
     if ! sh scripts/ci-local.sh --step "$st" >> "$RUNNER_LOG" 2>&1; then
       status="FAILED at $st"
       break
@@ -95,8 +114,7 @@ while read -r tool; do
     say "$tool: $pinned is current"
     continue
   fi
-  steps="test"
-  update "$tool" "$up" "sh scripts/pins.sh bump $tool $up" "$steps" </dev/null || failed=1
+  update "$tool" "$up" "test" </dev/null || failed=1
 done < "$RUNNER_LOG.tools"
 
 have=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
@@ -107,6 +125,6 @@ if [ -z "$want" ]; then
 elif [ "$want" = "$have" ]; then
   say "rust: $have is current"
 else
-  update rust "$want" "sed -i 's/^channel = \"$have\"\$/channel = \"$want\"/' rust-toolchain.toml" "fmt clippy test" || failed=1
+  update rust "$want" "fmt clippy test" || failed=1
 fi
 exit "$failed"

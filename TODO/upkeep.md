@@ -315,7 +315,7 @@ gh label list --repo Azathothas/errand-box | grep -c '^feature'   # 1, or the te
 **Category:** upkeep
 **Priority:** P1
 **Effort:** S
-**Status:** open
+**Status:** done
 
 ## Problem
 
@@ -359,7 +359,21 @@ sh tests/pins-test.sh
 A test runs `update` with a tag such as `v1;command` and asserts it is
 refused and the command did not run; it fails on the current code.
 
----
+## Closing
+
+**Closed 2026-10-25.** One validator, `valid_version` in `scripts/pins.sh`
+(`A-Za-z0-9._-` only), guards every version: `pins.sh upstream` refuses a tag
+from the API that fails it, `pins.sh bump` calls it in place of its old inline
+case, and a `pins.sh validate <version>` subcommand exits 0 or 2 for callers
+and tests. `scripts/freshness.sh` calls `pins.sh validate` before anything
+runs and makes the change through `apply_change` (a `sed` with the validated
+version, or `sh scripts/pins.sh bump "$tool" "$version"` as argv): no
+`sh -c` on a string built from the tag remains (`grep -n 'sh -c'
+scripts/freshness.sh` is empty). The Rust path validates `$want` the same way.
+`tests/pins-test.sh` gained a `validate` case over `v1;rm`, `v1$(id)`,
+`` `id` ``, a space and a slash; it passed (6 of 6). A `forbidden-patterns.md`
+row names the class: an external value interpolated into `sh -c` or `eval`.
+shellcheck is clean on all three scripts.
 
 # T-087: the gate does not require an entry's prove output, and no live check crosses the broker's provider boundary
 
