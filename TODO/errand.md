@@ -260,6 +260,16 @@ stand-in provider received the key.
 errand-box's own binary: 52 of 52. A host installed from v0.1.0 runs errand
 v0.3.1 until it takes a release that carries the fork.
 
+**Correction, 2026-10-25 ([issue #48](https://github.com/Azathothas/errand-box/issues/48)).**
+The proof of this fix is the broker unit tests, not the live run cited above.
+The four new tests in `errand/src/sandbox/broker/tests.rs` send each
+boundary-crossing spelling and assert it is refused, and the planted-defect
+run (the old match and join) shows the steered request reaching the second
+stand-in provider with the key; that is the evidence. The live tests of
+`tests/live/live.sh` send no `/provider/` path, so the 52 of 52 run does not
+exercise this path on a host. A live check that does, and a gate that
+requires an entry's recorded prove output, are T-087; the fix itself stands.
+
 ---
 
 # T-030: The host-side push can publish another session's repository
@@ -352,7 +362,7 @@ binary.
 # T-032: The broker's provider route: the smaller defects errand's tracker names
 
 **Source:** errand#44, #45, #46, #51 and #54 item 2, read in the research of
-2026-10-24
+2026-10-24; the address arms extended by [issue #59](https://github.com/Azathothas/errand-box/issues/59), read on `57231da`
 **Category:** errand
 **Priority:** P2
 **Effort:** M
@@ -372,7 +382,16 @@ Each is confirmed by reading at `715e9b0b777a`, and each reaches errand-box:
   (errand#44);
 - the nonce is 32 random bytes in hex, shaped like a key and not scrubbed
   from chat (errand#45);
-- `is_private_v4` has no arm for 168.63.129.16 (errand#51).
+- `is_private_address` judges several internal destinations public, so a
+  name that resolves to one is dialled with the default allowlist. Confirmed
+  by compiling the functions as they are on `57231da`
+  (`errand/src/sandbox/broker/mod.rs:243-269`, `:345-385`): `is_private_v4`
+  has no arm for 168.63.129.16, Azure's WireServer (errand#51); and
+  `is_private_v6` has no arm for 6to4 (`2002::/16`, which wraps an IPv4
+  address in bits 16 to 48), documentation (`2001:db8::/32`), site-local
+  (`fec0::/10`) or Teredo (`2001::/32`). The v4 arm for the WireServer must
+  be inside `is_private_v4`, not only the literal branch of
+  `public_addresses`, or a name resolving to it still dials (issue #59).
 
 ## Approach
 
@@ -380,14 +399,20 @@ No redirects on the provider client. Scrub the credential from the answer's
 headers and body with a streaming redactor that holds back only a partial
 match (claw-wrap's `internal/daemon/output_redactor.go:112-160`, in
 [2026-10-24-brokers-a.md](../docs/history/references/2026-10-24-brokers-a.md)).
-A prefix on the nonce, and the nonce in the redaction set. The one address
-arm. Method and path rules per route are a design for T-021.
+A prefix on the nonce, and the nonce in the redaction set. The address arms:
+168.63.129.16 inside `is_private_v4`, and `2002::/16` (judging the embedded
+v4), `2001:db8::/32`, `fec0::/10` and `2001::/32` inside `is_private_v6`.
+Method and path rules per route are a design for T-021.
 
 ## Prove
 
 ```sh
 cargo test --locked -p errand broker
 ```
+
+A table test of `is_private_address` over the addresses in issue #59: the
+WireServer, the 6to4, documentation, site-local and Teredo spellings each
+read private.
 
 ---
 
@@ -852,3 +877,218 @@ gateway fault over HTTP left errand's session intact.
 ```sh
 cargo test --locked -p discord-mock
 ```
+
+---
+
+# T-081: refuse_borrowed is checked seconds before the clone, so the git directory can be swapped in between
+
+**Source:** [issue #46](https://github.com/Azathothas/errand-box/issues/46), read on `57231da`
+**Category:** errand
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+T-030 added `refuse_borrowed` to refuse a session git directory that borrows
+another repository through `commondir`, an alternates file or a symlink
+(`errand/src/session/pr.rs:266-279`). It runs in `assert_contained` at the
+start of `open_pull_request` (`errand/src/session/pr.rs:248-266`). The clone
+is made later, in `push_work` (`errand/src/session/pr.rs:696`, `git clone
+--shared --bare`), after `current_branch`, `origin_remote`, a GitHub API
+call, and `fork_of`, which polls for up to `FORK_WAIT_MS` of 30 s
+(`errand/src/session/pr.rs:506`, `:619`). The project is bind-mounted into
+the guest, read and write, the whole time. So the guarded directory and the
+cloned directory are one live path, read seconds apart, and a guest process
+can plant the borrow after the check and before the clone. This reopens the
+T-030 threat (the host-side push publishes another repository under the bot
+token) through a time window.
+
+## Premise
+
+Read on `57231da`. The window was reproduced by the reporter in a shell on
+plain git, not against a live errand: a loop that writes and removes an
+alternates file every few milliseconds, against a check and clone seconds
+apart, carried another repository's objects into about one clone in six. The
+timing against a live guest and the real push were not run.
+
+## Approach
+
+Checking and cloning one live, guest-writable directory cannot close the
+window. Copy the git directory to a path the guest cannot write
+(`cp -a --reflink=auto`), run `refuse_borrowed` on the copy, and clone from
+the copy. For the agent-requested path, stopping the guest's processes before
+the clone is the other route.
+
+## Prove
+
+```sh
+cargo test --locked -p errand pr
+```
+
+A test whose fake runner swaps the git directory between the guard and the
+clone fails on the current code and passes once the clone reads a snapshot.
+
+---
+
+# T-082: the broker reaches egress only directly, so a proxy-only host gets no session egress and a TLS-intercepting proxy breaks every session
+
+**Source:** [issue #56](https://github.com/Azathothas/errand-box/issues/56) and [issue #57](https://github.com/Azathothas/errand-box/issues/57), read on `57231da`
+**Category:** errand
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+errand's broker is the only way out of a session, and it reaches its targets
+by a direct connection. On a host whose only egress is an HTTP proxy, every
+session `CONNECT` fails. This is E-22, recorded as "errand-box does not
+change errand"; the fork is errand-box's now, so that is no longer true.
+
+1. The broker dials each target with `TcpStream::connect`
+   (`errand/src/sandbox/broker/server.rs:272`). There is no upstream proxy.
+   The provider route uses `reqwest::Client::builder` (`:59`), which reads
+   the proxy environment, so the model provider can work through a proxy
+   while every session fetch fails: a session that talks to the model and
+   cannot fetch a package.
+2. `network.proxy_ca` reaches only the image build (`src/image.rs:321-324`);
+   nothing else in `src/` or `errand/src/` reads it (E-15 covers the build).
+   On a network with a TLS-intercepting proxy the build works and a session
+   fails TLS as soon as it goes through anything that re-signs, and errand's
+   own provider call fails the same way.
+
+## Premise
+
+Read on `57231da`. Not run: no proxy, session or broker was started. Through
+a proxy the broker resolves nothing itself, so the address-level check on a
+`CONNECT` target is lost and the name check is all that remains; the proxy's
+own address is usually private, so it alone is exempt from the private-address
+refusal.
+
+## Approach
+
+1. `sandbox.egress.upstreamProxy` (a URL, with credentials from the
+   environment, never the config file) and `noProxy`: for a `CONNECT
+   host:port`, send `CONNECT host:port` to the proxy and relay the tunnel,
+   keeping the allowlist and port checks on the name. Point the provider
+   route at the same proxy, so the two stop differing.
+2. When `network.proxy_ca` is set, pass `SSL_CERT_FILE`, `CURL_CA_BUNDLE`,
+   `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE` and `GIT_SSL_CAINFO` into the
+   session environment, and give the broker's provider client the CA
+   (`reqwest::Client::builder().add_root_certificate`). Verify each variable
+   name against its tool's current documentation before relying on it.
+3. Update E-22 and E-15: the column that says errand-box does not change
+   errand is stale.
+
+## Prove
+
+```sh
+cargo test --locked -p errand broker
+```
+
+A test with a fake proxy listener: with `upstreamProxy` set, an allowlisted
+`CONNECT` reaches the proxy as `CONNECT host:port` and the broker resolves
+nothing itself; a host not on the allowlist still gets 403 and never reaches
+the proxy. A test builds the provider client with a CA and reaches a local
+TLS fixture signed by it.
+
+---
+
+# T-083: a refused egress is silent, ERRAND_EGRESS_ALLOW replaces the defaults, and a port opens for every host
+
+**Source:** [issue #58](https://github.com/Azathothas/errand-box/issues/58), read on `57231da`
+**Category:** errand
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+The egress allowlist is hard to set and its refusals are invisible, so a
+session fails a fetch and nobody waiting learns why or how to fix it.
+
+1. The broker answers `403 not on the egress allowlist` for both a host that
+   is not allowed and a port that is not allowed, one reason, one info-level
+   log line (`errand/src/sandbox/broker/server.rs`). Nothing reaches the
+   chat.
+2. `ERRAND_EGRESS_ALLOW` replaces the default allowlist rather than extending
+   it: `let mut allow = list(...); if allow.is_empty() { allow = DEFAULT_ALLOW }`
+   (`src/errandcfg.rs:127-130`). An operator who adds one host loses
+   github.com, pypi.org, crates.io and the rest, with no word.
+3. `sandbox.egressPorts` applies to every allowed host
+   (`errand/src/config/schema.rs`), so allowing ssh on port 22 for one forge
+   opens port 22 for all. T-022 is the raw-TCP egress entry; this is the
+   allowlist and its visibility.
+
+## Premise
+
+Read on `57231da`. Not run. The refusal body and the single test above it
+are the one reason both cases get.
+
+## Approach
+
+1. Put the host, the port and the reason in the refusal body, and post one
+   rate-limited line in the session's thread with the host, the port and the
+   reason, no credentials. This is the refusal-audit side of errand#47.
+2. `ERRAND_EGRESS_ALLOW_EXTRA` extends the defaults; document that
+   `ERRAND_EGRESS_ALLOW` replaces them; accept `host:port` entries for a
+   per-host port.
+3. Consider `errand-box egress test HOST` (dial through the real broker
+   configuration and say which layer refused) and `errand-box egress suggest`
+   (read lockfiles and print the registries they need); both suggestion only.
+
+## Prove
+
+```sh
+cargo test --locked errandcfg:: -p errand-box
+cargo test --locked -p errand broker
+```
+
+A broker test refuses a port and a host and expects two different reasons in
+the body; a config test sets `ERRAND_EGRESS_ALLOW_EXTRA=example.org` and
+expects the defaults plus `example.org`.
+
+---
+
+# T-089: the broker panics instead of returning an error when a loopback bind is denied
+
+**Source:** [issue #52](https://github.com/Azathothas/errand-box/issues/52), read on `57231da`
+**Category:** errand
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`start_provider` binds the provider endpoint's loopback listener with
+`.expect("a loopback port for the provider endpoint")`, and the next line is
+another `.expect` (`errand/src/sandbox/broker/server.rs:114-117`). The other
+listener in the same file returns its error and `serve.rs` logs it. So a host
+that forbids a loopback bind turns a configuration problem into a panic in the
+daemon's main task. The release profile sets `panic = "abort"`
+(`Cargo.toml`), so the process aborts, and the supervisor restarts it, the
+two-second loop of T-037. The fork's own rules say to fail loudly with an
+actionable message, not to panic with a bare string.
+
+## Premise
+
+Read on `57231da`. The denied bind was observed in a review sandbox
+(`bind(("127.0.0.1", 0))` returned `Permission denied`); errand was not run.
+Sandboxes and hosted containers with a network policy are the realistic case.
+
+## Approach
+
+Return `std::io::Result<u16>` from `start_provider`, propagate it from
+`listen`, and let `serve.rs` refuse with the message it already uses for the
+main listener. The refusal is exit 2, which T-037's backoff then covers.
+
+## Prove
+
+```sh
+cargo test --locked -p errand broker
+```
+
+A test starts the broker with a provider route and a bind that fails (an
+injected listener, or a port already taken) and expects an error return, not
+a panic.

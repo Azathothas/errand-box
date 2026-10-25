@@ -1146,3 +1146,83 @@ publish the image with every tagged release.
 ```sh
 printf '[image]\nsource = "release"\n' > r.toml && errand-box setup --config r.toml --skip-image   # guest image ok, imported
 ```
+
+---
+
+# T-086: a lite engine for hosts Incus cannot serve
+
+**Source:** [issue #49](https://github.com/Azathothas/errand-box/issues/49), a spec and plan read on `57231da`
+**Category:** sandbox
+**Priority:** P3
+**Effort:** L
+**Status:** open
+
+## Problem
+
+A host with about 1 GiB of RAM or less, no user, mount, PID or network
+namespaces for the account, no FUSE, and possibly no root or cgroup
+delegation, cannot run the Incus engine: setup refuses it or no guest starts
+(T-042, T-039, T-044). The rootless routes need user namespaces or FUSE, and
+emulation is out of scope by the operator's instruction. So errand-box serves
+none of these hosts, and nothing says why.
+
+## Premise
+
+Read on `57231da`, and probed by the reporter in a review sandbox (uid 0,
+`CapEff` 0, no user namespaces, an existing seccomp filter):
+`unshare -U` returned `Operation not permitted`, `ptrace(PTRACE_TRACEME)`
+returned EPERM, `landlock_create_ruleset` returned ABI 10, and the seccomp
+user notification and `ADDFD` were available. So the closest existing thing is
+bailey's no-namespace fallback, which errand's own check refuses (T-084,
+issue #51) and whose egress lock is weaker than errand's proxy mode needs.
+A prototype of the egress mediation ran in that sandbox (the issue carries it);
+a real TCP connect to a real broker, throughput, other architectures and
+Landlock integration were not run.
+
+## Approach
+
+A second errand sandbox engine, `lite`, that runs a session as a supervised
+host process with Landlock for the filesystem, seccomp for the syscall
+surface, a subreaper and tree kill for the lifetime, and an emulated
+`connect` (seccomp user notification) that reaches only errand's broker
+address, so egress stays locked without a network namespace. It is an engine
+of the existing `bailey` stand-in (`engine.mode = "lite"` in runtime.toml,
+chosen in `src/shim.rs`), not a new errand backend. It reuses `src/policy.rs`
+to map the policy to Landlock rules. The one change inside errand is the path
+model: the four path constants in `errand/src/sandbox/backend.rs:19-32` become
+fields of `SandboxLaunch`, which the Incus, bailey and podman backends set to
+the current values and `lite` sets to the real host paths, since nothing can
+appear at `/workspace` without a mount namespace. The issue carries the full
+spec: the kernel ladder, the seccomp rule table, the egress prototype, the
+memory and process handling without cgroups, and the milestones M0 to M5.
+
+Depends on T-084, which adds the capability probe, the tier chooser and the
+change that lets errand carry `user namespaces: no` as a gap rather than a
+refusal; `lite` needs all three.
+
+## Decision
+
+The operator ruled on 2026-10-25: file this as a researched entry a future
+session can evaluate and build, not blocking, and not now. It is a **second**
+engine, for hosts the Incus engine cannot serve. It does not replace the
+settled decisions (RULES.md section 4: Incus system containers, root at
+setup); those stand for every host Incus can run on, and `lite` gives up the
+kernel boundary, Docker and podman inside, package installs and a disk quota,
+which the spec states plainly. The security model is weaker than a container's
+and the spec says where. Before it is built, a session re-measures the
+prototype's open questions (the issue's section 13): Landlock on the target
+boards, the emulated socket under a model stream, and a pre-existing seccomp
+listener.
+
+## Prove
+
+The entry is a design and a plan; its acceptance is the milestones' own exit
+criteria in the issue. A first implementing session's acceptance:
+
+```sh
+cargo test --locked -p errand-box lite::
+```
+
+M1's criterion: a `lite` session runs the agent against a project, cannot read
+a file outside its grants, and leaves no process after SIGTERM and after
+SIGKILL of the launcher.

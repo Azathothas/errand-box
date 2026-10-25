@@ -57,7 +57,13 @@ that stops early and skips the sandbox steps without a word (T-040), a
 provider setting that never reaches the agent (T-041), an uninstall order
 that leaves every instance (T-046), WSL2 that stops an idle distribution
 (T-038) or cannot start a guest without systemd (T-039), and a
-user-namespaced host where no guest starts (T-042).
+user-namespaced host where no guest starts (T-042). Three P1 entries from
+the third-party review of 2026-10-25 are security: root follows a symlink
+under an errand-owned directory, a second route to root beyond E-61 and
+T-020 (T-079); the freshness workflow runs an upstream tag through `sh -c`
+with its write token (T-080); and the clone of a pull request reads the
+session's git directory seconds after the check that T-030 added, so a guest
+can swap it in between (T-081).
 systemd and musl are shown live, the first release is out, and every
 workflow has run on GitHub. A host type is P1 rather than P0 because the
 code paths exist and the failure, if any, is at setup, before errand runs.
@@ -66,21 +72,30 @@ P2 and P3 make errand-box cheaper or clearer: rootless setup, a published
 image, a pool size that fits the disk, errand's wording, a docs check, a
 narrower AppArmor route, two live checks that depend on timing, the smaller
 defects in errand's broker and file reads, a smaller fork, and a native Incus backend in the fork, which
-retires the `bailey` stand-in.
+retires the `bailey` stand-in. The 2026-10-25 review adds the broker's egress
+boundary (T-082 a proxy the broker and sessions use, T-083 the allowlist and
+its silent refusals, and the private-address arms folded into T-032), the
+host-capability probe and tier chooser (T-084), the constrained-host sizing
+and the limits errand is told (T-085), the broker that panics rather than
+returning an error (T-089), the gate that never requires an entry's prove
+output (T-087), the two credential files that are not ignored (T-088), and a
+second `lite` engine for hosts Incus cannot serve (T-086, a researched design
+the operator filed as non-blocking: it does not replace the settled Incus
+decision).
 
 ---
 
 ## Counts
 
-**78 items. 56 open, 6 partial, 1 blocked, 15 done.**
+**89 items. 67 open, 6 partial, 1 blocked, 15 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 8 | 3 | 1 | 8 | 20 |
-| P2 | 32 | 2 | 0 | 3 | 37 |
-| P3 | 16 | 1 | 0 | 0 | 17 |
-| **All** | 56 | 6 | 1 | 15 | 78 |
+| P1 | 11 | 3 | 1 | 8 | 23 |
+| P2 | 39 | 2 | 0 | 3 | 44 |
+| P3 | 17 | 1 | 0 | 0 | 18 |
+| **All** | 67 | 6 | 1 | 15 | 89 |
 
 ---
 
@@ -166,3 +181,14 @@ retires the `bailey` stand-in.
 | [T-076](upkeep.md) | P3 | upkeep | open | mock-session.sh passes when the session never started |
 | [T-077](errand.md) | P3 | errand | open | discord-mock has no HTTP control for delete, archive and commands |
 | [T-078](upkeep.md) | P3 | upkeep | open | feature.yml applies a label that does not exist |
+| [T-079](setup.md) | P1 | setup | open | root follows a symlink under an errand-owned directory, a second route to root |
+| [T-080](upkeep.md) | P1 | upkeep | open | freshness.sh runs an upstream release tag through sh -c, with the write token |
+| [T-081](errand.md) | P1 | errand | open | refuse_borrowed is checked seconds before the clone, so the git directory can be swapped |
+| [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA |
+| [T-083](errand.md) | P2 | errand | open | A refused egress is silent, ERRAND_EGRESS_ALLOW replaces the defaults, and ports are global |
+| [T-084](setup.md) | P2 | setup | open | doctor, setup and the shim report capability by literal, by euid, or not at all |
+| [T-085](setup.md) | P2 | setup | open | errand-box is sized for a roomy host, and does not tell errand the real numbers |
+| [T-086](sandbox.md) | P3 | sandbox | open | A lite engine for hosts Incus cannot serve |
+| [T-087](upkeep.md) | P2 | upkeep | open | The gate does not require an entry's prove output, and no live check crosses the provider boundary |
+| [T-088](upkeep.md) | P2 | upkeep | open | creds.env and errand-box.env are not ignored, and the secret check does not match them |
+| [T-089](errand.md) | P2 | errand | open | The broker panics instead of returning an error when a loopback bind is denied |

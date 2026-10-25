@@ -4,8 +4,8 @@ Overwritten every session. Not the record: [`PROGRESS.md`](PROGRESS.md) is.
 
 | | |
 | --- | --- |
-| the task | The operator, 2026-10-24, hosted session: the errand fork, its rulings and v0.1.1; then T-037 filed, the prerelease `artefacts` for an end-to-end test, a runbook for a standalone agent (given in chat, not in the tree), and the plan of 2026-10-23 withdrawn from the record |
-| the resume point | none: the session finished. The operator starts T-027's agent with the runbook; the next session starts at PROGRESS.md, "Start here next session" |
-| in flight | `artefacts.yml` is dispatched again from the record commit, so the kit carries the `mock-session.sh` that passed; its `COMMIT` file names that commit. Every host object of the session is removed; the package list matches the one taken before each test |
-| the state of the tree | `main` and `claude/eloquent-faraday-nbo94y` at the record commit, pushed |
-| the paste | Read AGENTS.md, TODO/PROGRESS.md and TODO/SUMMARY.md, then start at "Start here next session". |
+| the task | The operator, 2026-10-25, hosted session: triage every open GitHub issue into entries by root cause; ask and settle the questions of scope and design; build nothing |
+| the resume point | none: the triage is finished. Every open issue (#2 to #59) is in an entry. The next session starts at PROGRESS.md, "Start here next session" |
+| in flight | nothing. 11 entries filed (T-079 to T-089), #59 folded into T-032, T-029's evidence corrected, counts rewritten by check-todo. The triage commit is on `main`, not pushed |
+| the state of the tree | the triage commit on `main`; the `gate` step is 9 of 9 and check-todo is consistent; no code changed |
+| the paste | Read AGENTS.md and TODO/PROGRESS.md, then start at "Start here next session". The security P1 entries T-079, T-080 and T-081 are first. |

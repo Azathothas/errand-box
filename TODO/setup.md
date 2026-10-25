@@ -1651,3 +1651,229 @@ warn about unknown ERRAND_ keys; refuse cpus outside the host's range.
 ```sh
 cargo test --locked config:: errandcfg::
 ```
+
+---
+
+# T-079: root follows a symlink under an errand-owned directory, a second route to root
+
+**Source:** [issue #43](https://github.com/Azathothas/errand-box/issues/43) and [issue #44](https://github.com/Azathothas/errand-box/issues/44), read on `57231da`
+**Category:** setup
+**Priority:** P1
+**Effort:** M
+**Status:** open
+
+## Problem
+
+Root writes and chowns files under errand's home, which the errand account
+owns, on two paths that follow a symlink the account plants there. The
+account then redirects root's write or chown to any file on the host. This
+is a second route from the errand account to root, and T-020 does not close
+it, because it needs no proxy device.
+
+1. `procs::lock` opens the lock file with `create`, `write` and no
+   `O_NOFOLLOW`, then, when euid is 0 and the lock directory is not root's,
+   `fchown`s the open file to the directory's owner (`src/procs.rs:62-76`).
+   Root calls it from `reap` (`src/session.rs:538`, every
+   `maintenance.reap_seconds`) and from `gc` (`src/maint.rs`), on
+   `<errand home>/.local/state/errand-box/locks/<name>.lock`
+   (`src/session.rs:223-230`), a directory setup makes under errand's home,
+   owned by the errand account (`src/setup.rs:1556-1565`). A symlink at
+   `<name>.lock` makes root open the target (creating it when the link
+   dangles) and give it to the errand account.
+2. `up::write_if_changed` writes `path.with_extension("errand-box-tmp")`
+   with `fs::write` and `fs::set_permissions`, then renames it over the
+   final path (`src/up.rs:322-325`). `fs::write` and `fs::set_permissions`
+   follow a symlink at the temporary name. `errand_config` (`src/setup.rs:954`)
+   and `drop_web` (`src/setup.rs:907`) call it under errand's home, so a
+   symlink at `config.errand-box-tmp` makes root write JSON the account chose
+   over any file, and chmod it 0600.
+
+## Premise
+
+Read on `57231da`, and the open step of case 1 reproduced by the reporter in
+a scratch directory (the `fchown` was not run: the review sandbox has no
+CAP_CHOWN). `safe_dir` already makes each directory under errand's home
+symlink safe before root acts (E-54, `src/setup.rs:423-438`), and
+`errand_config` removes a symlink at the final `config.json`
+(`src/setup.rs:951-953`). The two paths above were missed: the lock file,
+and the temporary file beside the config.
+
+## Approach
+
+The root cause is one rule: root never follows a symlink when it opens,
+writes or chowns a file under a directory the errand account can write.
+
+1. `procs::lock`: open with `O_NOFOLLOW` and `O_CLOEXEC`, and `fchown` only a
+   file this call created, not one it opened. Or keep root's locks in a
+   root-owned directory and give the errand account a separate one.
+2. `up::write_if_changed`: create the temporary file with
+   `OpenOptions::new().create_new(true).custom_flags(O_NOFOLLOW)`, and
+   `fchmod` the open descriptor rather than `set_permissions` on the path.
+3. An edge-case row for the class: root writing under an errand-owned
+   directory, and what keeps it safe.
+
+## Prove
+
+```sh
+cargo test --locked procs:: up::
+```
+
+A test plants a symlink at the lock path and asserts `lock` returns an error
+and the target is untouched; another plants one at the temporary name and
+asserts `write_if_changed` fails or leaves the target untouched. Each fails
+on the current code.
+
+---
+
+# T-084: doctor, setup and the shim report capability by literal, by euid, or not at all
+
+**Source:** [issue #50](https://github.com/Azathothas/errand-box/issues/50) and [issue #51](https://github.com/Azathothas/errand-box/issues/51), read on `57231da`
+**Category:** setup
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+errand-box decides and reports what a host can do without probing it, so a
+host that cannot run a session passes every report. T-044 is about a host
+where Incus cannot run; this is the capability layer under it.
+
+1. The shim's `bailey doctor` prints `user namespaces: yes` as a literal
+   (`src/shim.rs:142`) and a fixed `cgroup delegation: memory, pids, cpu`
+   line (`src/shim.rs:143-146`). errand reads only those two lines plus
+   `landlock:` (docs/bailey-contract.md section 3.1), so errand's whole
+   capability check is two constants. T-051 is the limits half of the same
+   output; this is the user-namespace and cgroup-delegation lines.
+2. `errand-box setup` gates on euid alone (`src/setup.rs:1402`). A uid 0
+   with no capabilities passes the gate and fails later with a message that
+   names no cause.
+3. `errand-box doctor` probes the init, the cgroup version, KVM and WSL and
+   reports AppArmor (`src/main.rs:489-593`, `src/host.rs:50-91`). It does not
+   probe user namespaces, Landlock, seccomp, `ptrace` or a loopback bind. A
+   grep of `src/host.rs` for these finds only the cgroup and AppArmor lines.
+4. errand refuses to start on `user namespaces: ... no`
+   (`errand/src/sandbox/bailey.rs:148-155`), though bailey's own README says
+   enforcement falls back to Landlock and seccomp without the namespace. So a
+   host with Landlock and seccomp and no user namespaces can run bailey and
+   cannot run errand, and a second engine that reports the truth (T-086) hits
+   the same refusal.
+
+## Premise
+
+Read on `57231da`. The reporter ran probes in a review sandbox (uid 0,
+`CapEff` 0, no user namespaces): `unshare -U` returned `Operation not
+permitted`, `landlock_create_ruleset` returned ABI 10, the seccomp user
+notification was available, and a loopback bind returned `Permission
+denied`. So each capability a probe would read differs from what the
+literals assert.
+
+## Approach
+
+1. `errand-box doctor --plan`: probe each capability by attempting it, not by
+   reading a file, and print one row per capability with what it means.
+   Name the best tier for the host: Incus where root and Incus work, `lite`
+   (T-086) where Landlock and seccomp work, else none, with the missing rows.
+2. The shim's `doctor` prints what the probe found, not a literal.
+3. The setup gate names the capability it needs (`CAP_CHOWN`, the uid map,
+   writable `/proc/sys`), not just euid.
+4. errand's `parse_doctor` treats `user namespaces: no` as a gap, which
+   `requireFullEnforcement` governs, when the doctor output says the engine
+   locks egress by other means; it stays a refusal otherwise. This is
+   errand's change, in `errand/src/sandbox/bailey.rs`.
+
+## Decision
+
+The capability probe and the tier chooser are the floor T-086's `lite`
+engine needs, so they land first whether or not `lite` is built. The shim
+literal that T-051 also touches is corrected here for the user-namespace and
+cgroup lines and there for the limits line; neither entry writes the other's
+line.
+
+## Prove
+
+```sh
+cargo test --locked host:: shim:: -p errand-box
+cargo test --locked -p errand --lib -- bailey
+```
+
+A test runs the probe with the user-namespace attempt failing and expects
+`user namespaces: no`; another feeds a `CapEff` of zero with euid 0 to the
+setup gate and expects a row naming the missing capability; an errand test
+gives `parse_doctor` `user namespaces: no` with an egress-locked line and
+`requireFullEnforcement = false` and expects the daemon to start.
+
+---
+
+# T-085: errand-box is sized for a roomy host, and does not tell errand the real numbers
+
+**Source:** [issue #53](https://github.com/Azathothas/errand-box/issues/53), [issue #54](https://github.com/Azathothas/errand-box/issues/54) and [issue #55](https://github.com/Azathothas/errand-box/issues/55), read on `57231da`
+**Category:** setup
+**Priority:** P2
+**Effort:** M
+**Status:** open
+
+## Problem
+
+errand-box assumes a host with room to spare, and the numbers it enforces,
+reports and hands to errand drift apart on a small one.
+
+1. The `auto` pool floor is 60 GiB. `pool_size` is
+   `max(free/2, 3 * box.disk, 20 GiB)` (`src/setup.rs:968-977`), and
+   `box.disk` defaults to `20GiB`, so the floor is 60 GiB on any host with
+   under 120 GiB free. The E-32 check only degrades; a sparse loop file
+   larger than the disk still gives guests I/O errors when the disk fills.
+   T-018 fixed the report, not the size; T-052 is the WSL variant.
+2. errand's limits are hardcoded: `maxConcurrentTurns: 2`,
+   `maxLiveSessions: 4` (`src/errandcfg.rs:152`), with no key in
+   `errand-box.toml`. Each session gets 80% of memory and CPUs
+   (`src/config.rs:78-79`), and errand's admission counts sessions only
+   (`errand/src/admission/scheduler.rs`). Four live sessions then promise
+   320% of memory; Incus limits are caps, not reservations, so the kernel
+   decides what to kill, with no priority for errand or the host daemons.
+3. errand-box writes none of errand's own `sandbox.memory`, `cpus`, `pids`
+   or `disk` (`src/errandcfg.rs:143-149`). errand keeps its defaults (`4g`
+   memory, `5g` disk, `errand/src/config/schema.rs`) for its messages, its
+   exit mapping and its disk budget, while Incus enforces other numbers. So
+   errand reports and may act on limits the guest does not have.
+
+## Premise
+
+Read on `57231da`. Not run on a constrained host: `errand-box status` shows
+no capacity line, and the idle memory of errand, incusd, lxcfs and kage is
+not recorded anywhere in the tree, so the admission floor and the per-session
+divisor are proposals until measured.
+
+## Approach
+
+1. Cap the `auto` pool at what fits: `min(max(free/2, floor), free - reserve)`,
+   and refuse with the free space and the minimum when `free - reserve` is
+   below the floor. Keep an explicit `engine.pool_size` as the override.
+2. `[limits] max_live_sessions` and `max_concurrent_turns` in
+   `errand-box.toml`, written into errand's config; a `preset = "micro"`
+   that sets one live session and sizes `box.memory` from the host's memory
+   divided by the limit.
+3. Write errand's `sandbox.memory`, `cpus`, `pids` and `disk` from the values
+   errand-box sets, so errand's numbers match Incus's.
+4. Memory admission that refuses a new session when `MemAvailable` is below a
+   measured floor, and a `status` capacity line (free pool, `MemAvailable`,
+   sessions that fit).
+
+## Decision
+
+The three are one entry because they share a cause: errand-box does not read
+the host's real room, and does not pass errand the numbers Incus enforces.
+Steps 1 and 3 are correctness on any host; steps 2 and 4 are what a small
+host needs. The floors and the divisor wait on a measurement of idle memory,
+named in the Prove.
+
+## Prove
+
+```sh
+cargo test --locked setup:: errandcfg:: -p errand-box
+```
+
+Unit tests with `free` at 27 GiB and at 200 GiB expect a pool of at most the
+free space minus the reserve, then 100 GiB; a config test with
+`box.memory = "512MiB"` expects `sandbox.memory` of `512m` and
+`maxLiveSessions` from the key, not the constant.

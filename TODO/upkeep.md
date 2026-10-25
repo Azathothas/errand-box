@@ -306,3 +306,158 @@ Create the label, or use `enhancement` in the template.
 ```sh
 gh label list --repo Azathothas/errand-box | grep -c '^feature'   # 1, or the template names enhancement
 ```
+
+---
+
+# T-080: freshness.sh runs an upstream release tag through sh -c, with the workflow's write token
+
+**Source:** [issue #45](https://github.com/Azathothas/errand-box/issues/45), read on `57231da`
+**Category:** upkeep
+**Priority:** P1
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The weekly freshness workflow builds a shell string from an upstream release
+tag it does not validate, and runs it with `sh -c`, holding a write token.
+`pins.sh upstream` takes the newest tag from the GitHub API with no check
+(`scripts/pins.sh:87`, a `grep -o '"tag_name"...'`). `freshness.sh` passes it
+to `update` as part of a command string (`scripts/freshness.sh:99`), and
+`update` runs that string with `sh -c "$3"` (`scripts/freshness.sh:55`). A
+git tag name may hold `;`, `$`, `(`, `)` and backticks, so a tag such as
+`v1.0;command` runs `command`. `pins.sh bump` validates its own argument
+(`scripts/pins.sh:94`), but the injection runs in `sh -c` before bump is
+reached, so that check does not help. The job runs with `contents: write`,
+`pull-requests: write` and `actions: write`
+(`.github/workflows/freshness.yml`). The Rust channel path is the same shape:
+`sed -i` with an unvalidated version (`scripts/freshness.sh:110`).
+
+## Premise
+
+Read on `57231da`, and the injection reproduced by the reporter with a stub
+`pins.sh`: `git check-ref-format` accepts a tag holding shell syntax, and
+`sh -c "sh scripts/pins.sh bump kage $tag"` ran the injected command. Whether
+GitHub's release API accepts such a tag was not tested; git accepts it as a
+ref name, and an upstream maintainer, or anyone who can publish a release in a
+watched repository, sets the tag.
+
+## Approach
+
+The root cause is a value from outside run as code. Accept only
+`^v?[0-9][0-9A-Za-z.+-]*$` in `pins.sh upstream` and again in `update`, and
+pass the version as an argument rather than in a shell string:
+`sh scripts/pins.sh bump "$tool" "$up"`, not `sh -c`. Validate the Rust
+version the same way before the `sed`.
+
+## Prove
+
+```sh
+sh tests/pins-test.sh
+```
+
+A test runs `update` with a tag such as `v1;command` and asserts it is
+refused and the command did not run; it fails on the current code.
+
+---
+
+# T-087: the gate does not require an entry's prove output, and no live check crosses the broker's provider boundary
+
+**Source:** [issue #48](https://github.com/Azathothas/errand-box/issues/48), read on `57231da`
+**Category:** upkeep
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+`scripts/check-todo.sh` is structural: it checks the rows, the statuses and
+the counts, and never reads an entry's Prove section or requires a recorded
+output. So an entry can be `done` with no evidence on file, which is how
+T-029, T-030 and T-031 record "the prove passed, N tests" with no output
+kept. T-029 (P0) was then closed citing a live run, `tests/live/live.sh` 52
+of 52, that sends no `/provider/` path and so does not exercise the boundary
+the fix is about; the real proof is the broker unit tests. The live tests
+have no check that crosses the provider boundary at all: `tests/live/live.sh`
+reports `direct egress: blocked` and passes on any failure, not a specific
+result (`tests/live/live.sh:179`).
+
+## Premise
+
+Read on `57231da`: the live artefacts, the closing records of T-029, T-030
+and T-031, and `check-todo.sh`, which reads only the index, the entries'
+status and category lines, and the counts. T-029's closing evidence is
+corrected under that entry in this change.
+
+## Approach
+
+1. A live check in `tests/live/live.sh` that sends `/provider/NAME.other.example/`
+   and the `:443@other.example` spelling through the broker and expects a 4xx,
+   so a host run exercises T-029's boundary.
+2. Make `check-todo.sh --set T-NNN done` require a recorded prove output, or a
+   pointer to one under `tests/`, before it moves a status to `done`; or a
+   gate step that refuses a `done` entry whose Prove names a command with no
+   recorded output.
+3. Where a claim quotes a number another file measures (the live counts), keep
+   the artefact, so `direct egress: blocked` becomes a recorded result rather
+   than prose.
+
+## Prove
+
+```sh
+sh scripts/ci-local.sh --step gate
+sh tests/live/live.sh session
+```
+
+The gate step refuses a `done` entry with no recorded prove output; the live
+`session` test's broker check sends a boundary-crossing path and expects a
+4xx.
+
+---
+
+# T-088: creds.env and errand-box.env are not ignored, and the secret check does not match them
+
+**Source:** [issue #47](https://github.com/Azathothas/errand-box/issues/47), read on `57231da`
+**Category:** upkeep
+**Priority:** P2
+**Effort:** S
+**Status:** open
+
+## Problem
+
+The docs tell the operator to keep `creds.env` (mode 0600) and
+`errand-box.env` beside the command (README quick start,
+docs/security/secrets.md). `.gitignore` ignores `.env`, `.env.*` and the rest
+(`.gitignore:10-12`), but not `creds.env` or `errand-box.env`: a run with
+this repository's `.gitignore` showed both staged by `git add -A`.
+`scripts/common/check-no-secrets.sh` scans for secret shapes and for file
+names, but its name pattern matches `.env` preceded by a slash or the start,
+not the `creds.env` and `errand-box.env` spellings
+(`scripts/common/check-no-secrets.sh:94`). So a checkout where the operator
+wrote the two files stages the credentials, and no check refuses them.
+docs/security/secrets.md already says to list the ignore rule before the file
+exists, and to re-exclude credentials by name.
+
+## Premise
+
+Read on `57231da`, and reproduced in a scratch repository with this tree's
+`.gitignore`: `creds.env` and `errand-box.env` both show as untracked and
+stage. No secret is in the tree or its history by a pattern sweep; this is
+about the next commit, not a past one.
+
+## Approach
+
+Add `creds.env` and `errand-box.env` (or `creds.*` and `/*.env` with an
+exception for the example twins) to `.gitignore`, re-excluded by name after
+every re-inclusion rule, and make `check-no-secrets.sh` refuse the two names
+when tracked.
+
+## Prove
+
+```sh
+sh scripts/ci-local.sh --step gate
+```
+
+In a scratch tree with the new `.gitignore`, `git status --short` prints
+nothing for `creds.env` or `errand-box.env`, and `check-no-secrets.sh`
+refuses either when it is tracked.
