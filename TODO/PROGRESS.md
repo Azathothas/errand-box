@@ -75,6 +75,11 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   so identical code): every job passed, `test` and both `musl` included, and
   `secret-sweep` is green. The earlier `gates` run for `7752b89` itself was
   cancelled by a transient ~38-minute stall on its runner's `test` step, moot.
+- **GitHub issues closed (2026-10-25):** the 8 open issues whose entry is `done`
+  were closed with a comment naming the fix commit: #27 (T-063); #43 and #44
+  (T-079); #45 (T-080); #46 (T-081); #47 (T-088); #52 (T-089); #59 (T-032). 50
+  issues stay open, each mapping to an entry that is open, partial, or
+  superseded (T-082 and T-090). Close an issue once its entry reaches `done`.
 - **This host is now a working errand-box host.** `errand-box setup` finished
   with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
   dir pool, lxcfs 6, the two `/dev` modes). `sh tests/live/live.sh` runs here.
