@@ -941,7 +941,7 @@ fn errand_config(cfg: &Config, args: &Args, uid: u32, gid: u32, r: &mut Report) 
         let c = errandcfg::parse_env(
             &fs::read_to_string(credp).map_err(|e| format!("{}: {e}", credp.display()))?,
         )?;
-        let json = errandcfg::build(&s, &c, &cfg.errand.home)?;
+        let json = errandcfg::build(&s, &c, &cfg.errand.home, cfg.network.broker_port)?;
         let text = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())? + "\n";
         let dir = dst.parent().unwrap();
         // The .config and .config/errand directories, made safe so a

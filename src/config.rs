@@ -156,6 +156,11 @@ pub struct Network {
     /// The fixed port inside each guest where system services (apt, Docker)
     /// reach errand's broker.
     pub guest_proxy_port: u16,
+    /// The fixed loopback port errand's broker binds. It must be fixed, not
+    /// kernel-picked, so the guest's broker link can be wired to it at image
+    /// build time (T-020); errand-box writes it into errand's config. Pick a
+    /// port free on the host's `127.0.0.1`.
+    pub broker_port: u16,
 }
 
 impl Default for Network {
@@ -164,6 +169,7 @@ impl Default for Network {
             proxy: "auto".into(),
             proxy_ca: String::new(),
             guest_proxy_port: 3128,
+            broker_port: 3129,
         }
     }
 }

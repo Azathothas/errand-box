@@ -797,8 +797,12 @@ slices that keep `main` green:
   out-of-range value; the generated config reference regenerated. Non-breaking:
   errand-box does not set it yet, so every host stays on an ephemeral port until
   the switch.
-- **Slice 2 (next):** errand-box sets the fixed port (its config + `errandcfg`
-  writes `brokerPort`, `runtime.toml` carries it), still over proxy devices.
+- **Slice 2 (done):** errand-box sets the fixed port. `network.broker_port`
+  (default 3129) is written into errand's config (`errandcfg` adds `brokerPort`,
+  the `errand-config` gate confirms the fork accepts it) and documented in the
+  example. Still over proxy devices: errand binds 127.0.0.1:3129 and reports it
+  on `--egress-proxy`, which `desired_devices` wires unchanged. `runtime.toml`
+  does not carry it yet; that lands with slice 3, where the shim relay needs it.
 - **Slice 3 (the switch):** the disk-share link, the guest relay units,
   `restricted.devices.proxy=block`, the image rebuild, the edge-case row, and
   the live run. Validated live before it is pushed.

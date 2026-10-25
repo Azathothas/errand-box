@@ -35,6 +35,7 @@ registry_mirror = "https://mirror.gcr.io"   # Docker Hub mirror for Docker and p
 proxy = "auto"           # auto (from HTTPS_PROXY), none, or a URL
 proxy_ca = ""            # the proxy's CA file, if it re-signs TLS
 guest_proxy_port = 3128  # where Docker and apt in a guest reach errand's broker
+broker_port = 3129       # 127.0.0.1 port errand's broker binds; the agent reaches it at 169.254.169.1:<this> (must be free on the host)
 
 [maintenance]
 fstrim_hours = 24

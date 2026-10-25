@@ -78,6 +78,7 @@ pub fn build(
     settings: &BTreeMap<String, String>,
     creds: &BTreeMap<String, String>,
     home: &str,
+    broker_port: u16,
 ) -> Result<Value, String> {
     let need = |m: &BTreeMap<String, String>, k: &str, file: &str| {
         m.get(k)
@@ -153,7 +154,7 @@ pub fn build(
             "backend": "bailey",
             "requireFullEnforcement": true,
             "network": "restricted",
-            "egress": { "mode": "proxy", "allow": allow },
+            "egress": { "mode": "proxy", "allow": allow, "brokerPort": broker_port },
             "gracePeriodMs": 10000,
         },
         "output": { "forwardToolOutput": false, "postDiffs": true },
@@ -195,9 +196,10 @@ mod tests {
 
     #[test]
     fn builds_a_bailey_config_with_the_broker() {
-        let c = build(&settings(), &creds(), "/var/lib/errand").unwrap();
+        let c = build(&settings(), &creds(), "/var/lib/errand", 3129).unwrap();
         assert_eq!(c["sandbox"]["backend"], "bailey");
         assert_eq!(c["sandbox"]["egress"]["mode"], "proxy");
+        assert_eq!(c["sandbox"]["egress"]["brokerPort"], 3129);
         assert_eq!(c["stateDir"], "/var/lib/errand/state");
         assert_eq!(
             c["agent"]["providers"]["gw"]["baseUrl"],
@@ -213,13 +215,13 @@ mod tests {
         let mut s = settings();
         s.remove("ERRAND_CHANNEL_ID");
         assert_eq!(
-            build(&s, &creds(), "/h").unwrap_err(),
+            build(&s, &creds(), "/h", 3129).unwrap_err(),
             "errand-box.env has no ERRAND_CHANNEL_ID"
         );
         let mut c = creds();
         c.remove("ERRAND_CHAT_TOKEN");
         assert_eq!(
-            build(&settings(), &c, "/h").unwrap_err(),
+            build(&settings(), &c, "/h", 3129).unwrap_err(),
             "creds.env has no ERRAND_CHAT_TOKEN"
         );
     }
@@ -229,7 +231,7 @@ mod tests {
         let mut c = creds();
         c.insert("ERRAND_GITHUB_TOKEN".into(), "test-gh".into());
         assert!(
-            build(&settings(), &c, "/h")
+            build(&settings(), &c, "/h", 3129)
                 .unwrap_err()
                 .contains("ERRAND_GITHUB_USER_NAME")
         );
@@ -256,7 +258,7 @@ mod tests {
             "ERRAND_EGRESS_ALLOW_EXTRA".into(),
             "example.org, mirror.internal".into(),
         );
-        let c = build(&s, &creds(), "/h").unwrap();
+        let c = build(&s, &creds(), "/h", 3129).unwrap();
         let hosts: Vec<&str> = c["sandbox"]["egress"]["allow"]
             .as_array()
             .unwrap()
@@ -272,7 +274,7 @@ mod tests {
         let mut s = settings();
         s.insert("ERRAND_EGRESS_ALLOW".into(), "only.example".into());
         s.insert("ERRAND_EGRESS_ALLOW_EXTRA".into(), "also.example".into());
-        let c = build(&s, &creds(), "/h").unwrap();
+        let c = build(&s, &creds(), "/h", 3129).unwrap();
         let hosts: Vec<&str> = c["sandbox"]["egress"]["allow"]
             .as_array()
             .unwrap()

@@ -98,7 +98,13 @@ fn errand_config(env: &str, creds: &str, home: &str, out: &str) -> Result<(), St
     let read = |p: &str| std::fs::read_to_string(p).map_err(|e| format!("{p}: {e}"));
     let settings = errandcfg::parse_env(&read(env)?)?;
     let secrets = errandcfg::parse_env(&read(creds)?)?;
-    let json = errandcfg::build(&settings, &secrets, home)?;
+    // The broker port errand binds must match what setup wired the guest to, so
+    // read it from the config (default when there is none), as setup does.
+    let broker_port = config::load(std::path::Path::new(config::DEFAULT_PATH))
+        .or_else(|_| config::load(std::path::Path::new(config::APPLIED_PATH)))
+        .map(|c| c.network.broker_port)
+        .unwrap_or(config::Network::default().broker_port);
+    let json = errandcfg::build(&settings, &secrets, home, broker_port)?;
     let text = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())? + "\n";
     if let Some(dir) = std::path::Path::new(out).parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
