@@ -113,6 +113,10 @@ case ${1:-} in
     done
     shift
     [ "$(cat "$(inst "$name")/status")" = Running ] || { echo "Error: Instance is not running" >&2; exit 1; }
+    # errand-box's wait_ready probes for the guest run directory before pushing
+    # the session env; a running instance's guest has it. Answer without running
+    # `test -d` on the host, where the directory may or may not exist.
+    [ "$*" = "test -d /run/errand-box" ] && exit 0
     if [ $interactive = 1 ]; then
       shift 3 # the launcher, the uid and the gid
       # An asynchronous command gets /dev/null as stdin; pass the real one
