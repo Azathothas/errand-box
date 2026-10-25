@@ -39,6 +39,10 @@ project=$(val admin_project)
 golden=$(val golden)
 state_root=$(val state_root)
 home=${state_root%/state}
+# The socket broker link uses a fixed broker port (T-020): the guest's relay
+# listens on it, so a session must dial that port, not a random one.
+broker_port=$(sed -n 's/^broker_port = \([0-9]*\)$/\1/p' "$rt")
+broker_port=${broker_port:-3129}
 here=$(cd "$(dirname "$0")" && pwd)
 eb=/usr/local/lib/errand-box/bin/errand-box
 bailey=/usr/local/lib/errand-box/shim/bailey
@@ -62,9 +66,6 @@ inc() { incus --project "$project" "$@" </dev/null; }
 status() { inc list "$inst" -c s -f csv 2>/dev/null; }
 lease() { inc config get "$inst" user.errand-box.lease 2>/dev/null; }
 now_ms() { date +%s%3N; }
-free_port() {
-  python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
-}
 wait_status() { # want, tenths of a second
   i=0
   while [ "$i" -lt "$2" ]; do
@@ -135,7 +136,7 @@ t_probe() {
 }
 
 t_session() {
-  port=$(free_port)
+  port=$broker_port
   policy "$port"
   python3 -I -c "
 import http.server, socketserver
@@ -186,7 +187,7 @@ socketserver.TCPServer(('127.0.0.1', $port), H).serve_forever()" &
 }
 
 t_acp() {
-  port=$(free_port)
+  port=$broker_port
   policy "$port"
   out=$(python3 -I "$here/acp.py" "$eb" __as errand -- env XDG_DATA_HOME=/state/kage "$bailey" run --isolate --egress-proxy "169.254.169.1:$port" --config "$st/policy.toml" --profile ai-agent -- kage rpc 2>&1)
   rc=$?
@@ -199,7 +200,7 @@ t_inside() {
     fail inside "no proxy to pull images through: set EB_LIVE_PROXY or HTTPS_PROXY"
     return
   fi
-  port=$(free_port)
+  port=$broker_port
   policy "$port"
   socat "TCP-LISTEN:$port,bind=127.0.0.1,fork,reuseaddr" "TCP:$up" </dev/null >/dev/null 2>&1 &
   bg="$bg $!"
@@ -270,7 +271,7 @@ t_quota() {
 
 signal_test() { # TERM or KILL
   sig=$1
-  port=$(free_port)
+  port=$broker_port
   policy "$port"
   setsid "$eb" __as errand -- "$bailey" run --isolate --egress-proxy "169.254.169.1:$port" --config "$st/policy.toml" --profile ai-agent -- sleep 300 </dev/null >/dev/null 2>&1 &
   pid=$!
@@ -297,7 +298,7 @@ t_signals() {
 }
 
 t_reap() {
-  port=$(free_port)
+  port=$broker_port
   policy "$port"
   setsid "$eb" __as errand -- "$bailey" run --isolate --egress-proxy "169.254.169.1:$port" --config "$st/policy.toml" --profile ai-agent -- sleep 300 </dev/null >/dev/null 2>&1 &
   pid=$!

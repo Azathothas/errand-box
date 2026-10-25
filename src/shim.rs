@@ -395,6 +395,7 @@ mod tests {
             guest_gid: 1000,
             stop_seconds: 4,
             guest_proxy_port: 3128,
+            broker_port: 3129,
             broker_link: "tcp".into(),
             host_runtime_dirs: vec![],
             admin_project: String::new(),

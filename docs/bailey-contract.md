@@ -582,10 +582,12 @@ Contract for a replacement (INFERRED from the points above):
 
 - Only when `sandbox.egress.mode` is `proxy` (E:src/serve.rs:661-664). It
   is the default (E:src/config/schema.rs:608-609).
-- The broker listens on host `127.0.0.1`, on a port the kernel picks
-  (E:src/serve.rs:694-696; E:src/sandbox/broker/server.rs:53-69). One
-  broker serves every session of the daemon (E:src/serve.rs:787-793,
-  806-812). INFERRED: the port changes at each daemon start.
+- The broker listens on host `127.0.0.1`, on the port
+  `sandbox.egress.brokerPort` names, or a kernel-picked one when that is `0`
+  (E:src/sandbox/broker/server.rs:53-69). One broker serves every session of
+  the daemon (E:src/serve.rs). errand-box sets a fixed `brokerPort` so the
+  guest's broker link can be wired to it at image build time (T-020); with the
+  default `0` the port instead changes at each daemon start.
 - The sandbox reaches it as `169.254.169.1:<port>`. The address is a
   constant, link-local, deliberately not the metadata address
   (E:src/sandbox/bailey.rs:172-176; E:src/serve.rs:694-695).

@@ -13,6 +13,7 @@
 #   EB_PROXY             optional http://host:port of the egress proxy relay
 #   EB_REGISTRY_MIRROR   optional Docker Hub mirror (edge case E-16)
 #   EB_GUEST_PROXY_PORT  port where guest services reach the broker (3128)
+#   EB_BROKER_PORT       port where the agent reaches the broker (3129, T-020)
 # Exit: 0 built, 1 a step failed.
 set -eu
 in=$(cd "$(dirname "$0")" && pwd)
@@ -104,6 +105,42 @@ RemainAfterExit=yes
 WantedBy=sysinit.target
 EOF
 systemctl enable errand-box-guest.service >/dev/null 2>&1 || ln -sf /etc/systemd/system/errand-box-guest.service /etc/systemd/system/sysinit.target.wants/errand-box-guest.service
+
+say "broker link relay (the socket link, T-020)"
+# The host shares a per-session unix socket read-only at this path with a disk
+# device; a guest-side systemd-socket-proxyd reaches it, so the guest listens on
+# 169.254.169.1 itself and the project needs no proxy device. The mount point is
+# on the rootfs, never /run, which systemd remounts as tmpfs at boot (E-71).
+broker_port=${EB_BROKER_PORT:-3129}
+install -d -m 0755 /var/lib/errand-box
+install -d -m 0755 /var/lib/errand-box/link
+mkdir -p /etc/systemd/system/sockets.target.wants
+link_relay() { # name listen-port
+  cat > "/etc/systemd/system/errand-box-$1.socket" <<EOF
+[Unit]
+Description=errand-box $1 link listener on 169.254.169.1
+[Socket]
+ListenStream=169.254.169.1:$2
+# Bind before guest-init adds 169.254.169.1 to lo; the address appears at boot.
+FreeBind=yes
+[Install]
+WantedBy=sockets.target
+EOF
+  cat > "/etc/systemd/system/errand-box-$1.service" <<EOF
+[Unit]
+Description=errand-box $1 relay to the shared host broker socket
+Requires=errand-box-$1.socket
+After=errand-box-$1.socket
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd /var/lib/errand-box/link/broker.sock
+EOF
+  systemctl enable "errand-box-$1.socket" >/dev/null 2>&1 \
+    || ln -sf "/etc/systemd/system/errand-box-$1.socket" "/etc/systemd/system/sockets.target.wants/errand-box-$1.socket"
+}
+# The agent reaches the broker on its port; apt and Docker on the guest-proxy
+# port. Both relay to the one shared socket (the broker multiplexes them).
+link_relay broker "$broker_port"
+link_relay sysproxy "$port"
 
 say "system services reach the broker on 169.254.169.1:$port"
 proxy="http://169.254.169.1:$port"

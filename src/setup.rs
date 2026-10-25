@@ -1138,17 +1138,19 @@ fn project(
     if pv
         .pointer("/config/restricted.devices.proxy")
         .and_then(|v| v.as_str())
-        != Some("allow")
+        != Some("block")
     {
-        // The broker link needs proxy devices. Allowing them also lets the
-        // errand account point one at any host socket, which is more than
-        // the restricted project otherwise grants it (E-61, T-020).
-        let out = admin.run(["project", "set", &project, "restricted.devices.proxy=allow"]);
+        // The socket broker link (T-020) needs no proxy device, so the project
+        // forbids them: an allowed proxy device would let the errand account
+        // point one at any host socket, the Incus admin socket included, which
+        // is more than the restricted project otherwise grants (E-61).
+        let out = admin.run(["project", "set", &project, "restricted.devices.proxy=block"]);
         r.add(
             "broker devices",
             if out.ok() { St::Changed } else { St::Failed },
             if out.ok() {
-                "proxy devices allowed in the project, for the link to errand's broker".to_owned()
+                "proxy devices forbidden in the project; the broker link is a shared socket (T-020)"
+                    .to_owned()
             } else {
                 out.why()
             },
@@ -1575,7 +1577,8 @@ pub fn setup(args: &Args, runner: &dyn Runner) -> Report {
         guest_gid: GUEST_UID,
         stop_seconds: cfg.boxes.stop_seconds,
         guest_proxy_port: cfg.network.guest_proxy_port,
-        broker_link: "tcp".into(),
+        broker_port: cfg.network.broker_port,
+        broker_link: "socket".into(),
         host_runtime_dirs: vec![BIN_DIR.into()],
         admin_project: project,
         state_root: format!("{}/state", cfg.errand.home),

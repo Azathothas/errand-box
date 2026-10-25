@@ -36,7 +36,7 @@ die() { printf 'build-image: %s\n' "$1" >&2; exit "${2:-1}"; }
 inputs_digest() { # kage-version
   {
     for f in provision.sh launch guest-init; do cat "$root/image/$f"; printf '\000'; done
-    printf '%s\000' "$1" "${EB_REGISTRY_MIRROR-https://mirror.gcr.io}" "${EB_GUEST_PROXY_PORT:-3128}"
+    printf '%s\000' "$1" "${EB_REGISTRY_MIRROR-https://mirror.gcr.io}" "${EB_GUEST_PROXY_PORT:-3128}" "${EB_BROKER_PORT:-3129}"
   } | sha256sum | cut -d' ' -f1
 }
 # The digest is taken once, here: --print-inputs prints the value the build
@@ -81,11 +81,12 @@ if [ -n "${PROXY_CA:-}" ]; then
   cp "$PROXY_CA" "$stage/proxy-ca.crt" || die "cannot read PROXY_CA $PROXY_CA" 2
 fi
 # Single-quoted, as `errand-box image build` writes it (E-46).
-for s in "${EB_GUEST_PROXY_PORT:-}" "${EB_REGISTRY_MIRROR:-}" "${HTTPS_PROXY:-}"; do
+for s in "${EB_GUEST_PROXY_PORT:-}" "${EB_BROKER_PORT:-}" "${EB_REGISTRY_MIRROR:-}" "${HTTPS_PROXY:-}"; do
   case $s in *"'"*) die "a setting (proxy, mirror or port) has a single quote" 2 ;; esac
 done
 {
   printf "EB_GUEST_PROXY_PORT='%s'\n" "${EB_GUEST_PROXY_PORT:-3128}"
+  printf "EB_BROKER_PORT='%s'\n" "${EB_BROKER_PORT:-3129}"
   printf "EB_REGISTRY_MIRROR='%s'\n" "${EB_REGISTRY_MIRROR-https://mirror.gcr.io}"
   if [ -n "${HTTPS_PROXY:-}" ]; then printf "EB_PROXY='%s'\n" "$HTTPS_PROXY"; fi
 } > "$stage/env"

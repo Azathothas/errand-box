@@ -61,7 +61,7 @@ stopped.
 | daemons | through `errand-box up` |
 | storage | a btrfs pool `errand-box` on a thin loop file (half the free space, and at least three times `box.disk`, unless `engine.pool_size` says otherwise) |
 | the guest image | built on this host (`errand-box image build`), about 10 minutes |
-| errand's project | made by incus-user on the errand account's first call; setup allows proxy devices in it (see E-61 and T-020), imports the image, and sets its default profile, `limits.processes` from `box.pids` included |
+| errand's project | made by incus-user on the errand account's first call; setup forbids proxy devices in it (`restricted.devices.proxy=block`; the broker link is a shared socket, E-61 and T-020), imports the image, and sets its default profile, `limits.processes` from `box.pids` included |
 | the golden instance | `eb-golden`, created and never started |
 | `/etc/errand-box/runtime.toml` | what the shim reads on every call |
 | a check | `bailey doctor`, run as the errand account |

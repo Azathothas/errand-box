@@ -2,9 +2,10 @@
 # errand-box guest boot step, installed at
 # /usr/local/libexec/errand-box/guest-init and run once per boot by
 # errand-box-guest.service, before Docker and podman start.
-# - Adds errand's broker address to lo. The host's proxy devices listen on
-#   0.0.0.0 inside the guest, so a connection to that address reaches errand's
-#   broker on the host.
+# - Adds errand's broker address to lo. The guest's own socket-activated relays
+#   (errand-box-broker, errand-box-sysproxy) listen on this address and forward
+#   to the shared host broker socket, so a connection to it reaches errand's
+#   broker without any proxy device (T-020).
 # - On a cgroup v1 host, podman cannot create cgroups inside an unprivileged
 #   container, so podman runs with cgroups disabled (edge case E-04).
 set -u

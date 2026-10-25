@@ -30,9 +30,17 @@ pub struct Runtime {
     pub stop_seconds: u64,
     /// Where system services inside the guest reach the broker.
     pub guest_proxy_port: u16,
+    /// The fixed loopback port errand's broker binds. The `socket` broker link
+    /// wires the guest's relay to it, so it must match errand's `brokerPort`
+    /// (T-020). Defaulted so a `runtime.toml` written before this field parses.
+    #[serde(default = "default_broker_port")]
+    pub broker_port: u16,
     /// `tcp`: the proxy device dials host 127.0.0.1 itself (root mode).
     /// `unix`: the shim relays through a unix socket, because a rootless
     /// incusd lives in a network namespace of its own (E-23).
+    /// `socket`: no proxy device; a per-session unix socket is shared into the
+    /// guest read-only by a disk device and a guest-side relay reaches it, so
+    /// the project can forbid proxy devices (T-020).
     pub broker_link: String,
     /// Host directories errand grants as the agent's runtime (the host
     /// kage); the guest has its own, so these grants are not attached.
@@ -58,6 +66,12 @@ pub fn path() -> PathBuf {
     std::env::var_os("ERRAND_BOX_RUNTIME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(PATH))
+}
+
+/// The broker port a `runtime.toml` written before the field is parsed with.
+/// Matches `config::Network`'s default; `setup` writes the configured value.
+fn default_broker_port() -> u16 {
+    3129
 }
 
 pub fn load() -> Result<Runtime, String> {
@@ -125,6 +139,7 @@ mod tests {
             guest_gid: 1000,
             stop_seconds: 4,
             guest_proxy_port: 3128,
+            broker_port: 3129,
             broker_link: "tcp".into(),
             host_runtime_dirs: vec!["/usr/local/lib/errand-box/bin".into()],
             admin_project: "user-994".into(),

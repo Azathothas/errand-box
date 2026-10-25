@@ -45,9 +45,10 @@ as follows.
      copy needs no rootfs rewrite, so a new instance takes about 0.5 s. A
      stopped instance made from an older image is made again (E-31).
    - It sets the instance's devices from the policy: the project at
-     `/workspace`, the session state at `/state`, and two proxy devices to
-     errand's broker on host 127.0.0.1:P. One listens on port P inside, for
-     the agent; the other on port 3128, for Docker and apt.
+     `/workspace`, the session state at `/state`, and a read-only disk device
+     sharing the session's broker socket into the guest. A guest-side relay
+     reaches it on 169.254.169.1 (the agent's port P, and 3128 for Docker and
+     apt). No proxy device: the project forbids them (T-020).
    - It starts the instance and writes the agent's environment to
      `/run/errand-box/env.sh` in the guest through the Incus API, so no
      value appears on a host command line.
@@ -70,11 +71,11 @@ deleted.
 | thing | how it is limited |
 | --- | --- |
 | The host's files | Only the two directories errand grants (and any extra grant in errand's own config). Incus refuses any disk device outside the errand account's home: that is a rule of the restricted project, enforced by incusd, not by errand-box. |
-| The network | The instance has no network device. Its only way out is the two proxy devices to errand's broker, which applies errand's host allowlist and ports. Measured: a direct TCP connection fails with errno 101. |
+| The network | The instance has no network device. Its only way out is the broker link, a shared unix socket a guest-side relay reaches on 169.254.169.1, which applies errand's host allowlist and ports. Measured: a direct TCP connection fails with errno 101. |
 | Host user ids | The guest's root is an unprivileged host id from a range of its own (`security.idmap.isolated`). Only guest uid 1000, the agent, maps to a real host account: the errand account, so files the agent writes in `/workspace` belong to errand. |
 | CPU, memory, disk, processes | Incus limits per instance: `box.memory`, `box.cpus`, and `box.disk` as a btrfs quota. lxcfs makes /proc report them. |
 | Credentials | The provider key stays with errand's broker; the guest gets a nonce. The GitHub token does reach the guest, because errand puts it in the launch environment. |
-| Incus itself | The errand account is in group `incus`, not `incus-admin`. incus-user gives it one restricted project: no privileged containers, no raw LXC keys, disks only under its home, `raw.idmap` only for its own uid and gid. The project allows proxy devices for the broker link, and Incus cannot limit where one connects, so this does not hold against the errand account itself (E-61, T-020). |
+| Incus itself | The errand account is in group `incus`, not `incus-admin`. incus-user gives it one restricted project: no privileged containers, no raw LXC keys, disks only under its home, `raw.idmap` only for its own uid and gid. The project forbids proxy devices, so the broker link is a shared unix socket rather than a proxy device the errand account could point at any host socket (E-61, T-020). |
 
 ## Why the session's processes cannot outlive it
 

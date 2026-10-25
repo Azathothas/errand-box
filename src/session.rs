@@ -20,6 +20,7 @@ use crate::run::Runner;
 use crate::runtime::Runtime;
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -75,6 +76,7 @@ pub fn desired_devices(
     broker: Option<u16>,
     rt: &Runtime,
     relay_sock: Option<&str>,
+    link_dir: Option<&str>,
 ) -> BTreeMap<String, (String, BTreeMap<String, String>)> {
     let mut out = BTreeMap::new();
     for (i, m) in mounts.iter().enumerate() {
@@ -91,7 +93,20 @@ pub fn desired_devices(
         }
         out.insert(name, ("disk".to_owned(), p));
     }
-    if let Some(port) = broker {
+    if rt.broker_link == "socket" {
+        // T-020: no proxy device. One read-only disk device shares the session's
+        // broker socket directory into the guest, where a guest-side relay
+        // listens on 169.254.169.1 and reaches the socket, so the project can
+        // forbid proxy devices. Shared at a rootfs path, never under /run, which
+        // the guest's systemd remounts as tmpfs at boot and would shadow (E-71).
+        if let Some(dir) = link_dir {
+            let mut p = BTreeMap::new();
+            p.insert("source".into(), dir.to_owned());
+            p.insert("path".into(), GUEST_LINK_DIR.to_owned());
+            p.insert("readonly".into(), "true".into());
+            out.insert("eb-link".to_owned(), ("disk".to_owned(), p));
+        }
+    } else if let Some(port) = broker {
         let connect = match relay_sock {
             Some(s) => format!("unix:{s}"),
             None => format!("tcp:127.0.0.1:{port}"),
@@ -105,6 +120,32 @@ pub fn desired_devices(
         }
     }
     out
+}
+
+/// The guest path the socket link's directory is shared at. On the rootfs, never
+/// under `/run`: the guest's systemd mounts a fresh tmpfs over `/run` at boot,
+/// which would shadow the bind mount and lose the socket (E-71).
+pub const GUEST_LINK_DIR: &str = "/var/lib/errand-box/link";
+
+/// A session's broker-socket directory on the host for the socket link:
+/// `<errand home>/links/<instance>`. Under the home so the project's disk-path
+/// rule admits it and the guest, which sees it read-only, cannot write it; not
+/// the session state dir, which the guest does write (SECURITY.md rule 1).
+fn link_dir_path(name: &str) -> Option<PathBuf> {
+    paths::home_of(paths::euid()).map(|h| h.join("links").join(name))
+}
+
+/// Create a session's link directory (0750) and return its path, for the socket
+/// link. The shim runs as the errand account, so the directory it creates is
+/// owned by that account (guest uid 1000 through the project idmap), which is
+/// what lets the guest reach the socket (T-020).
+fn ensure_link_dir(name: &str) -> Result<String, String> {
+    let dir = link_dir_path(name)
+        .ok_or_else(|| "cannot find the errand home for the broker link".to_owned())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o750))
+        .map_err(|e| format!("cannot set mode on {}: {e}", dir.display()))?;
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 /// Make the instance's `eb-` devices equal `want`: remove what differs or is
@@ -179,10 +220,18 @@ pub fn prepare(
             inc.instance(&name)?.ok_or("the new instance is missing")?
         }
     };
+    // The socket link shares a per-session directory into the guest; create it
+    // (empty is enough for the disk device) so both the --isolate probe and the
+    // run can add the device. run_inner fills it with the socket and the relay.
+    let link = if rt.broker_link == "socket" {
+        Some(ensure_link_dir(&name)?)
+    } else {
+        None
+    };
     reconcile(
         inc,
         &inst,
-        &desired_devices(&mounts, broker, rt, relay_sock),
+        &desired_devices(&mounts, broker, rt, relay_sock, link.as_deref()),
     )?;
     inc.config_set(&name, &[(LAST_USED_KEY.to_owned(), now_secs().to_string())])?;
     inc.instance(&name)?
@@ -355,6 +404,22 @@ fn run_inner(
     let lease = procs::self_lease();
     inc.config_set(&name, &[(LEASE_KEY.to_owned(), lease.clone())])?;
     let watchdog = spawn_watchdog(&name, &lease)?;
+
+    // The socket link's broker socket, made now that the shared directory and
+    // its disk device exist and before the guest starts, so the guest-side relay
+    // finds it. The relay runs in a thread of this process and so dies with the
+    // launcher (bailey-contract.md section 8); the socket file is swept by `gc`.
+    if rt.broker_link == "socket"
+        && let Some(port) = broker
+    {
+        let dir = link_dir_path(&name)
+            .ok_or_else(|| "cannot find the errand home for the broker link".to_owned())?;
+        let sock = dir.join("broker.sock");
+        crate::relay::unix_to_tcp(&sock, format!("127.0.0.1:{port}"))
+            .map_err(|e| format!("cannot start the broker relay: {e}"))?;
+        std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o660))
+            .map_err(|e| format!("cannot set mode on the broker socket: {e}"))?;
+    }
 
     let result = run_agent(rt, &inc, &inst, policy, cmd, from_env, quiet, set);
 
@@ -569,6 +634,7 @@ mod tests {
             guest_gid: 1000,
             stop_seconds: 4,
             guest_proxy_port: 3128,
+            broker_port: 3129,
             broker_link: "tcp".into(),
             host_runtime_dirs: vec![],
             admin_project: String::new(),
@@ -614,16 +680,41 @@ mod tests {
                 readonly: true,
             },
         ];
-        let d = desired_devices(&m, Some(41234), &rt(), None);
+        let d = desired_devices(&m, Some(41234), &rt(), None, None);
         assert_eq!(d["eb-workspace"].1["source"], "/p");
         assert_eq!(d["eb-mount2"].1["readonly"], "true");
         assert_eq!(d["eb-broker"].1["listen"], "tcp:0.0.0.0:41234");
         assert_eq!(d["eb-broker"].1["connect"], "tcp:127.0.0.1:41234");
         assert_eq!(d["eb-sysproxy"].1["listen"], "tcp:0.0.0.0:3128");
-        let d = desired_devices(&m, Some(41234), &rt(), Some("/r/eb-x.sock"));
+        let d = desired_devices(&m, Some(41234), &rt(), Some("/r/eb-x.sock"), None);
         assert_eq!(d["eb-broker"].1["connect"], "unix:/r/eb-x.sock");
-        let d = desired_devices(&m, None, &rt(), None);
+        let d = desired_devices(&m, None, &rt(), None, None);
         assert!(!d.contains_key("eb-broker"));
+    }
+
+    #[test]
+    fn the_socket_link_shares_a_disk_device_and_no_proxy() {
+        let m = vec![Mount {
+            source: "/p".into(),
+            path: "/workspace".into(),
+            readonly: false,
+        }];
+        let mut r = rt();
+        r.broker_link = "socket".into();
+        let d = desired_devices(
+            &m,
+            Some(41234),
+            &r,
+            None,
+            Some("/var/lib/errand/links/eb-x"),
+        );
+        assert_eq!(d["eb-link"].0, "disk");
+        assert_eq!(d["eb-link"].1["source"], "/var/lib/errand/links/eb-x");
+        assert_eq!(d["eb-link"].1["path"], GUEST_LINK_DIR);
+        assert_eq!(d["eb-link"].1["readonly"], "true");
+        // No proxy device: that is the point (E-61).
+        assert!(!d.contains_key("eb-broker"));
+        assert!(!d.contains_key("eb-sysproxy"));
     }
 
     #[test]
@@ -677,7 +768,12 @@ mod tests {
                 readonly: false,
             },
         ];
-        reconcile(&inc, &inst, &desired_devices(&m, Some(2), &rt(), None)).unwrap();
+        reconcile(
+            &inc,
+            &inst,
+            &desired_devices(&m, Some(2), &rt(), None, None),
+        )
+        .unwrap();
         let lines = f.lines();
         assert!(
             lines.contains(&"incus config device remove eb-x eb-broker".to_owned()),

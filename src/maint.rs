@@ -88,7 +88,14 @@ pub fn gc(
         let _ = writeln!(out, "deleting {name}");
         // One instance that will not delete must not stop the whole pass (E-57).
         match inc.delete(name) {
-            Ok(()) => n += 1,
+            Ok(()) => {
+                n += 1;
+                // The socket broker link leaves a per-session directory under the
+                // errand home; remove it with the instance (T-020). Best effort:
+                // a leftover is a tiny idle directory, not a correctness problem.
+                let _ =
+                    std::fs::remove_dir_all(Path::new(&cfg.errand.home).join("links").join(name));
+            }
             Err(e) => {
                 let _ = writeln!(out, "could not delete {name}: {e}");
             }

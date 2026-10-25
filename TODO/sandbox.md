@@ -803,9 +803,13 @@ slices that keep `main` green:
   example. Still over proxy devices: errand binds 127.0.0.1:3129 and reports it
   on `--egress-proxy`, which `desired_devices` wires unchanged. `runtime.toml`
   does not carry it yet; that lands with slice 3, where the shim relay needs it.
-- **Slice 3 (the switch, atomic):** the disk-share link, the guest relay units,
-  `restricted.devices.proxy=block`, the image rebuild, the edge-case row, and the
-  live run. It is one atomic change, validated live before it is pushed, because
+- **Slice 3 (the switch, atomic) -- implemented 2026-10-25, live validation in
+  progress.** All the code and docs below landed and are unit-green (errand and
+  errand-box tests, fmt, clippy, shellcheck, errand-config, gate). `setup`
+  rebuilt the socket-mode image on this host; the live `sh tests/live/live.sh`
+  with proxy blocked is the remaining proof. The disk-share link, the guest relay
+  units, `restricted.devices.proxy=block`, the image rebuild, the edge-case row
+  (E-71), and the live run. It is one atomic change because
   the socket-mode guest proxyd units listen on the SAME `169.254.169.1` ports the
   tcp-mode proxy devices use inside the guest, so the image is mode-specific and
   there is no half-deployed state (image.rs must pass the mode, e.g.

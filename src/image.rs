@@ -28,6 +28,7 @@ pub const INPUTS_KEY: &str = "errand-box.inputs";
 /// rebuilds the image when the published one records another.
 pub fn inputs_digest(cfg: &Config, kage_version: &str) -> String {
     let port = cfg.network.guest_proxy_port.to_string();
+    let broker = cfg.network.broker_port.to_string();
     let parts = [
         PROVISION,
         LAUNCH,
@@ -35,6 +36,7 @@ pub fn inputs_digest(cfg: &Config, kage_version: &str) -> String {
         kage_version,
         &cfg.image.registry_mirror,
         &port,
+        &broker,
     ];
     let mut s = String::new();
     for p in parts {
@@ -128,6 +130,10 @@ pub fn build(
         "EB_GUEST_PROXY_PORT".into(),
         cfg.network.guest_proxy_port.to_string(),
     );
+    // The socket broker link (T-020) bakes a guest-side relay into the image,
+    // listening on the broker port and the guest-proxy port and reaching the
+    // shared socket. Part of the image inputs, so a changed port rebuilds it.
+    env.insert("EB_BROKER_PORT".into(), cfg.network.broker_port.to_string());
     if !cfg.image.registry_mirror.is_empty() {
         env.insert(
             "EB_REGISTRY_MIRROR".into(),
@@ -380,6 +386,7 @@ mod tests {
             .env("KAGE_VERSION", "v0.5.0")
             .env_remove("EB_REGISTRY_MIRROR")
             .env_remove("EB_GUEST_PROXY_PORT")
+            .env_remove("EB_BROKER_PORT")
             .output()
             .unwrap();
         assert!(

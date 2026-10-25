@@ -34,8 +34,12 @@ Out of scope:
 
 errand talks to incusd through the incus-user socket, as the unprivileged
 errand account. incusd runs one instance per session, copied from a golden
-instance that is never started. The instance has no network device; two
-proxy devices carry its traffic to errand's broker on host loopback.
+instance that is never started. The instance has no network device; its
+traffic reaches errand's broker over the socket link (T-020): a per-session
+unix socket shared read-only by a disk device, which a guest-side relay reaches
+on 169.254.169.1. The project forbids proxy devices. (The sections below that
+still describe the earlier proxy-device transport are the pre-T-020 record;
+section 11 and the T-020 entry carry the resolved design.)
 
 | part | runs as | role |
 | --- | --- | --- |
