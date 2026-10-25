@@ -803,9 +803,39 @@ slices that keep `main` green:
   example. Still over proxy devices: errand binds 127.0.0.1:3129 and reports it
   on `--egress-proxy`, which `desired_devices` wires unchanged. `runtime.toml`
   does not carry it yet; that lands with slice 3, where the shim relay needs it.
-- **Slice 3 (the switch):** the disk-share link, the guest relay units,
-  `restricted.devices.proxy=block`, the image rebuild, the edge-case row, and
-  the live run. Validated live before it is pushed.
+- **Slice 3 (the switch, atomic):** the disk-share link, the guest relay units,
+  `restricted.devices.proxy=block`, the image rebuild, the edge-case row, and the
+  live run. It is one atomic change, validated live before it is pushed, because
+  the socket-mode guest proxyd units listen on the SAME `169.254.169.1` ports the
+  tcp-mode proxy devices use inside the guest, so the image is mode-specific and
+  there is no half-deployed state (image.rs must pass the mode, e.g.
+  `EB_BROKER_LINK`, so `provision.sh` installs the proxyd units only for the
+  socket build). The pieces, all mapped and proven:
+  - `runtime.rs`: add `broker_port` (serde default 3129, so old `runtime.toml`
+    parses); `setup.rs:1577` writes it; the `Runtime` struct literals
+    (`src/shim.rs`, `src/session.rs`, test fixtures) gain the field.
+  - `session.rs` `desired_devices`: for `broker_link == "socket"`, emit one
+    `eb-link` disk device (source the per-session link dir, `path=/var/lib/
+    errand-box/link` on the rootfs, `readonly=true`) and no proxy devices; add a
+    `link_dir` parameter threaded from `prepare`.
+  - `session.rs` lifecycle: `prepare` creates `/var/lib/errand/links/<name>/`
+    (994:993, 0750, idempotent) so the disk source exists for both `check`
+    (`shim.rs:310`) and `run`; `run_inner` creates `broker.sock` (994:993, 0660)
+    and `relay::unix_to_tcp(sock, "127.0.0.1:<rt.broker_port>")`; `gc` removes the
+    link dir right after `inc.delete` (`maint.rs:90`). `relay::unix_to_tcp`
+    already clears a stale socket (`relay.rs:103`), so re-runs are safe.
+  - `setup.rs`: `restricted.devices.proxy` -> `block` (`:1146`); write
+    `broker_link="socket"` for the root Incus backend.
+  - `image/provision.sh`: the two `systemd-socket-proxyd` `.socket`/`.service`
+    units (FreeBind, `ListenStream=169.254.169.1:{broker_port, guest_proxy_port}`,
+    upstream `/var/lib/errand-box/link/broker.sock`), enabled the way
+    `errand-box-guest.service` is, plus the `/var/lib/errand-box/link` mountpoint;
+    gated on the socket build. `image/guest-init:5-7` comment and
+    `docs/design.md:50,73,77` updated to drop the proxy-device description.
+  - `docs/bailey-contract.md:586-588`: the broker port is now a fixed configured
+    port, not kernel-picked. New `docs/edge-cases.md` row for the `/run`-tmpfs
+    shadow (fallback: mount on the rootfs; test: a live restart-and-reconnect).
+  - Prove: `sh tests/live/live.sh` with `restricted.devices.proxy` at `block`.
 
 ## Touchpoints for the build (mapped 2026-10-25)
 
