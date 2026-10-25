@@ -62,7 +62,7 @@ sup() {
 
 mock_pid=""
 errand_pid=""
-# shellcheck disable=SC2329 # the EXIT trap calls it
+# shellcheck disable=SC2329,SC2317 # the EXIT trap calls it, so its body is reached
 cleanup() {
   [ -n "$errand_pid" ] && kill "$errand_pid" 2>/dev/null && wait "$errand_pid" 2>/dev/null
   [ -n "$mock_pid" ] && kill "$mock_pid" 2>/dev/null && wait "$mock_pid" 2>/dev/null
