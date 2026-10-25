@@ -70,10 +70,11 @@ stopped: [`RESUME.md`](RESUME.md). Its summary table:
   positive (SC2317 on `mock-session.sh`) that blocked a clean local gate was
   fixed (`fca6d33`). No behaviour changed and no entry counts moved; only the
   cited cfrs title keeps "Sealed Sandbox", and `docs/history/` was left
-  untouched as the append-only record. The `gates` CI for `7752b89` (run
-  40176641403) had every confirmable job green (both `musl`; gate through
-  clippy); the final `test` and trivial downstream steps were unread behind a
-  stale GitHub API cache, and a self check-in is set for 09:16 UTC to confirm it.
+  untouched as the append-only record. The `gates` CI is green on the work (run
+  46 for the record-handoff commit, which is `7752b89` plus three record files,
+  so identical code): every job passed, `test` and both `musl` included, and
+  `secret-sweep` is green. The earlier `gates` run for `7752b89` itself was
+  cancelled by a transient ~38-minute stall on its runner's `test` step, moot.
 - **This host is now a working errand-box host.** `errand-box setup` finished
   with 0 failures (7 expected degradations: cgroup v1, no init, no AppArmor,
   dir pool, lxcfs 6, the two `/dev` modes). `sh tests/live/live.sh` runs here.
@@ -223,10 +224,9 @@ and now that this host is provisioned, the rest is drivable here:
 The host is provisioned and the live suite runs here, so host-touching work is
 no longer blocked.
 
-First, two carry-overs from last session: confirm the `gates` CI for `7752b89`
-(run 40176641403) finished `success` (the 09:16 UTC self check-in may already
-have noted it in chat), and see Open question 4 on whether to neutralise
-`docs/history/` too. Neither blocks the work below.
+First, one carry-over from last session: see Open question 4 on whether to
+neutralise `docs/history/` too. CI is already green on the latest work
+(`gates` run 46), so it does not block the work below.
 
 1. **T-090 task 3**, the Incus TUN link, now that T-020's socket link is done.
    The guest boot step makes a TUN, routes default via it, and the guest-side
