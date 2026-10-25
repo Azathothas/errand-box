@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 58 open, 8 partial, 1 blocked, 22 done.**
+**90 items. 59 open, 8 partial, 1 blocked, 22 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
 | P1 | 8 | 4 | 1 | 10 | 23 |
-| P2 | 33 | 3 | 0 | 8 | 44 |
+| P2 | 34 | 3 | 0 | 8 | 45 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 58 | 8 | 1 | 22 | 89 |
+| **All** | 59 | 8 | 1 | 22 | 90 |
 
 ---
 
@@ -124,7 +124,7 @@ decision).
 | [T-019](sandbox.md) | P2 | sandbox | open | An incus backend in errand |
 | [T-020](sandbox.md) | P1 | sandbox | open | A broker link that does not need proxy devices |
 | [T-021](sandbox.md) | P2 | sandbox | open | Operator-chosen session credentials, safely |
-| [T-022](sandbox.md) | P2 | sandbox | open | Egress a session can use beyond the HTTP broker |
+| [T-022](sandbox.md) | P2 | sandbox | open | Egress a session can use beyond the HTTP broker (superseded by T-090) |
 | [T-023](setup.md) | P2 | setup | open | Observability: metrics over time, and session traces |
 | [T-024](sandbox.md) | P1 | sandbox | open | Rootless podman under AppArmor's user namespace restriction, and on cgroup v2 |
 | [T-025](sandbox.md) | P2 | sandbox | open | An AppArmor route for user namespaces in guests, without the host-wide sysctl |
@@ -184,7 +184,7 @@ decision).
 | [T-079](setup.md) | P1 | setup | partial | root follows a symlink under an errand-owned directory, a second route to root |
 | [T-080](upkeep.md) | P1 | upkeep | done | freshness.sh runs an upstream release tag through sh -c, with the write token |
 | [T-081](errand.md) | P1 | errand | done | refuse_borrowed is checked seconds before the clone, so the git directory can be swapped |
-| [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA |
+| [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA (superseded by T-090) |
 | [T-083](errand.md) | P2 | errand | partial | A refused egress is silent, ERRAND_EGRESS_ALLOW replaces the defaults, and ports are global |
 | [T-084](setup.md) | P2 | setup | open | doctor, setup and the shim report capability by literal, by euid, or not at all |
 | [T-085](setup.md) | P2 | setup | open | errand-box is sized for a roomy host, and does not tell errand the real numbers |
@@ -192,3 +192,4 @@ decision).
 | [T-087](upkeep.md) | P2 | upkeep | open | The gate does not require an entry's prove output, and no live check crosses the provider boundary |
 | [T-088](upkeep.md) | P2 | upkeep | done | creds.env and errand-box.env are not ignored, and the secret check does not match them |
 | [T-089](errand.md) | P2 | errand | done | The broker panics instead of returning an error when a loopback bind is denied |
+| [T-090](sandbox.md) | P2 | sandbox | open | A virtual network layer: one gated egress path (smoltcp + policy gate), two link devices (Incus TUN, lite cfrs); subsumes T-022 and T-082 |

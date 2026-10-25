@@ -65,7 +65,7 @@ Measure again with the same commands before you change anything.
 
 | check | result |
 | --- | --- |
-| `sh scripts/ci-local.sh --step gate` | 9 of 9, `check-todo` 89 consistent, after each entry's commit |
+| `sh scripts/ci-local.sh --step gate` | 9 of 9, `check-todo` consistent, after each entry's commit and after T-090 was filed |
 | `cargo test --locked -p errand --lib` | 1,106 pass, 1 ignored |
 | `cargo test --locked -p errand-box --bins` | 115 pass |
 | `cargo fmt` / `cargo clippy --all-targets` | clean on both crates (`-D warnings`, pedantic) |
@@ -75,7 +75,7 @@ Measure again with the same commands before you change anything.
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB. No
 Incus, no proxy.
 
-**89 entries: 22 done, 8 partial, 1 blocked, 58 open.**
+**90 entries: 22 done, 8 partial, 1 blocked, 59 open.**
 
 ---
 
@@ -118,47 +118,53 @@ body while keeping its `Content-Length`, scrubbing a stream with no carry
 across the chunk boundary, an unbounded or metadata-trusting file read, and a
 reported raw-bytes field that skips the redactor.
 
+Then **authored T-090** (a design entry, not implemented, per authoring.md):
+a virtual network layer. Instead of bolting an upstream HTTP proxy onto the
+broker (T-082) and a per-port raw-TCP relay (T-022), one gated egress path, a
+smoltcp userspace stack plus the broker's gating factored into a shared policy
+gate, fed by a per-backend link device: a TUN over T-020's unix socket in the
+Incus backend, and the operator's `cfrs` `LD_PRELOAD` interposition in the lite
+backend (no root, no namespaces). Enforcement stays the backend's own seal (the
+netns; the sandbox's `AF_INET` block). **T-090 supersedes T-022 and T-082**,
+whose rulings are kept verbatim under a pointer to it. The operator ruled this
+direction over four questions this session.
+
 ## What is in progress
 
-Nothing mid-edit. Two parts of the security cluster are not started, each with
-a real blocker, not an oversight:
+Nothing mid-edit. The egress work is now T-090 (design filed, not started: it
+can only be proven on an Incus host and a sealed sandbox). The rest of the open
+security and host work has a real blocker, not an oversight:
 
-- **T-082** (egress through an HTTP proxy, and the TLS-intercept CA): not
-  started. It is cross-crate (`network.proxy_ca` spans errand-box and the
-  fork), and it **changes the SSRF posture**: through a proxy the broker
-  resolves nothing itself, so the address-level check on a `CONNECT` target is
-  lost and only the name check remains. Shipping that without a real proxy to
-  verify against, and without the operator weighing the weakened check, is the
-  wrong trade for a security batch, so it waits for a session with a proxy.
-- **The host cluster** (T-020, T-021, T-022, T-024, T-025, and T-019's native
-  backend): needs an Incus host and kernel features (AppArmor, user
-  namespaces, rootless podman) this container does not have.
+- **T-090** (the virtual network layer, which subsumes T-082 and T-022): a
+  staged XL design, filed this session. Each stage needs a host (the Incus
+  link, the live egress checks) or the sealed sandbox (the cfrs lite link).
+- **The host cluster** (T-020, T-021, T-024, T-025, T-019's native backend, and
+  the P1 host failures of T-027's run): needs an Incus host and kernel features
+  (AppArmor, user namespaces, rootless podman) this container does not have.
 
 ---
 
 ## Start here next session
 
-The security cluster is done but for T-082 and the host-dependent work.
+The host-free security cluster is done; what is left needs a host or the sealed
+sandbox.
 
 1. **Close T-079:** one `sh tests/live/live.sh up` on a host with Incus; no
    code work remains, only the live re-exercise of `up`'s `write_if_changed`.
-2. **T-082**, on a host with or behind a real HTTP proxy: implement
-   `upstreamProxy` for `CONNECT` and point the provider client at it, decide
-   and document the address-check posture through a proxy, and pass
-   `proxy_ca` into the session environment and the broker's provider client.
-   The entry carries the full plan and the fake-proxy test to write.
-3. **T-083's open items:** the rate-limited refusal line in the session's
-   thread (broker-to-session wiring), per-host `host:port` ports (end-to-end,
-   or not at all), and the suggestion-only egress CLI.
-4. **The host cluster, on an Incus host:** T-020 (the broker link that needs
-   no proxy devices), then T-024, T-021, T-022, T-025, and T-019's native
-   backend, which retires the `bailey` stand-in. The P1 host failures of
-   T-027's run and the capability layer under them (T-040, T-041, T-046,
-   T-038, T-039, T-042, T-084) also need a host.
-5. **Then** the remaining P2/P3 entries of T-027's run, smallest first
+2. **T-090**, the virtual network layer, staged as the entry lays out. Task 1
+   (factor the broker's gating into a backend-agnostic gate with verdict-parity
+   tests) is host-free and is the place to start; tasks 3 to 7 need an Incus
+   host, task 8 the sealed sandbox. This closes T-022 and T-082 as it lands.
+3. **The host cluster, on an Incus host:** T-020 (the broker link that needs
+   no proxy devices, which T-090's Incus link rides), then T-024, T-021, T-025,
+   and T-019's native backend, which retires the `bailey` stand-in. The P1 host
+   failures of T-027's run and the capability layer under them (T-040, T-041,
+   T-046, T-038, T-039, T-042, T-084) also need a host.
+4. **Then** the remaining P2/P3 entries of T-027's run, smallest first
    (T-051, T-047, T-048, T-058, T-059, T-060, T-061, T-062, T-064, T-065,
-   T-045, T-052, T-053, T-055, T-057, T-049, T-054, T-066), T-085, T-086, and
-   T-034's podman/`issues` removal.
+   T-045, T-052, T-053, T-055, T-057, T-049, T-054, T-066), T-083's open items
+   (which fold into T-090's gate), T-085, T-086, and T-034's podman/`issues`
+   removal.
 
 ---
 

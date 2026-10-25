@@ -1102,6 +1102,13 @@ host primitives it adds (`cp -a --reflink=auto`, then
 **Effort:** M
 **Status:** open
 
+**Superseded by T-090 (2026-10-25).** The upstream HTTP proxy and `proxy_ca`
+this entry adds become the virtual network layer's upstream-hop policy (T-090
+task 7): the gate dials direct or CONNECTs via the proxy, refuses an internal
+target before the proxy, and carries the CA into the dialer and the session
+trust store. The problem statement below is kept verbatim as the record; the
+work now lives in T-090, and this stays open until T-090 closes it.
+
 ## Problem
 
 errand's broker is the only way out of a session, and it reaches its targets

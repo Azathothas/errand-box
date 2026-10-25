@@ -762,6 +762,12 @@ sh tests/live/live.sh
 **Effort:** M
 **Status:** open
 
+**Superseded by T-090 (2026-10-25).** The virtual network layer carries raw TCP
+as one more flow through the shared gate, so the per-port relay this entry rules
+on is subsumed by T-090 task 6. The 2026-10-23 ruling below is kept verbatim as
+the record of why raw-TCP egress has the shape it does; the work now lives in
+T-090, and this stays open until T-090 closes it.
+
 ## Problem
 
 A session has no network device; its only path out is the two proxy devices
@@ -1226,3 +1232,220 @@ cargo test --locked -p errand-box lite::
 M1's criterion: a `lite` session runs the agent against a project, cannot read
 a file outside its grants, and leaves no process after SIGTERM and after
 SIGKILL of the launcher.
+
+---
+
+# T-090: a virtual network layer, one gated egress path for every backend
+
+**Source:** the operator, 2026-10-25, choosing a virtual network layer over an
+upstream HTTP proxy bolted onto the broker (T-082) and a per-port raw-TCP relay
+(T-022). The lite-backend link is the operator's `cfrs` design, "Userspace
+Virtual Networking in a Sealed Sandbox", read on 2026-10-25 at
+`https://raw.githubusercontent.com/talaria0101/cfrs/refs/heads/main/VIRTUAL-NETWORK.md`.
+**Category:** sandbox
+**Priority:** P2
+**Effort:** XL
+**Status:** open
+
+## What it is, and what it is not
+
+**Is:** one egress path for a session. errand-box runs a userspace TCP/IP stack
+(smoltcp) and a policy gate. The guest's traffic reaches the stack as a
+packet-or-flow stream over a per-backend link device; errand-box terminates
+every flow, resolves DNS itself, enforces the allowlist, the ports and the
+`is_private_address` check on every flow (resolve-then-route), and relays to the
+real destination, direct or through an upstream HTTP proxy for the external hop.
+The gate and the smoltcp stack are shared across backends; only the link device
+differs.
+
+**Is not:**
+- Not a host NIC or bridge. In the Incus backend the TUN rides T-020's
+  unix-socket link, so the guest stays device-less and
+  `restricted.devices.proxy=block` holds. In the lite backend there is no
+  device: the link is `AF_UNIX`.
+- Not "open the network". Every flow is gated as the broker gates HTTP today;
+  the default stays fail-closed.
+- Not TLS interception. HTTPS tunnels opaquely, as CONNECT does now; the
+  provider-credential swap stays an explicit terminating HTTP path, never a
+  man in the middle.
+- Not the enforcement itself. Enforcement is the backend's existing seal (the
+  network namespace in Incus; the sandbox's `AF_INET` block in lite). The
+  virtual layer is the usable, policed path through that seal.
+
+## What already exists (audited)
+
+- **The gate, in the broker** (`errand/src/sandbox/broker/`): `host_allowed`,
+  `is_private_address` (with T-032's arms), the port check, `public_addresses`
+  (resolve then judge), the provider route (`serve_provider_request`, the
+  nonce-to-key swap), and T-032's answer redaction. This is the policy core
+  T-090 factors out and reuses; only the transport in front of it changes.
+- **The Incus link** (T-020, ruled 2026-10-23): a unix socket on a read-only
+  disk device with a guest-side relay on 169.254.169.1, replacing proxy
+  devices. T-090's Incus link carries IP packets (a TUN) over this same socket,
+  so T-020's property is kept.
+- **TUN availability:** the guest already has `/dev/net/tun` (doctor checks it,
+  `src/up.rs:348`, `src/main.rs:561`).
+- **Raw-TCP egress** (T-022, ruled): a per-port relay over T-020's link. T-090
+  subsumes it; raw TCP is one more flow through the gate.
+- **The upstream hop** (T-082, open): an upstream HTTP proxy and `proxy_ca`.
+  T-090 absorbs it as the gate's upstream-hop policy (direct, or CONNECT via the
+  proxy; an internal target is refused at resolve-then-route and never sent to
+  the proxy; `proxy_ca` into the gate's dialer and the session trust store).
+- **The lite transport** (`cfrs`, the operator's, WIP): an `LD_PRELOAD`
+  `libcfrsnet.so` rewrites `AF_INET` sockets to `AF_UNIX` abstract sockets
+  (`\0cfrsnet/4/<ip>/<port>`); a smoltcp stack on `10.66.0.0/24` with a
+  transport-agnostic link (an in-process queue or a length-prefixed tunnel); a
+  SOCKS5/HTTP proxy mode for programs that cannot be preloaded. cfrs's open
+  work: Switch mode, the control server, a single-waker race, unbounded queues,
+  a 1280-byte MTU floor, and no interposition for statically-linked programs.
+- **No userspace netstack dependency** in the tree today; smoltcp is the Rust
+  candidate, and cfrs already carries it.
+
+## Premise, and how it was checked
+
+Read, not measured (no Incus host and no sealed sandbox this session):
+
+- The gate functions are the broker's current code (T-032 touched them this
+  session).
+- The Incus link and its ruling are T-020's.
+- The lite transport is cfrs's design doc. cfrs is WIP; its claims (`AF_INET`
+  gives `EACCES`, namespaces give `EPERM`, `LD_PRELOAD` plus `AF_UNIX` works)
+  are the operator's measurements in that sandbox, not re-run here.
+
+Each is measured before the stage that builds on it (the checkpoints below).
+
+## Decisions
+
+1. **smoltcp, in errand-box's process**, not a sidecar: the policy stays in the
+   trusted Rust process, one language, reusing the gate. A sidecar stays the
+   fallback only if smoltcp cannot carry the flow volume, measured not assumed.
+2. **DNS is answered by errand-box on the virtual link.** The guest's resolver
+   points at the gate; the gate resolves, applies the allowlist and the address
+   check to the answer, and returns only addresses that pass. This is where
+   resolve-then-route lives, so the check covers every flow. A literal-IP dial
+   that skipped DNS is checked again at dial time, so DNS is not the only gate.
+3. **Provider flows route to the existing terminating HTTP endpoint**
+   (`serve_provider_request`): the gate recognises the provider's virtual
+   address and hands those flows to it; everything else tunnels. The netstack is
+   a router in front of the broker's two existing roles.
+4. **The gate is a backend-agnostic library; the link device is per-backend.**
+   Incus: a TUN over T-020's unix socket. Lite: cfrs's `LD_PRELOAD`
+   interposition. Both feed the same gate and stack. That is the point: one
+   gate, two links.
+5. **Enforcement is the backend's existing seal, not the virtual layer.** Incus:
+   the netns. Lite: the sandbox's `AF_INET` block, so a static binary or a
+   shim-evader fails closed. T-090 does not claim to seal a backend that is not
+   already sealed; the lite seal is cfrs's premise, recorded as such.
+6. **T-090 supersedes T-022 and T-082.** Their rulings are kept verbatim in
+   those entries (history.md: append, never edit) under a pointer here; the
+   work moves to T-090's stages. T-083's done parts (the refusal reasons,
+   `ERRAND_EGRESS_ALLOW_EXTRA`) stay; its open parts (per-host `host:port`, the
+   in-thread refusal line) fold into the gate.
+
+## Tasks
+
+Staged, so each stage leaves a working egress and proves against the last.
+
+1. **The gate as a library.** Factor the broker's gating (allowlist, ports,
+   `is_private_address`, `public_addresses`, the provider route, the redaction)
+   into a backend-agnostic `gate` that answers a flow (src, dst name or ip,
+   port) with allow, refuse or route-to-provider, plus the dialer
+   (direct or upstream-proxy). Invariant: verdicts identical to today's broker
+   on the same inputs. Reuse: the broker functions, moved not rewritten. Prove:
+   the current broker tests pass against the gate unchanged,
+   `cargo test --locked -p errand broker`.
+2. **The smoltcp stack and a link-device seam.** A smoltcp stack on a private
+   subnet with a `LinkDevice` trait (cfrs's "in-process queue or tunnel").
+   Invariant: a userspace TCP handshake and transfer over an in-process link
+   round-trips. Prove: `cargo test --locked -p errand netstack`.
+3. **The Incus link: a TUN over T-020's socket.** The guest boot step makes a
+   TUN, routes default via it, and the guest-side relay pumps packets over
+   T-020's unix socket; errand-box feeds the stack. Invariant: one allowlisted
+   HTTPS flow reaches its host and a non-allowlisted one is refused, with
+   `restricted.devices.proxy=block`. Prove (live): `sh tests/live/live.sh`.
+4. **DNS plus resolve-then-route plus the address check on every flow.**
+   Invariant: a literal metadata IP and an allowlisted name resolving internal
+   are both refused; an external name is relayed. Prove (live): the live egress
+   checks with an internal-target case added.
+5. **The provider endpoint over the stack.** Route provider flows to
+   `serve_provider_request`. Invariant: the nonce is swapped for the key, the
+   answer is redacted (T-032), and the session never holds the key. Prove: the
+   provider tests through the stack.
+6. **Raw TCP (closes T-022).** A granted `host:port` flow tunnels; an ungranted
+   one fails. Invariant: ssh to a granted host works, every other raw-TCP
+   destination fails closed. Prove (live): T-022's prove.
+7. **The upstream hop (closes T-082).** Direct, or CONNECT via an upstream
+   proxy; `proxy_ca` into the dialer and the session trust store. Invariant: on
+   a proxy-only host an allowlisted external flow reaches its host through the
+   proxy, an internal target is refused before the proxy, and a
+   TLS-intercepting proxy's CA is trusted. Prove (live): a host behind a proxy.
+8. **The lite link (cfrs).** The `LD_PRELOAD` interposition feeding the same
+   gate and stack, with the sandbox's `AF_INET` block as the backstop.
+   Invariant: a dynamically-linked client reaches an allowlisted host and
+   nothing else; a static binary fails closed, recorded not silently bypassing.
+   Prove (sealed sandbox): cfrs's verification plus the gate's allowlist test.
+   Depends on cfrs's open work; may land after the Incus stages.
+
+## Checkpoints
+
+- Before task 3: measure T-020's link (its three listed items: a guest connects
+  to a unix socket on a read-only disk device; the owner and mode; the
+  guest-side relay). T-090's Incus link cannot be built before T-020's is real.
+- Before task 8: measure cfrs's premises in the target sandbox (`AF_INET`
+  `EACCES`, namespaces `EPERM`, `LD_PRELOAD` honoured) and its open work
+  (unbounded queues, the MTU floor) against the flow sizes errand needs.
+- After task 1: the gate-as-library matches the broker verdict for verdict
+  before any transport rides it.
+
+## Pitfalls
+
+- A userspace stack parses untrusted packets from the guest, a new
+  security-sensitive surface. Bounded buffers, a fuzz target, and the
+  forbidden-patterns rules on buffering whole bodies and trusting declared
+  lengths all apply. cfrs's "unbounded queues" open item is this class.
+- The address check must fire on a literal-IP dial, not only on a DNS answer
+  (decision 2).
+- The MTU floor and the framing must not silently truncate a flow
+  (forbidden-patterns: padding or truncating on a length mismatch).
+- Performance: userspace packet processing for all session egress; measure
+  before claiming parity with the direct broker.
+- `LD_PRELOAD` is usability, not enforcement (decision 5): the entry must not
+  present the lite backend as sealed by the shim.
+- Keep T-020's property: the Incus link rides the unix socket, never a host NIC.
+
+## Acceptance gate (three parts)
+
+- (a) `sh scripts/ci-local.sh` green, plus the gate-as-library and netstack
+  unit tests.
+- (b) The live tests on an Incus host (tasks 3 to 7) and, for task 8, cfrs's
+  verification in the sealed sandbox.
+- (c) The deep reviews: the packet parsing read adversarially; the gate's
+  verdict parity with the old broker audited; the lite backend's fail-closed
+  behaviour for a static binary confirmed.
+
+## Self-review questions (for the implementing session)
+
+- Does the gate give byte-identical verdicts to today's broker (task 1)?
+- Is there any flow that reaches the network without the address check: a
+  literal-IP dial, a DNS answer, a provider flow? Each named.
+- Does a static binary in the lite backend fail closed, or silently reach the
+  network?
+- Does the Incus link keep `restricted.devices.proxy=block`?
+
+## Only the operator can do
+
+- Provide or name a host with Incus for tasks 3 to 7, and a host behind an HTTP
+  proxy for task 7.
+- Provide or name the sealed-sandbox environment for task 8, and rule on how
+  errand-box consumes cfrs (vendored in-tree per the third-party convention, or
+  a crate dependency) when task 8 is reached.
+- Rule on the lite backend's static-binary gap (accept fail-closed, or require
+  a static-interposition route) before task 8 ships.
+
+## Prove
+
+```sh
+sh scripts/ci-local.sh
+sh tests/live/live.sh            # on an Incus host: tasks 3 to 7
+# task 8: cfrs's verification in the sealed sandbox, plus the gate allowlist test
+```
