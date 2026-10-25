@@ -803,7 +803,7 @@ slices that keep `main` green:
   example. Still over proxy devices: errand binds 127.0.0.1:3129 and reports it
   on `--egress-proxy`, which `desired_devices` wires unchanged. `runtime.toml`
   does not carry it yet; that lands with slice 3, where the shim relay needs it.
-- **Slice 3 (the switch, atomic) -- implemented 2026-10-25, live validation in
+- **Slice 3 (the switch, atomic). Implemented 2026-10-25; live validation in
   progress.** All the code and docs below landed and are unit-green (errand and
   errand-box tests, fmt, clippy, shellcheck, errand-config, gate). `setup`
   rebuilt the socket-mode image on this host; the live `sh tests/live/live.sh`
