@@ -3,6 +3,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 /// The start time of a process in clock ticks since boot (field 22 of
@@ -59,16 +60,33 @@ pub fn lock(path: &Path, wait: bool) -> Result<Lock, String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
     }
-    let f = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(path)
-        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    // Open without following a symlink. The lock directory is owned by the
+    // errand account (session::lock_path), which could plant a link at the
+    // lock name to redirect root's open, and the chown below, to any file
+    // (T-079). Create the lock first, so a file we chown is one we just made,
+    // never a pre-planted link or hardlink; otherwise open the existing lock,
+    // which already has the right owner.
+    let base = || {
+        let mut o = OpenOptions::new();
+        o.write(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        o
+    };
+    let (f, created) = match base().create_new(true).open(path) {
+        Ok(f) => (f, true),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (
+            base()
+                .open(path)
+                .map_err(|e| format!("cannot open {}: {e}", path.display()))?,
+            false,
+        ),
+        Err(e) => return Err(format!("cannot open {}: {e}", path.display())),
+    };
     // root and the errand account share lock files (session::lock_path): a
     // file root creates goes to the directory's owner, or the account could
-    // not open it again.
-    if let Some(md) = path.parent().and_then(|d| std::fs::metadata(d).ok()) {
+    // not open it again. Only a file this call just created, so the chown can
+    // never land on a planted target.
+    if created && let Some(md) = path.parent().and_then(|d| std::fs::metadata(d).ok()) {
         use std::os::unix::fs::MetadataExt;
         if crate::paths::euid() == 0 && md.uid() != 0 {
             let _ = std::os::unix::fs::fchown(&f, Some(md.uid()), Some(md.gid()));
@@ -281,5 +299,25 @@ mod tests {
         // flock locks are per open file description, so a second open in
         // the same process conflicts too.
         assert!(lock(&p, false).is_err());
+    }
+
+    #[test]
+    fn lock_refuses_a_symlink_at_the_lock_path_and_leaves_the_target(/* T-079 */) {
+        let dir = std::env::temp_dir().join(format!("eb-locklink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let victim = dir.join("victim");
+        std::fs::write(&victim, "ROOT-OWNED").unwrap();
+        let lp = dir.join("eb-x.lock");
+        std::os::unix::fs::symlink(&victim, &lp).unwrap();
+        // The lock must not open through the planted link, and the target is
+        // untouched (neither created, written, nor chowned).
+        assert!(lock(&lp, false).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ROOT-OWNED");
+        // A normal lock path still works: create, then re-open the existing one.
+        let ok = dir.join("eb-ok.lock");
+        drop(lock(&ok, false).unwrap());
+        drop(lock(&ok, false).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -320,8 +320,26 @@ pub fn write_if_changed(path: &Path, content: &str, mode: u32) -> Result<bool, S
         fs::create_dir_all(d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
     }
     let tmp = path.with_extension("errand-box-tmp");
-    fs::write(&tmp, content).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    fs::set_permissions(&tmp, fs::Permissions::from_mode(mode)).map_err(|e| e.to_string())?;
+    // Create the temporary file without following a symlink. It sits in the
+    // same directory as the final file, which under errand's home the errand
+    // account owns, and a link planted at the temporary name would redirect
+    // root's write and chmod to any file (T-079). Remove a stale or planted
+    // temp first (a symlink is removed as a link, not followed), then create
+    // anew with O_EXCL and fchmod the descriptor, not the path.
+    let _ = fs::remove_file(&tmp);
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&tmp)
+        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    f.write_all(content.as_bytes())
+        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    f.set_permissions(fs::Permissions::from_mode(mode))
+        .map_err(|e| e.to_string())?;
+    drop(f);
     fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     Ok(true)
 }
@@ -1618,5 +1636,23 @@ mod tests {
         assert!(write_if_changed(&p, "a", 0o644).unwrap());
         assert!(!write_if_changed(&p, "a", 0o644).unwrap());
         assert!(write_if_changed(&p, "b", 0o644).unwrap());
+    }
+
+    #[test]
+    fn write_if_changed_does_not_follow_a_symlink_at_the_temp_name(/* T-079 */) {
+        let dir = std::env::temp_dir().join(format!("eb-wic-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let victim = dir.join("victim");
+        fs::write(&victim, "ROOT-OWNED").unwrap();
+        let final_path = dir.join("config");
+        let tmp = final_path.with_extension("errand-box-tmp");
+        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+        // The write removes the planted link and writes a fresh file; the
+        // victim is never written through the link.
+        let _ = write_if_changed(&final_path, "new\n", 0o600);
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "ROOT-OWNED");
+        assert_eq!(fs::read_to_string(&final_path).unwrap(), "new\n");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -71,7 +71,7 @@ Measure again with the same commands before you change anything.
 
 The build host: a hosted container, kernel 6.18, x86_64, 4 CPUs, 16 GiB.
 
-**89 entries: 18 done, 6 partial, 1 blocked, 64 open.**
+**89 entries: 18 done, 7 partial, 1 blocked, 63 open.**
 
 ---
 

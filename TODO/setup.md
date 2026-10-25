@@ -1673,7 +1673,7 @@ cargo test --locked config:: errandcfg::
 **Category:** setup
 **Priority:** P1
 **Effort:** M
-**Status:** open
+**Status:** partial
 
 ## Problem
 
@@ -1736,7 +1736,34 @@ and the target is untouched; another plants one at the temporary name and
 asserts `write_if_changed` fails or leaves the target untouched. Each fails
 on the current code.
 
----
+## Done, and open
+
+**The fix and its unit proof are done, 2026-10-25. Live re-run pending a
+host.** `procs::lock` (`src/procs.rs`) opens with `O_NOFOLLOW` and `O_CLOEXEC`,
+creates the lock with `create_new` and `fchown`s only a file it just created,
+so a symlink or hardlink planted at the lock name is refused rather than
+followed. `up::write_if_changed` (`src/up.rs`) removes any stale or planted
+temporary file, creates the temporary with `create_new` and `O_NOFOLLOW`, and
+`fchmod`s the descriptor rather than the path, so a link at the temporary name
+cannot redirect root's write or chmod. A `forbidden-patterns.md` row names the
+class, beside E-54.
+
+Prove, run 2026-10-25 (adapted to the binary crate, which has no lib target):
+
+```sh
+cargo test --locked -p errand-box --bins -- procs:: write_if_changed
+```
+
+```text
+test procs::tests::lock_refuses_a_symlink_at_the_lock_path_and_leaves_the_target ... ok
+test up::tests::write_if_changed_does_not_follow_a_symlink_at_the_temp_name ... ok
+test result: ok. (procs 4, up 2)
+```
+
+fmt and clippy are clean. **Open:** `write_if_changed` is a helper `up` and
+`setup` use, so RULES.md asks for a live run before the entry closes; this
+host has no Incus. The only step left is `sh tests/live/live.sh up` on a host,
+which re-exercises the helper through `up`. No code work remains.
 
 # T-084: doctor, setup and the shim report capability by literal, by euid, or not at all
 

@@ -87,15 +87,15 @@ decision).
 
 ## Counts
 
-**89 items. 64 open, 6 partial, 1 blocked, 18 done.**
+**89 items. 63 open, 7 partial, 1 blocked, 18 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 4 | 4 |
-| P1 | 10 | 3 | 1 | 9 | 23 |
+| P1 | 9 | 4 | 1 | 9 | 23 |
 | P2 | 37 | 2 | 0 | 5 | 44 |
 | P3 | 17 | 1 | 0 | 0 | 18 |
-| **All** | 64 | 6 | 1 | 18 | 89 |
+| **All** | 63 | 7 | 1 | 18 | 89 |
 
 ---
 
@@ -181,7 +181,7 @@ decision).
 | [T-076](upkeep.md) | P3 | upkeep | open | mock-session.sh passes when the session never started |
 | [T-077](errand.md) | P3 | errand | open | discord-mock has no HTTP control for delete, archive and commands |
 | [T-078](upkeep.md) | P3 | upkeep | open | feature.yml applies a label that does not exist |
-| [T-079](setup.md) | P1 | setup | open | root follows a symlink under an errand-owned directory, a second route to root |
+| [T-079](setup.md) | P1 | setup | partial | root follows a symlink under an errand-owned directory, a second route to root |
 | [T-080](upkeep.md) | P1 | upkeep | done | freshness.sh runs an upstream release tag through sh -c, with the write token |
 | [T-081](errand.md) | P1 | errand | open | refuse_borrowed is checked seconds before the clone, so the git directory can be swapped |
 | [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA |
