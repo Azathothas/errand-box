@@ -147,8 +147,9 @@ request when an upstream release appears. The Incus line follows the host:
 ## What it does not do
 
 - It does not make a guest a VM. The guests share the host's kernel; a
-  kernel exploit inside a guest is a host compromise. On a host with KVM,
-  Incus can run VMs instead; errand-box does not offer that yet.
+  kernel vulnerability, used from inside a guest, gives control of the host.
+  On a host with KVM, Incus can run VMs instead; errand-box does not offer
+  that yet.
 - It does not yet carry its own sandbox backend in errand: errand calls it
   as `bailey` (T-019). Where errand's behaviour limits the sandbox, this
   page and [edge-cases.md](edge-cases.md) say so: errand's broker connects

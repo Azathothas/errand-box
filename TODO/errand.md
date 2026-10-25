@@ -213,8 +213,8 @@ The broker matches a provider route with `path.starts_with(prefix)`
 `/provider/NAME` with no trailing slash (`errand/src/sandbox/bailey.rs:182`).
 It then pastes the rest of the path onto the upstream URL (`:547`) and puts
 the real credential on the request (`build_forwarded`, `:657`). With a
-provider whose base URL has no path, `/provider/NAME.attacker.example/v1`
-goes to `https://<provider host>.attacker.example/v1` with the key. A second
+provider whose base URL has no path, `/provider/NAME.other.example/v1`
+goes to `https://<provider host>.other.example/v1` with the key. A second
 spelling puts `:443`, then `@`, then a host after the name: `url_host`
 (`:720`) splits on the last colon and judges the provider's host, and the
 client dials the other. `provider_refusal` (`:592`) checks only that the

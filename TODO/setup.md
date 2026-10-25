@@ -1678,7 +1678,7 @@ cargo test --locked config:: errandcfg::
 
 ---
 
-# T-079: root follows a symlink under an errand-owned directory, a second route to root
+# T-079: root follows a symlink under an errand-owned directory, a second privilege-escalation path
 
 **Source:** [issue #43](https://github.com/Azathothas/errand-box/issues/43) and [issue #44](https://github.com/Azathothas/errand-box/issues/44), read on `57231da`
 **Category:** setup

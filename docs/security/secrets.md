@@ -88,7 +88,7 @@ identity" is useful; the token that authenticated is not.
 Order matters, and the first step is not the git one.
 
 1. **Rotate the credential.** Immediately, before anything else. It is
-   compromised from the moment it was written, and the rest of this list does
+   exposed from the moment it was written, and the rest of this list does
    not change that. A rewritten history does not un-publish a value: it was
    readable, it may be cached, mirrored, or already indexed.
 2. **Tell the operator.** They own the account and they may need to check for

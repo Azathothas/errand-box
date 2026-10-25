@@ -19,8 +19,8 @@ then "Report a vulnerability"). Do not open a public issue for it.
 
 A guest is an unprivileged system container. Its boundary is the shared
 host kernel, user namespaces with a uid range of its own, seccomp, and the
-cgroup limits Incus sets. It is not a VM. A kernel exploit in a guest is a
-host compromise.
+cgroup limits Incus sets. It is not a virtual machine. A kernel
+vulnerability, used from inside a guest, gives control of the host.
 
 ## Who holds what
 
@@ -50,14 +50,14 @@ Never in a chat, an issue, or a file in a repository.
 | CI on those pull requests (optional) | a repository secret `FRESHNESS_TOKEN` | a fine-grained token for this repository only: contents and pull requests, read and write. A pull request opened with the workflow token starts no workflow; one opened with this token does |
 | a release | none beyond the workflow token | `release.yml` asks for contents: write |
 
-## What each compromise reaches
+## What a takeover of each component reaches
 
-| compromised | reaches |
+| component taken over | reaches |
 | --- | --- |
 | a guest's root | its own instance; the two host directories errand granted it (the project and the session's state); errand's broker, with errand's allowlist. Not the host network, other guests, or the host's other files. |
-| a guest that escapes its container through a setup mistake | an unprivileged host uid of its own range; files of the errand account through the agent's mapped uid 1000. |
-| a guest that escapes through a kernel exploit | the host. |
-| the errand account | errand's credentials, and today root: its restricted project forbids privileged containers, raw LXC settings, and disk devices outside its home, but allows proxy devices for the broker link, and a proxy device can reach any host socket, the Incus admin socket included (E-61). T-020 replaces the link so the project can forbid them. A guest cannot add devices, so this is reached only through the errand account itself. |
+| a guest that leaves its container through a setup mistake | an unprivileged host uid of its own range; files of the errand account through the agent's mapped uid 1000. |
+| a guest that leaves its container through a kernel vulnerability | the host. |
+| the errand account | errand's credentials. Its restricted project forbids privileged containers, raw LXC settings, disk devices outside its home, and proxy devices (T-020), so the broker link is a shared unix socket. No device can reach a host socket the project does not intend (E-61 is closed). A guest cannot add devices, so only the errand account itself reaches this. |
 | incusd, incus-user, lxcfs | root. |
 
 ## The rules each change keeps

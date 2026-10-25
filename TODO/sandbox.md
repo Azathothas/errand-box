@@ -569,7 +569,7 @@ entry:
 - The incusd runs as root, and `probe` requires the `incus` client as root
   or in `incus-admin` (D1, D3). errand's account in `incus-admin` is equal
   to root, which errand-box's restricted project exists to avoid
-  ([SECURITY.md](../SECURITY.md), "What each compromise reaches").
+  ([SECURITY.md](../SECURITY.md), "What a takeover of each component reaches").
 
 The operator ruled on 2026-10-23, after reading this, on what errand-box
 does when errand ships the backend: section 10 of
@@ -635,7 +635,7 @@ attach one whose host end is any host socket, the Incus admin socket
 included. That grants the errand account more than the restricted project
 is meant to (E-61). A guest cannot add devices, so this is not reachable
 from inside a session; it matters when the errand account itself is
-compromised.
+taken over.
 
 ## Premise
 
@@ -1018,7 +1018,7 @@ rather than opening the network:
 The entry resolves to the narrowest mechanism that makes the operator's
 named outbound connection work while every other destination still fails
 closed. It is resolved with T-021 (the credential is useless without the
-path, and the path is dangerous without a scoped credential).
+path, and the path should not be opened without a scoped credential).
 
 ## Decision
 
@@ -1489,9 +1489,9 @@ differs.
 - Not TLS interception. HTTPS tunnels opaquely, as CONNECT does now; the
   provider-credential swap stays an explicit terminating HTTP path, never a
   man in the middle.
-- Not the enforcement itself. Enforcement is the backend's existing seal (the
-  network namespace in Incus; the sandbox's `AF_INET` block in lite). The
-  virtual layer is the usable, policed path through that seal.
+- Not the enforcement itself. Enforcement is the backend's existing isolation
+  (the network namespace in Incus; the sandbox's `AF_INET` block in lite). The
+  virtual layer is the usable, policed path through that boundary.
 
 ## What already exists (audited)
 
@@ -1524,7 +1524,7 @@ differs.
 
 ## Premise, and how it was checked
 
-Read, not measured (no Incus host and no sealed sandbox this session):
+Read, not measured (no Incus host and no isolated sandbox this session):
 
 - The gate functions are the broker's current code (T-032 touched them this
   session).
@@ -1553,10 +1553,11 @@ Each is measured before the stage that builds on it (the checkpoints below).
    Incus: a TUN over T-020's unix socket. Lite: cfrs's `LD_PRELOAD`
    interposition. Both feed the same gate and stack. That is the point: one
    gate, two links.
-5. **Enforcement is the backend's existing seal, not the virtual layer.** Incus:
-   the netns. Lite: the sandbox's `AF_INET` block, so a static binary or a
-   shim-evader fails closed. T-090 does not claim to seal a backend that is not
-   already sealed; the lite seal is cfrs's premise, recorded as such.
+5. **Enforcement is the backend's existing isolation, not the virtual layer.**
+   Incus: the netns. Lite: the sandbox's `AF_INET` block, so a static binary or
+   a program that does not use the shim still fails closed. T-090 does not add
+   isolation to a backend that is not already isolated; the lite isolation is
+   cfrs's premise, recorded as such.
 6. **T-090 supersedes T-022 and T-082.** Their rulings are kept verbatim in
    those entries (history.md: append, never edit) under a pointer here; the
    work moves to T-090's stages. T-083's done parts (the refusal reasons,
@@ -1629,7 +1630,7 @@ Staged, so each stage leaves a working egress and proves against the last.
    gate and stack, with the sandbox's `AF_INET` block as the backstop.
    Invariant: a dynamically-linked client reaches an allowlisted host and
    nothing else; a static binary fails closed, recorded not silently bypassing.
-   Prove (sealed sandbox): cfrs's verification plus the gate's allowlist test.
+   Prove (isolated sandbox): cfrs's verification plus the gate's allowlist test.
    Depends on cfrs's open work; may land after the Incus stages.
 
 ## Checkpoints
@@ -1662,7 +1663,7 @@ Staged, so each stage leaves a working egress and proves against the last.
 - Performance: userspace packet processing for all session egress; measure
   before claiming parity with the direct broker.
 - `LD_PRELOAD` is usability, not enforcement (decision 5): the entry must not
-  present the lite backend as sealed by the shim.
+  present the lite backend as isolated by the shim.
 - Keep T-020's property: the Incus link rides the unix socket, never a host NIC.
 
 ## Acceptance gate (three parts)
@@ -1670,8 +1671,8 @@ Staged, so each stage leaves a working egress and proves against the last.
 - (a) `sh scripts/ci-local.sh` green, plus the gate-as-library and netstack
   unit tests.
 - (b) The live tests on an Incus host (tasks 3 to 7) and, for task 8, cfrs's
-  verification in the sealed sandbox.
-- (c) The deep reviews: the packet parsing read adversarially; the gate's
+  verification in the isolated sandbox.
+- (c) The deep reviews: the packet parsing read with untrusted input in mind; the gate's
   verdict parity with the old broker audited; the lite backend's fail-closed
   behaviour for a static binary confirmed.
 
@@ -1688,7 +1689,7 @@ Staged, so each stage leaves a working egress and proves against the last.
 
 - Provide or name a host with Incus for tasks 3 to 7, and a host behind an HTTP
   proxy for task 7.
-- Provide or name the sealed-sandbox environment for task 8, and rule on how
+- Provide or name the isolated-sandbox environment for task 8, and rule on how
   errand-box consumes cfrs (vendored in-tree per the third-party convention, or
   a crate dependency) when task 8 is reached.
 - Rule on the lite backend's static-binary gap (accept fail-closed, or require
@@ -1699,5 +1700,5 @@ Staged, so each stage leaves a working egress and proves against the last.
 ```sh
 sh scripts/ci-local.sh
 sh tests/live/live.sh            # on an Incus host: tasks 3 to 7
-# task 8: cfrs's verification in the sealed sandbox, plus the gate allowlist test
+# task 8: cfrs's verification in the isolated sandbox, plus the gate allowlist test
 ```

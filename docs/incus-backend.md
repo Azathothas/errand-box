@@ -282,9 +282,10 @@ errand. errand-box's `errand-box setup` and `errand-box up` do all of them
 - With no network device, a direct connection fails (errno 101); the
   broker applies errand's allowlist to everything else.
 - No session value is written to a host command line.
-- The guests share the host's kernel. A kernel exploit in a guest is a
-  host compromise. This is the same boundary as the podman backend's, with
-  a larger kernel surface inside the guest (systemd, Docker).
+- The guests share the host's kernel. A kernel-level vulnerability reached
+  from a guest therefore reaches the host. This is the same boundary as the
+  podman backend's, with a larger kernel surface inside the guest (systemd,
+  Docker).
 
 ## 10. Decisions for errand's author
 

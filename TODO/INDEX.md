@@ -59,7 +59,7 @@ that leaves every instance (T-046), WSL2 that stops an idle distribution
 (T-038) or cannot start a guest without systemd (T-039), and a
 user-namespaced host where no guest starts (T-042). Three P1 entries from
 the third-party review of 2026-10-25 are security: root follows a symlink
-under an errand-owned directory, a second route to root beyond E-61 and
+under an errand-owned directory, a second privilege-escalation path beyond E-61 and
 T-020 (T-079); the freshness workflow runs an upstream tag through `sh -c`
 with its write token (T-080); and the clone of a pull request reads the
 session's git directory seconds after the check that T-030 added, so a guest
@@ -181,7 +181,7 @@ decision).
 | [T-076](upkeep.md) | P3 | upkeep | open | mock-session.sh passes when the session never started |
 | [T-077](errand.md) | P3 | errand | open | discord-mock has no HTTP control for delete, archive and commands |
 | [T-078](upkeep.md) | P3 | upkeep | open | feature.yml applies a label that does not exist |
-| [T-079](setup.md) | P1 | setup | done | root follows a symlink under an errand-owned directory, a second route to root |
+| [T-079](setup.md) | P1 | setup | done | root follows a symlink under an errand-owned directory, a second privilege-escalation path |
 | [T-080](upkeep.md) | P1 | upkeep | done | freshness.sh runs an upstream release tag through sh -c, with the write token |
 | [T-081](errand.md) | P1 | errand | done | refuse_borrowed is checked seconds before the clone, so the git directory can be swapped |
 | [T-082](errand.md) | P2 | errand | open | The broker reaches egress only directly, and no session trusts a proxy's CA (superseded by T-090) |

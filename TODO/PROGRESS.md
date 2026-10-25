@@ -144,8 +144,8 @@ broker (T-082) and a per-port raw-TCP relay (T-022), one gated egress path, a
 smoltcp userspace stack plus the broker's gating factored into a shared policy
 gate, fed by a per-backend link device: a TUN over T-020's unix socket in the
 Incus backend, and the operator's `cfrs` `LD_PRELOAD` interposition in the lite
-backend (no root, no namespaces). Enforcement stays the backend's own seal (the
-netns; the sandbox's `AF_INET` block). **T-090 supersedes T-022 and T-082**,
+backend (no root, no namespaces). Enforcement stays the backend's own isolation
+(the netns; the sandbox's `AF_INET` block). **T-090 supersedes T-022 and T-082**,
 whose rulings are kept verbatim under a pointer to it. The operator ruled this
 direction over several questions this session.
 
@@ -177,7 +177,7 @@ and now that this host is provisioned, the rest is drivable here:
   **T-020, is now done** (below). Next is task 3 itself (the Incus TUN link),
   which rides T-020's unix socket; then tasks 4 to 8 (DNS + resolve-then-route,
   the provider endpoint, raw TCP, the upstream hop, the cfrs lite link); 3 to 7
-  run on this host, 8 wants the sealed sandbox.
+  run on this host, 8 wants the isolated sandbox.
 - **T-020** (the unix-socket broker link): **done this session**, closing E-61.
   The operator chose a fixed broker port; it landed in three slices (errand's
   configurable `brokerPort`, errand-box setting it, then the switch: the
@@ -208,7 +208,7 @@ no longer blocked.
    is the async smoltcp integration (open work even in cfrs). Live-testable here.
    Reuse T-020's proven link (the fixed broker port, the disk-share, the guest
    relay pattern) and E-71 (mount on the rootfs, not `/run`). Then tasks 4 to 7
-   live here, task 8 in the sealed sandbox. This closes T-022 and T-082.
+   live here, task 8 in the isolated sandbox. This closes T-022 and T-082.
 2. **The rest of the host cluster, on this Incus host:** T-024, T-021, T-025,
    and T-019's native backend, which retires the `bailey` stand-in. The P1 host
    failures of T-027's run and the capability layer under them (T-040, T-041,
