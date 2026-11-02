@@ -12,7 +12,7 @@
 # version. errand is not here: it is built into errand-box (T-028).
 
 [kage]
-latest = "v0.5.0"
+latest = "v0.6.0"
 
 [kage.versions."v0.5.0".x86_64]
 url = "https://github.com/QaidVoid/kage/releases/download/v0.5.0/kage-x86_64-linux.tar.xz"
@@ -21,3 +21,11 @@ sha256 = "bc10c6c217d6580e2cb2670fd5c65af3f3bbe443e9e5c6df594db3747decfce0"
 [kage.versions."v0.5.0".aarch64]
 url = "https://github.com/QaidVoid/kage/releases/download/v0.5.0/kage-aarch64-linux.tar.xz"
 sha256 = "6a93d2bf0a8036bc7c3d0c99c337d34ac0570d39529f008f995bf560aeb9a78b"
+
+[kage.versions."v0.6.0".x86_64]
+url = "https://github.com/QaidVoid/kage/releases/download/v0.6.0/kage-x86_64-linux.tar.xz"
+sha256 = "baed0dae87c5176fe694faf5e949a7302275e7d206e4a6ebd11308e9d6cc78f5"
+
+[kage.versions."v0.6.0".aarch64]
+url = "https://github.com/QaidVoid/kage/releases/download/v0.6.0/kage-aarch64-linux.tar.xz"
+sha256 = "93eb341e42bed4563d68300e6fe1bd7033eaa5e794fe9a91b7a59995387513f6"
